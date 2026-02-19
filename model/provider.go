@@ -1,0 +1,93 @@
+package model
+
+import (
+	"errors"
+	"gin-template/common"
+	"time"
+)
+
+type Provider struct {
+	Id             int    `json:"id"`
+	Name           string `json:"name" gorm:"index;not null"`
+	BaseURL        string `json:"base_url" gorm:"not null"`
+	AccessToken    string `json:"access_token" gorm:"type:text"`
+	UserID         int    `json:"user_id"`
+	Status         int    `json:"status" gorm:"default:1"`
+	Priority       int    `json:"priority" gorm:"default:0"`
+	Weight         int    `json:"weight" gorm:"default:10"`
+	CheckinEnabled bool   `json:"checkin_enabled"`
+	LastCheckinAt  int64  `json:"last_checkin_at"`
+	Balance        string `json:"balance"`
+	BalanceUpdated int64  `json:"balance_updated"`
+	Remark         string `json:"remark" gorm:"type:text"`
+	CreatedAt      int64  `json:"created_at"`
+}
+
+func GetAllProviders(startIdx int, num int) ([]*Provider, error) {
+	var providers []*Provider
+	err := DB.Order("id desc").Limit(num).Offset(startIdx).Find(&providers).Error
+	return providers, err
+}
+
+func GetProviderById(id int) (*Provider, error) {
+	if id == 0 {
+		return nil, errors.New("id 为空")
+	}
+	var provider Provider
+	err := DB.First(&provider, "id = ?", id).Error
+	return &provider, err
+}
+
+func GetEnabledProviders() ([]*Provider, error) {
+	var providers []*Provider
+	err := DB.Where("status = ?", common.UserStatusEnabled).Find(&providers).Error
+	return providers, err
+}
+
+func GetCheckinEnabledProviders() ([]*Provider, error) {
+	var providers []*Provider
+	err := DB.Where("status = ? AND checkin_enabled = ?", common.UserStatusEnabled, true).Find(&providers).Error
+	return providers, err
+}
+
+func (p *Provider) Insert() error {
+	p.CreatedAt = time.Now().Unix()
+	return DB.Create(p).Error
+}
+
+func (p *Provider) Update() error {
+	return DB.Model(p).Updates(p).Error
+}
+
+func (p *Provider) Delete() error {
+	if p.Id == 0 {
+		return errors.New("id 为空")
+	}
+	// Also clean up related provider_tokens and model_routes
+	DB.Where("provider_id = ?", p.Id).Delete(&ProviderToken{})
+	DB.Where("provider_id = ?", p.Id).Delete(&ModelRoute{})
+	DB.Where("provider_id = ?", p.Id).Delete(&ModelPricing{})
+	return DB.Delete(p).Error
+}
+
+func (p *Provider) UpdateBalance(balance string) {
+	DB.Model(p).Updates(map[string]interface{}{
+		"balance":         balance,
+		"balance_updated": time.Now().Unix(),
+	})
+}
+
+func (p *Provider) UpdateCheckinTime() {
+	DB.Model(p).Update("last_checkin_at", time.Now().Unix())
+}
+
+// CleanForResponse removes sensitive fields before sending to frontend
+func (p *Provider) CleanForResponse() {
+	p.AccessToken = ""
+}
+
+func CountProviders() int64 {
+	var count int64
+	DB.Model(&Provider{}).Count(&count)
+	return count
+}

@@ -1,0 +1,187 @@
+<p align="right">
+    <a href="./README.md">中文</a> | <strong>English</strong>
+</p>
+
+<div align="center">
+
+# API Gateway Aggregator
+
+_✨ Multi-provider NewAPI aggregation gateway — unified access, transparent proxy, usage analytics ✨_
+
+</div>
+
+## Overview
+
+API Gateway Aggregator is a transparent gateway that aggregates multiple [NewAPI](https://github.com/QuantumNous/new-api) providers. Users access all connected AI model services through a single aggregated token (`ag-xxx`). The system automatically performs **weighted round-robin with priority-based routing**, and upstream providers cannot detect the gateway's presence.
+
+### Key Features
+
+- ✅ **Transparent Proxy**: Header sanitization, zero body modification, User-Agent passthrough
+- ✅ **Multi-Provider Management**: Unified management of tokens, pricing, and balance across NewAPI instances
+- ✅ **Smart Routing**: Priority-layered + weight-based random selection (same algorithm as upstream `ability.go`)
+- ✅ **Auto Sync**: Syncs pricing/tokens/balance from upstream every 5 minutes, auto-rebuilds route table
+- ✅ **Check-in Service**: Automatic daily check-in for enabled providers
+- ✅ **SSE Streaming**: Full Server-Sent Events streaming proxy support
+- ✅ **Usage Analytics**: Detailed logging of model/provider/latency/status per request
+- ✅ **OpenAI Compatible**: Supports OpenAI / Anthropic / Gemini API formats
+- ✅ **Web Dashboard**: React frontend with dashboard, provider management, token management, logs
+
+> **This gateway does not handle billing/payments** — it only provides transparent proxying and usage statistics.
+
+---
+
+## Quick Start
+
+### Requirements
+
+- Go 1.18+
+- Node.js 16+
+- SQLite (default) or MySQL
+
+### Manual Deployment
+
+```bash
+# 1. Clone
+git clone <repo-url>
+cd API-Gateway-Aggregator-main
+
+# 2. Build frontend
+cd web && npm install && npm run build && cd ..
+
+# 3. Build backend
+go mod download
+go build -ldflags "-s -w -X 'gin-template/common.Version=$(cat VERSION)'" -o gateway-aggregator
+
+# 4. Run
+./gateway-aggregator --port 3000 --log-dir ./logs
+```
+
+### Docker Deployment
+
+```bash
+docker build -t gateway-aggregator .
+docker run -d --restart always -p 3000:3000 -v /data/gateway:/data gateway-aggregator
+```
+
+### First Login
+
+Visit `http://localhost:3000/` — Default credentials: `root` / `123456`
+
+---
+
+## Usage Guide
+
+### 1. Add Provider
+
+Navigate to **Providers** page and click "Add Provider":
+
+| Field           | Description                                | Example                      |
+| --------------- | ------------------------------------------ | ---------------------------- |
+| Name            | Provider identifier                        | `Provider-A`                 |
+| Base URL        | Upstream NewAPI URL                        | `https://api.provider-a.com` |
+| Access Token    | Upstream access_token                      | `eyJhbGci...`                |
+| User ID         | Upstream user ID (for New-Api-User header) | `1`                          |
+| Weight          | Routing weight (higher = more traffic)     | `10`                         |
+| Priority        | Routing tier (higher = tried first)        | `0`                          |
+| Enable Check-in | Auto daily check-in                        | ☑️                            |
+
+### 2. Sync Data
+
+Click **Sync** on a provider to:
+1. Fetch model pricing (`GET /api/pricing`)
+2. Fetch sk-Token list (`GET /api/token/`)
+3. Fetch user balance (`GET /api/user/self`)
+4. Auto-rebuild model routes
+
+### 3. Create Aggregated Token
+
+Go to **Tokens** page and create a token. Supports expiration, model whitelist, and IP whitelist.
+
+### 4. Call API
+
+```bash
+curl https://your-gateway.com/v1/chat/completions \
+  -H "Authorization: Bearer ag-xxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello!"}]}'
+```
+
+---
+
+## API Reference
+
+### Relay API (OpenAI-compatible, ag-Token auth)
+
+| Method | Path                       | Description               |
+| ------ | -------------------------- | ------------------------- |
+| POST   | `/v1/chat/completions`     | Chat completions          |
+| POST   | `/v1/completions`          | Text completions          |
+| POST   | `/v1/embeddings`           | Embeddings                |
+| POST   | `/v1/images/generations`   | Image generation          |
+| POST   | `/v1/audio/speech`         | Text-to-speech            |
+| POST   | `/v1/audio/transcriptions` | Speech-to-text            |
+| POST   | `/v1/messages`             | Anthropic Claude compat   |
+| POST   | `/v1/responses`            | OpenAI Responses API      |
+| POST   | `/v1beta/models/*`         | Gemini compat             |
+| GET    | `/v1/models`               | List all available models |
+
+### Management API (Session/Token auth)
+
+| Group     | Method              | Path                        | Description           |
+| --------- | ------------------- | --------------------------- | --------------------- |
+| Provider  | GET/POST/PUT/DELETE | `/api/provider/`            | Provider CRUD         |
+| Provider  | POST                | `/api/provider/:id/sync`    | Trigger sync          |
+| Provider  | POST                | `/api/provider/:id/checkin` | Manual check-in       |
+| Token     | GET/POST/PUT/DELETE | `/api/agg-token/`           | Aggregated token CRUD |
+| Route     | GET                 | `/api/route/`               | View route table      |
+| Route     | POST                | `/api/route/rebuild`        | Rebuild routes        |
+| Log       | GET                 | `/api/log/self`             | User logs             |
+| Log       | GET                 | `/api/log/`                 | All logs (admin)      |
+| Dashboard | GET                 | `/api/dashboard`            | Statistics (admin)    |
+
+---
+
+## Configuration
+
+### Environment Variables
+
+| Variable            | Description                      | Example                                |
+| ------------------- | -------------------------------- | -------------------------------------- |
+| `PORT`              | Listening port                   | `3000`                                 |
+| `SQL_DSN`           | MySQL DSN (defaults to SQLite)   | `root:pwd@tcp(localhost:3306)/gateway` |
+| `REDIS_CONN_STRING` | Redis (for rate-limit & session) | `redis://default:pw@localhost:6379`    |
+| `SESSION_SECRET`    | Fixed session secret             | `random_string`                        |
+| `GIN_MODE`          | Run mode                         | `release` / `debug`                    |
+
+### Command Line Arguments
+
+| Arg         | Description   | Default |
+| ----------- | ------------- | ------- |
+| `--port`    | Server port   | `3000`  |
+| `--log-dir` | Log directory | none    |
+| `--version` | Print version | -       |
+
+---
+
+## Stealth Strategy
+
+The gateway ensures upstream providers **cannot detect its presence**:
+
+| Strategy               | Implementation                             |
+| ---------------------- | ------------------------------------------ |
+| Auth replacement       | `ag-xxx` → upstream `sk-xxx`               |
+| Proxy header removal   | Delete `X-Forwarded-*`, `Via`, `Forwarded` |
+| User-Agent passthrough | Preserve original client UA                |
+| Zero body modification | Request body forwarded as-is               |
+| No custom headers      | No gateway-identifying headers added       |
+
+---
+
+## Credits
+
+- Framework: [gin-template](https://github.com/songquanpeng/gin-template) by songquanpeng
+- Upstream protocol: [new-api](https://github.com/QuantumNous/new-api)
+
+## License
+
+MIT License
