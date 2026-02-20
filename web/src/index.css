@@ -550,11 +550,41 @@ button {
   border: 1px solid rgba(239, 68, 68, 0.25);
   background: rgba(239, 68, 68, 0.08);
   color: #ef4444;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: space-between;
+  gap: 0.6rem;
   font-size: 0.84rem;
   max-width: 100%;
+}
+
+.log-error-main {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.log-error-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.35;
+  color: inherit;
+  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.log-error-hint {
+  display: block;
+  min-width: 0;
+  color: inherit;
+  line-height: 1.35;
+}
+
+.log-error-action {
+  flex-shrink: 0;
 }
 
 .log-card-actions {
@@ -595,9 +625,65 @@ button {
   align-items: center;
 }
 
+.sidebar-nav {
+  flex: 1;
+  padding: 1rem 0.75rem;
+}
+
+.sidebar-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.72rem;
+  min-height: 42px;
+  padding: 0.6rem 0.85rem;
+  margin-bottom: 0.32rem;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.sidebar-nav-link:hover {
+  color: var(--text-primary);
+  background: var(--gray-100);
+}
+
+.sidebar-nav-link.active,
+.sidebar-nav-link.active:hover {
+  color: var(--primary-600);
+  background: var(--primary-50);
+  font-weight: 600;
+}
+
+.sidebar-nav-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sidebar-nav-label {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
 @media (max-width: 768px) {
   .toolbar-form {
     min-width: 100%;
+  }
+
+  .log-error-box {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .log-error-action {
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
   }
 
   .logs-pagination {

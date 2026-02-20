@@ -23,6 +23,11 @@ const LogsTable = ({ selfOnly }) => {
   const [providerFilter, setProviderFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewTab, setViewTab] = useState('all');
+  const isErrorLog = useCallback(
+    (log) =>
+      Number(log?.status) !== 1 || (log?.error_message && String(log.error_message).trim() !== ''),
+    []
+  );
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
@@ -60,7 +65,9 @@ const LogsTable = ({ selfOnly }) => {
     const lowerKeyword = keyword.trim().toLowerCase();
 
     return logs.filter((log) => {
-      if (viewTab === 'error' && log.status === 1) {
+      const hasError = isErrorLog(log);
+
+      if (viewTab === 'error' && !hasError) {
         return false;
       }
 
@@ -68,10 +75,10 @@ const LogsTable = ({ selfOnly }) => {
         return false;
       }
 
-      if (statusFilter === 'success' && log.status !== 1) {
+      if (statusFilter === 'success' && hasError) {
         return false;
       }
-      if (statusFilter === 'error' && log.status === 1) {
+      if (statusFilter === 'error' && !hasError) {
         return false;
       }
 
@@ -92,11 +99,11 @@ const LogsTable = ({ selfOnly }) => {
 
       return haystack.includes(lowerKeyword);
     });
-  }, [logs, keyword, providerFilter, statusFilter, viewTab]);
+  }, [logs, keyword, providerFilter, statusFilter, viewTab, isErrorLog]);
 
   const summary = useMemo(() => {
     const total = filteredLogs.length;
-    const successCount = filteredLogs.filter((log) => log.status === 1).length;
+    const successCount = filteredLogs.filter((log) => !isErrorLog(log)).length;
     const errorCount = total - successCount;
     const avgLatency = total
       ? Math.round(
@@ -105,10 +112,64 @@ const LogsTable = ({ selfOnly }) => {
         )
       : 0;
     return { total, successCount, errorCount, avgLatency };
-  }, [filteredLogs]);
+  }, [filteredLogs, isErrorLog]);
 
   const toggleExpand = (id) => {
     setExpandedRowId(expandedRowId === id ? null : id);
+  };
+
+  const extractJsonFromText = (text) => {
+    if (!text) return null;
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) return null;
+    const maybeJson = text.slice(start, end + 1);
+    try {
+      return JSON.parse(maybeJson);
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const parseErrorDetail = (log) => {
+    const raw = String(log?.error_message || '');
+    const detail = {
+      request_id: log?.request_id || '',
+      provider: log?.provider_name || '',
+      model: log?.model_name || '',
+      status: log?.status,
+      created_at: formatTime(log?.created_at),
+      raw_error_message: raw
+    };
+
+    const bodyTag = '\nrequest body:';
+    const bodyIdx = raw.indexOf(bodyTag);
+    if (bodyIdx >= 0) {
+      const upstreamPart = raw.slice(0, bodyIdx).trim();
+      const bodyPart = raw.slice(bodyIdx + bodyTag.length).trim();
+      detail.upstream_error = extractJsonFromText(upstreamPart) || upstreamPart;
+      detail.request_body = extractJsonFromText(bodyPart) || bodyPart;
+      return detail;
+    }
+
+    detail.upstream_error = extractJsonFromText(raw) || raw;
+    return detail;
+  };
+
+  const openErrorRawView = (log) => {
+    const detail = parseErrorDetail(log);
+    const storageKey = `raw_error_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(storageKey, JSON.stringify(detail));
+
+    const configuredServerAddress = String(localStorage.getItem('server_address') || '').trim();
+    const fallbackBase = 'http://localhost:3000';
+    const base = (configuredServerAddress || fallbackBase).replace(/\/+$/, '');
+    const url = `${base}/log/raw?key=${encodeURIComponent(storageKey)}`;
+    const win = window.open(url, '_blank');
+    if (!win) {
+      showError('浏览器拦截了新窗口，请允许弹窗后重试');
+      return;
+    }
   };
 
   const canGoNext = logs.length === ITEMS_PER_PAGE;
@@ -201,7 +262,7 @@ const LogsTable = ({ selfOnly }) => {
                   <span className='log-provider'>@ {log.provider_name || '未知供应商'}</span>
                 </div>
                 <div className='log-card-state'>
-                  {log.status === 1 ? (
+                  {!isErrorLog(log) ? (
                     <Badge color='green'>
                       <CheckCircle2 size={12} style={{ marginRight: '0.25rem' }} />
                       成功
@@ -235,10 +296,17 @@ const LogsTable = ({ selfOnly }) => {
                 </div>
               </div>
 
-              {log.status !== 1 && (
+              {isErrorLog(log) && (
                 <div className='log-error-box'>
-                  <AlertTriangle size={14} />
-                  <span>{log.error_message || '请求失败，未返回详细错误信息'}</span>
+                  <div className='log-error-main'>
+                    <AlertTriangle size={14} />
+                    <span className='log-error-hint'>错误详情已隐藏，点击按钮在新页面查看</span>
+                  </div>
+                  <div className='log-error-action'>
+                    <Button size='sm' variant='secondary' onClick={() => openErrorRawView(log)}>
+                      查看 RAW 详情
+                    </Button>
+                  </div>
                 </div>
               )}
 
@@ -249,7 +317,18 @@ const LogsTable = ({ selfOnly }) => {
               </div>
 
               {expandedRowId === log.id && (
-                <pre className='log-json-detail'>{JSON.stringify(log, null, 2)}</pre>
+                <pre className='log-json-detail'>
+                  {JSON.stringify(
+                    {
+                      ...log,
+                      error_message: isErrorLog(log)
+                        ? '[Hidden] 使用“查看 RAW 详情”按钮打开错误内容'
+                        : log.error_message
+                    },
+                    null,
+                    2
+                  )}
+                </pre>
               )}
             </div>
           ))}

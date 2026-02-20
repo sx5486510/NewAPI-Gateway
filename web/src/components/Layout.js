@@ -63,7 +63,7 @@ const Layout = ({ children }) => {
                     <span style={{ fontWeight: '700', fontSize: '1.125rem', color: 'var(--primary-600)' }}>NewAPI 网关</span>
                 </div>
 
-                <nav style={{ flex: 1, padding: '1rem' }}>
+                <nav className='sidebar-nav'>
                     {navItems.map((item) => {
                         if (item.admin && !isAdmin) return null;
                         const isActive = location.pathname === item.path;
@@ -72,19 +72,13 @@ const Layout = ({ children }) => {
                             <Link
                                 key={item.name}
                                 to={item.path}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    padding: '0.75rem 1rem',
-                                    marginBottom: '0.25rem',
-                                    borderRadius: 'var(--radius-md)',
-                                    color: isActive ? 'var(--primary-600)' : 'var(--text-secondary)',
-                                    backgroundColor: isActive ? 'var(--primary-50)' : 'transparent',
-                                    fontWeight: isActive ? '600' : '400',
-                                }}
+                                className={`sidebar-nav-link ${isActive ? 'active' : ''}`}
+                                aria-current={isActive ? 'page' : undefined}
                             >
-                                <item.icon size={20} style={{ marginRight: '0.75rem' }} />
-                                {item.name}
+                                <span className='sidebar-nav-icon'>
+                                    <item.icon size={20} />
+                                </span>
+                                <span className='sidebar-nav-label'>{item.name}</span>
                             </Link>
                         );
                     })}

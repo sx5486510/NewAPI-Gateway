@@ -23,6 +23,7 @@ const ProviderDetail = lazy(() => import('./pages/Provider/ProviderDetail'));
 const Token = lazy(() => import('./pages/Token'));
 const RoutesPage = lazy(() => import('./pages/Routes'));
 const Log = lazy(() => import('./pages/Log'));
+const RawErrorView = lazy(() => import('./pages/Log/RawErrorView'));
 const About = lazy(() => import('./pages/About'));
 
 // Layout wrapper for authenticated routes
@@ -97,6 +98,13 @@ function App() {
         <Suspense fallback={<Loading />}>
           <GitHubOAuth />
         </Suspense>
+      } />
+      <Route path='/log/raw' element={
+        <PrivateRoute>
+          <Suspense fallback={<Loading />}>
+            <RawErrorView />
+          </Suspense>
+        </PrivateRoute>
       } />
 
       {/* Authenticated Routes with Layout */}

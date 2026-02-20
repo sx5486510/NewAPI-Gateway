@@ -13,7 +13,7 @@ type UsageLog struct {
 	PromptTokens      int    `json:"prompt_tokens"`
 	CompletionTokens  int    `json:"completion_tokens"`
 	ResponseTimeMs    int    `json:"response_time_ms"`
-	Status            int    `json:"status" gorm:"default:1"`
+	Status            int    `json:"status"`
 	ErrorMessage      string `json:"error_message" gorm:"type:text"`
 	ClientIp          string `json:"client_ip" gorm:"type:varchar(64)"`
 	RequestId         string `json:"request_id" gorm:"type:varchar(64);index"`
@@ -22,7 +22,22 @@ type UsageLog struct {
 
 func (l *UsageLog) Insert() error {
 	l.CreatedAt = time.Now().Unix()
-	return DB.Create(l).Error
+	return DB.Model(&UsageLog{}).Create(map[string]interface{}{
+		"user_id":             l.UserId,
+		"aggregated_token_id": l.AggregatedTokenId,
+		"provider_id":         l.ProviderId,
+		"provider_name":       l.ProviderName,
+		"provider_token_id":   l.ProviderTokenId,
+		"model_name":          l.ModelName,
+		"prompt_tokens":       l.PromptTokens,
+		"completion_tokens":   l.CompletionTokens,
+		"response_time_ms":    l.ResponseTimeMs,
+		"status":              l.Status,
+		"error_message":       l.ErrorMessage,
+		"client_ip":           l.ClientIp,
+		"request_id":          l.RequestId,
+		"created_at":          l.CreatedAt,
+	}).Error
 }
 
 // GetUserLogs returns logs for a specific user
@@ -89,7 +104,7 @@ func GetDashboardStats() (*DashboardStats, error) {
 
 	// Total counts
 	DB.Model(&UsageLog{}).Count(&stats.TotalRequests)
-	DB.Model(&UsageLog{}).Where("status = 1").Count(&stats.SuccessRequests)
+	DB.Model(&UsageLog{}).Where("status = 1 AND (error_message = '' OR error_message IS NULL)").Count(&stats.SuccessRequests)
 	stats.FailedRequests = stats.TotalRequests - stats.SuccessRequests
 	stats.TotalProviders = CountProviders()
 	stats.TotalRoutes = CountModelRoutes()

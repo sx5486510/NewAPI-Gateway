@@ -41,6 +41,12 @@ const SystemSetting = () => {
       });
       setInputs(newInputs);
       setOriginInputs(newInputs);
+      const serverAddress = removeTrailingSlash(String(newInputs.ServerAddress || '').trim());
+      if (serverAddress) {
+        localStorage.setItem('server_address', serverAddress);
+      } else {
+        localStorage.removeItem('server_address');
+      }
     } else {
       showError(message);
     }
@@ -105,6 +111,11 @@ const SystemSetting = () => {
   const submitServerAddress = async () => {
     let ServerAddress = removeTrailingSlash(inputs.ServerAddress);
     await updateOption('ServerAddress', ServerAddress);
+    if (ServerAddress) {
+      localStorage.setItem('server_address', ServerAddress);
+    } else {
+      localStorage.removeItem('server_address');
+    }
   };
 
   const submitSMTP = async () => {
