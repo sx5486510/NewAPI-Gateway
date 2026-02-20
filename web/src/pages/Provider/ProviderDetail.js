@@ -44,7 +44,7 @@ const ProviderDetail = () => {
             const { success, data, message } = res.data;
             if (success) setTokens(data || []);
             else showError(message);
-        } catch (e) { showError('加载 Token 失败'); }
+        } catch (e) { showError('加载令牌失败'); }
     };
 
     const loadPricing = async () => {
@@ -99,13 +99,13 @@ const ProviderDetail = () => {
         } else {
             const res = await API.post(`/api/provider/${id}/tokens`, editToken);
             const { success, message } = res.data;
-            if (success) { showSuccess('Token 创建成功'); setShowTokenModal(false); loadTokens(); }
+            if (success) { showSuccess('令牌创建成功'); setShowTokenModal(false); loadTokens(); }
             else showError(message);
         }
     };
 
     const deleteToken = async (tokenId) => {
-        if (!window.confirm('确定要删除此 Token 吗？相关路由也会被删除。')) return;
+        if (!window.confirm('确定要删除此令牌吗？相关路由也会被删除。')) return;
         const res = await API.delete(`/api/provider/token/${tokenId}`);
         const { success, message } = res.data;
         if (success) { showSuccess('删除成功'); loadTokens(); }
@@ -158,9 +158,9 @@ const ProviderDetail = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                         <RefreshCw size={20} style={{ color: 'var(--primary-600)' }} />
                         <div>
-                            <div style={{ fontWeight: '600', color: 'var(--primary-700)' }}>下一步：同步上游 Token</div>
+                            <div style={{ fontWeight: '600', color: 'var(--primary-700)' }}>下一步：同步上游令牌</div>
                             <div style={{ fontSize: '0.875rem', color: 'var(--primary-600)', marginTop: '0.25rem' }}>
-                                点击上方「同步」按钮，系统会自动从上游获取 API Token 和模型信息，并生成路由。你也可以手动添加 Token。
+                                点击上方「同步」按钮，系统会自动从上游获取 API 令牌和模型信息，并生成路由。你也可以手动添加令牌。
                             </div>
                         </div>
                     </div>
@@ -169,26 +169,26 @@ const ProviderDetail = () => {
             <Card padding="0">
                 <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                        <div style={{ fontWeight: '600' }}>上游 Token 列表</div>
-                        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>共 {tokens.length} 个 Token</div>
+                        <div style={{ fontWeight: '600' }}>上游令牌列表</div>
+                        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>共 {tokens.length} 个令牌</div>
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <Button variant="secondary" onClick={loadTokens} icon={RefreshCw}>刷新</Button>
-                        <Button variant="primary" onClick={openAddToken} icon={Plus}>创建上游 Token</Button>
+                        <Button variant="primary" onClick={openAddToken} icon={Plus}>创建上游令牌</Button>
                     </div>
                 </div>
                 {tokens.length === 0 ? (
                     <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                        <div style={{ marginBottom: '0.5rem', fontSize: '1rem' }}>暂无 Token</div>
-                        <div style={{ fontSize: '0.875rem' }}>请点击「同步」从上游自动获取，或点击「创建上游 Token」在上游新增</div>
+                        <div style={{ marginBottom: '0.5rem', fontSize: '1rem' }}>暂无令牌</div>
+                        <div style={{ fontSize: '0.875rem' }}>请点击「同步」从上游自动获取，或点击「创建上游令牌」在上游新增</div>
                     </div>
                 ) : (
                     <Table>
                         <Thead>
                             <Tr>
-                                <Th>ID</Th>
+                                <Th>编号</Th>
                                 <Th>名称</Th>
-                                <Th>SK Key</Th>
+                                <Th>密钥</Th>
                                 <Th>分组</Th>
                                 <Th>状态</Th>
                                 <Th>配额</Th>
@@ -299,11 +299,11 @@ const ProviderDetail = () => {
             {/* Legend */}
             <Card>
                 <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                    <strong>关系说明：</strong>每个上游 Token 属于一个「分组」，每个分组下可用一组模型（由上游 Pricing 的 <code>enable_groups</code> 决定）。
-                    同步时会根据 <code>Token.分组 → Pricing.可用分组 → 模型</code> 的关系自动生成路由。
+                    <strong>关系说明：</strong>每个上游令牌属于一个「分组」，每个分组下可用一组模型（由上游定价的 <code>enable_groups</code> 决定）。
+                    同步时会根据 <code>令牌.分组 → 定价.可用分组 → 模型</code> 的关系自动生成路由。
                 </div>
                 <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                    <strong>Token 分组：</strong>{' '}
+                    <strong>令牌分组：</strong>{' '}
                     {tokenGroups.length === 0 ? '暂无' : tokenGroups.map((g, i) => (
                         <Badge key={i} color="blue" style={{ marginRight: '0.25rem' }}>{g}</Badge>
                     ))}
@@ -336,9 +336,9 @@ const ProviderDetail = () => {
                                     </span>
                                 </div>
                                 {isActive ? (
-                                    <Badge color="green">有 Token 属于此分组</Badge>
+                                    <Badge color="green">有令牌属于此分组</Badge>
                                 ) : (
-                                    <Badge color="yellow">无 Token 属于此分组</Badge>
+                                    <Badge color="yellow">无令牌属于此分组</Badge>
                                 )}
                             </div>
                             <div style={{ padding: '0.75rem 1rem', display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
@@ -382,7 +382,7 @@ const ProviderDetail = () => {
                         </div>
                         <div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>余额</div>
-                            <div style={{ fontWeight: '600' }}>{provider.balance || 'N/A'}</div>
+                            <div style={{ fontWeight: '600' }}>{provider.balance || '无'}</div>
                         </div>
                         <div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>权重 / 优先级</div>
@@ -393,7 +393,7 @@ const ProviderDetail = () => {
                             {provider.checkin_enabled ? <Badge color="blue">已启用</Badge> : <Badge color="gray">未启用</Badge>}
                         </div>
                         <div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Token / 模型</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>令牌 / 模型</div>
                             <div style={{ fontWeight: '600' }}>{tokens.length} / {pricing.length}</div>
                         </div>
                     </div>
@@ -416,14 +416,14 @@ const ProviderDetail = () => {
 
             {/* Tabs */}
             <Tabs items={[
-                { label: `Token 管理 (${tokens.length})`, content: tokenTab },
+                { label: `令牌管理 (${tokens.length})`, content: tokenTab },
                 { label: `模型与定价 (${pricing.length})`, content: pricingTab },
                 { label: `分组映射 (${Object.keys(groupModelMap).length})`, content: groupTab },
             ]} />
 
             {/* Token Modal */}
             <Modal
-                title={editToken?.id ? '编辑 Token' : '在上游创建 Token'}
+                title={editToken?.id ? '编辑令牌' : '在上游创建令牌'}
                 isOpen={showTokenModal}
                 onClose={() => setShowTokenModal(false)}
                 actions={
@@ -434,8 +434,8 @@ const ProviderDetail = () => {
                 }
             >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <Input label="名称" placeholder="Token 名称" value={editToken?.name || ''} onChange={(e) => setEditToken({ ...editToken, name: e.target.value })} />
-                    <Input label="分组名称" placeholder="default" value={editToken?.group_name || ''} onChange={(e) => setEditToken({ ...editToken, group_name: e.target.value })} />
+                    <Input label="名称" placeholder="令牌名称" value={editToken?.name || ''} onChange={(e) => setEditToken({ ...editToken, name: e.target.value })} />
+                    <Input label="分组名称" placeholder="默认（default）" value={editToken?.group_name || ''} onChange={(e) => setEditToken({ ...editToken, group_name: e.target.value })} />
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                         <Input label="权重" type="number" value={editToken?.weight || 10} onChange={(e) => setEditToken({ ...editToken, weight: parseInt(e.target.value) || 0 })} />
                         <Input label="优先级" type="number" value={editToken?.priority || 0} onChange={(e) => setEditToken({ ...editToken, priority: parseInt(e.target.value) || 0 })} />

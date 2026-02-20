@@ -3,8 +3,8 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
-	"gin-template/common"
-	"gin-template/model"
+	"NewAPI-Gateway/common"
+	"NewAPI-Gateway/model"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )

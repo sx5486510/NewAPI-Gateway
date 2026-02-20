@@ -67,6 +67,11 @@ var (
 	GlobalApiRateLimitNum            = 60
 	GlobalApiRateLimitDuration int64 = 3 * 60
 
+	// Logged-in users get a wider global API quota to avoid false positives
+	// during normal browsing while keeping strict limits on unauthenticated traffic.
+	LoggedInApiRateLimitNum            = 600
+	LoggedInApiRateLimitDuration int64 = 3 * 60
+
 	GlobalWebRateLimitNum            = 300
 	GlobalWebRateLimitDuration int64 = 60
 

@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"encoding/json"
-	"gin-template/common"
+	"NewAPI-Gateway/common"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"net/http"

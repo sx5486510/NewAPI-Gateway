@@ -3,7 +3,8 @@ package middleware
 import (
 	"context"
 	"fmt"
-	"gin-template/common"
+	"NewAPI-Gateway/common"
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"time"
@@ -13,10 +14,10 @@ var timeFormat = "2006-01-02T15:04:05.000Z"
 
 var inMemoryRateLimiter common.InMemoryRateLimiter
 
-func redisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, mark string) {
+func redisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, key string) {
 	ctx := context.Background()
 	rdb := common.RDB
-	key := "rateLimit:" + mark + c.ClientIP()
+	key = "rateLimit:" + key
 	listLength, err := rdb.LLen(ctx, key).Result()
 	if err != nil {
 		fmt.Println(err.Error())
@@ -59,8 +60,7 @@ func redisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, mark st
 	}
 }
 
-func memoryRateLimiter(c *gin.Context, maxRequestNum int, duration int64, mark string) {
-	key := mark + c.ClientIP()
+func memoryRateLimiter(c *gin.Context, maxRequestNum int, duration int64, key string) {
 	if !inMemoryRateLimiter.Request(key, maxRequestNum, duration) {
 		c.Status(http.StatusTooManyRequests)
 		c.Abort()
@@ -68,16 +68,20 @@ func memoryRateLimiter(c *gin.Context, maxRequestNum int, duration int64, mark s
 	}
 }
 
+func buildIPRateLimitKey(mark string, c *gin.Context) string {
+	return mark + ":ip:" + c.ClientIP()
+}
+
 func rateLimitFactory(maxRequestNum int, duration int64, mark string) func(c *gin.Context) {
 	if common.RedisEnabled {
 		return func(c *gin.Context) {
-			redisRateLimiter(c, maxRequestNum, duration, mark)
+			redisRateLimiter(c, maxRequestNum, duration, buildIPRateLimitKey(mark, c))
 		}
 	} else {
 		// It's safe to call multi times.
 		inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
 		return func(c *gin.Context) {
-			memoryRateLimiter(c, maxRequestNum, duration, mark)
+			memoryRateLimiter(c, maxRequestNum, duration, buildIPRateLimitKey(mark, c))
 		}
 	}
 }
@@ -87,7 +91,52 @@ func GlobalWebRateLimit() func(c *gin.Context) {
 }
 
 func GlobalAPIRateLimit() func(c *gin.Context) {
-	return rateLimitFactory(common.GlobalApiRateLimitNum, common.GlobalApiRateLimitDuration, "GA")
+	allowNoLimitPath := map[string]struct{}{
+		"/api/status": {},
+		"/api/notice": {},
+		"/api/about":  {},
+	}
+
+	if common.RedisEnabled {
+		return func(c *gin.Context) {
+			if _, ok := allowNoLimitPath[c.Request.URL.Path]; ok {
+				c.Next()
+				return
+			}
+			maxRequestNum := common.GlobalApiRateLimitNum
+			duration := common.GlobalApiRateLimitDuration
+			key := buildIPRateLimitKey("GA", c)
+
+			// Authenticated users use user-id based key + higher quota,
+			// so one IP with multiple legitimate actions is less likely to be blocked.
+			if id := sessions.Default(c).Get("id"); id != nil {
+				maxRequestNum = common.LoggedInApiRateLimitNum
+				duration = common.LoggedInApiRateLimitDuration
+				key = fmt.Sprintf("GA:uid:%v", id)
+			}
+
+			redisRateLimiter(c, maxRequestNum, duration, key)
+		}
+	}
+
+	inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+	return func(c *gin.Context) {
+		if _, ok := allowNoLimitPath[c.Request.URL.Path]; ok {
+			c.Next()
+			return
+		}
+		maxRequestNum := common.GlobalApiRateLimitNum
+		duration := common.GlobalApiRateLimitDuration
+		key := buildIPRateLimitKey("GA", c)
+
+		if id := sessions.Default(c).Get("id"); id != nil {
+			maxRequestNum = common.LoggedInApiRateLimitNum
+			duration = common.LoggedInApiRateLimitDuration
+			key = fmt.Sprintf("GA:uid:%v", id)
+		}
+
+		memoryRateLimiter(c, maxRequestNum, duration, key)
+	}
 }
 
 func CriticalRateLimit() func(c *gin.Context) {

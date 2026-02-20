@@ -2,11 +2,11 @@ package main
 
 import (
 	"embed"
-	"gin-template/common"
-	"gin-template/middleware"
-	"gin-template/model"
-	"gin-template/router"
-	"gin-template/service"
+	"NewAPI-Gateway/common"
+	"NewAPI-Gateway/middleware"
+	"NewAPI-Gateway/model"
+	"NewAPI-Gateway/router"
+	"NewAPI-Gateway/service"
 	"log"
 	"os"
 	"strconv"

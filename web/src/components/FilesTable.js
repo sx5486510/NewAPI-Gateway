@@ -191,7 +191,7 @@ const FilesTable = () => {
         />
       </form>
 
-      <div style={{ backgroundColor: 'white', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+      <div style={{ backgroundColor: 'var(--bg-primary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
         <Table>
           <Thead>
             <Tr>
@@ -216,7 +216,7 @@ const FilesTable = () => {
                         {file.filename}
                       </a>
                     </Td>
-                    <Td title={'上传者 ID：' + file.uploader_id}>{file.uploader}</Td>
+                    <Td title={'上传者编号：' + file.uploader_id}>{file.uploader}</Td>
                     <Td>{file.upload_time}</Td>
                     <Td>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>

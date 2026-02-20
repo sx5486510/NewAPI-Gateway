@@ -191,7 +191,7 @@ const ProvidersTable = () => {
           <Table>
             <Thead>
               <Tr>
-                <Th>ID</Th>
+                <Th>编号</Th>
                 <Th>名称</Th>
                 <Th>地址</Th>
                 <Th>状态</Th>
@@ -209,7 +209,7 @@ const ProvidersTable = () => {
                   <Td>{p.name}</Td>
                   <Td><div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.base_url}>{p.base_url}</div></Td>
                   <Td>{renderStatus(p.status)}</Td>
-                  <Td>{p.balance ? p.balance : 'N/A'}</Td>
+                  <Td>{p.balance ? p.balance : '无'}</Td>
                   <Td>{p.weight}</Td>
                   <Td>{p.priority}</Td>
                   <Td>
@@ -255,19 +255,19 @@ const ProvidersTable = () => {
             onChange={(e) => setEditProvider({ ...editProvider, name: e.target.value })}
           />
           <Input
-            label="Base URL"
+            label="基础地址"
             placeholder="https://api.example.com"
             value={editProvider?.base_url || ''}
             onChange={(e) => setEditProvider({ ...editProvider, base_url: e.target.value })}
           />
           <Input
-            label="Access Token"
+            label="访问令牌"
             type="password"
             value={editProvider?.access_token || ''}
             onChange={(e) => setEditProvider({ ...editProvider, access_token: e.target.value })}
           />
           <Input
-            label="上游 User ID"
+            label="上游用户编号"
             type="number"
             value={editProvider?.user_id || 0}
             onChange={(e) => setEditProvider({ ...editProvider, user_id: parseInt(e.target.value) || 0 })}

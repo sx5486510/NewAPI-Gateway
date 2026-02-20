@@ -51,7 +51,7 @@ build-fe:
 
 build-be:
 	@mkdir -p ./bin
-	go build -ldflags "-s -w -X 'gin-template/common.Version=$$(cat VERSION)'" -o $(BINARY)
+	go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$$(cat VERSION)'" -o $(BINARY)
 
 run: run-be
 

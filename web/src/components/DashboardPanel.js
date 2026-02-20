@@ -1,170 +1,197 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-    Activity,
-    CheckCircle,
-    XCircle,
-    Server,
-    Box,
-    GitBranch
+  Activity,
+  CheckCircle,
+  XCircle,
+  Server,
+  Box,
+  GitBranch,
+  BarChart3
 } from 'lucide-react';
 import { API, showError } from '../helpers';
 import Card from './ui/Card';
-import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
+
+const colorPreset = {
+  blue: { bg: 'var(--primary-50)', text: 'var(--primary-600)' },
+  green: { bg: 'rgba(16, 185, 129, 0.12)', text: 'var(--success)' },
+  red: { bg: 'rgba(239, 68, 68, 0.12)', text: 'var(--error)' },
+  purple: { bg: '#f3e8ff', text: '#9333ea' },
+  cyan: { bg: '#cffafe', text: '#0891b2' },
+  orange: { bg: 'rgba(249, 115, 22, 0.12)', text: '#ea580c' }
+};
+
+const numberFormatter = new Intl.NumberFormat('zh-CN');
+
+const formatNumber = (value) => numberFormatter.format(Number(value || 0));
 
 const StatCard = ({ title, value, icon: Icon, color = 'blue' }) => {
-    const colors = {
-        blue: { bg: 'var(--primary-50)', text: 'var(--primary-600)' },
-        green: { bg: 'rgba(16, 185, 129, 0.1)', text: 'var(--success)' },
-        red: { bg: 'rgba(239, 68, 68, 0.1)', text: 'var(--error)' },
-        purple: { bg: '#f3e8ff', text: '#9333ea' },
-    };
+  const style = colorPreset[color] || colorPreset.blue;
 
-    const style = colors[color] || colors.blue;
+  return (
+    <Card padding='1rem' className='dashboard-stat-card'>
+      <div className='dashboard-stat-top'>
+        <div
+          className='dashboard-stat-icon'
+          style={{ backgroundColor: style.bg, color: style.text }}
+        >
+          <Icon size={18} />
+        </div>
+      </div>
+      <div className='dashboard-stat-value'>{formatNumber(value)}</div>
+      <div className='dashboard-stat-title'>{title}</div>
+    </Card>
+  );
+};
 
-    return (
-        <Card padding="1.5rem" className="h-full">
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-sm font-medium text-gray-500">{title}</p>
-                    <p className="text-2xl font-bold mt-1">{value}</p>
+const HorizontalMetricList = ({
+  title,
+  icon: Icon,
+  items = [],
+  labelField,
+  valueField,
+  emptyText
+}) => {
+  const total = useMemo(
+    () => items.reduce((sum, item) => sum + Number(item[valueField] || 0), 0),
+    [items, valueField]
+  );
+
+  return (
+    <Card padding='1.25rem' className='dashboard-panel-card'>
+      <div className='dashboard-panel-title'>
+        <Icon size={16} />
+        <span>{title}</span>
+      </div>
+      {items.length === 0 ? (
+        <div className='dashboard-empty'>{emptyText}</div>
+      ) : (
+        <div className='dashboard-metric-list'>
+          {items.slice(0, 8).map((item, index) => {
+            const value = Number(item[valueField] || 0);
+            const percent = total > 0 ? Math.min((value / total) * 100, 100) : 0;
+            return (
+              <div key={`${item[labelField]}-${index}`} className='dashboard-metric-item'>
+                <div className='dashboard-metric-header'>
+                  <div className='dashboard-metric-label'>{item[labelField] || '未知'}</div>
+                  <div className='dashboard-metric-value'>
+                    {formatNumber(value)}
+                    <span className='dashboard-metric-percent'> {percent.toFixed(1)}%</span>
+                  </div>
                 </div>
-                <div
-                    className="p-3 rounded-full"
-                    style={{ backgroundColor: style.bg, color: style.text }}
-                >
-                    <Icon size={24} />
+                <div className='dashboard-metric-track'>
+                  <div
+                    className='dashboard-metric-fill'
+                    style={{ width: `${Math.max(percent, 4)}%` }}
+                  />
                 </div>
-            </div>
-        </Card>
-    );
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+};
+
+const RecentTrendCard = ({ items = [] }) => {
+  const maxValue = useMemo(
+    () => Math.max(...items.map((item) => Number(item.request_count || 0)), 0),
+    [items]
+  );
+
+  return (
+    <Card padding='1.25rem' className='dashboard-panel-card'>
+      <div className='dashboard-panel-title'>
+        <BarChart3 size={16} />
+        <span>最近请求趋势</span>
+      </div>
+      {items.length === 0 ? (
+        <div className='dashboard-empty'>暂无趋势数据</div>
+      ) : (
+        <div className='dashboard-trend-chart'>
+          {items.slice(-10).map((item) => {
+            const count = Number(item.request_count || 0);
+            const height = maxValue > 0 ? Math.max((count / maxValue) * 100, 6) : 6;
+            return (
+              <div key={item.date} className='dashboard-trend-item' title={`${item.date}: ${formatNumber(count)}`}>
+                <div className='dashboard-trend-track'>
+                  <div className='dashboard-trend-bar' style={{ height: `${height}%` }} />
+                </div>
+                <div className='dashboard-trend-label'>{item.date?.slice(5) || '-'}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
 };
 
 const DashboardPanel = () => {
-    const [stats, setStats] = useState(null);
-    const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-    const loadStats = async () => {
-        try {
-            const res = await API.get('/api/dashboard');
-            const { success, data, message } = res.data;
-            if (success) {
-                setStats(data);
-            } else {
-                showError(message);
-            }
-        } catch (error) {
-            showError('无法加载统计数据');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        loadStats();
-    }, []);
-
-    if (loading) {
-        return <div className="p-4 text-center">加载中...</div>;
+  const loadStats = async () => {
+    try {
+      const res = await API.get('/api/dashboard');
+      const { success, data, message } = res.data;
+      if (success) {
+        setStats(data);
+      } else {
+        showError(message);
+      }
+    } catch (error) {
+      showError('无法加载统计数据');
+    } finally {
+      setLoading(false);
     }
+  };
 
-    if (!stats) return null;
+  useEffect(() => {
+    loadStats();
+  }, []);
 
-    return (
-        <div className="flex flex-col gap-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
-                <StatCard
-                    title="总请求数"
-                    value={stats.total_requests}
-                    icon={Activity}
-                    color="blue"
-                />
-                <StatCard
-                    title="成功请求"
-                    value={stats.success_requests}
-                    icon={CheckCircle}
-                    color="green"
-                />
-                <StatCard
-                    title="失败请求"
-                    value={stats.failed_requests}
-                    icon={XCircle}
-                    color="red"
-                />
-                <StatCard
-                    title="活跃供应商"
-                    value={stats.total_providers}
-                    icon={Server}
-                    color="purple"
-                />
-                <StatCard
-                    title="可用模型"
-                    value={stats.total_models}
-                    icon={Box}
-                    color="blue"
-                />
-                <StatCard
-                    title="路由条目"
-                    value={stats.total_routes}
-                    icon={GitBranch}
-                    color="blue"
-                />
-            </div>
+  if (loading) {
+    return <div className='p-4 text-center'>加载中...</div>;
+  }
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
-                <Card title="按供应商统计" padding="0">
-                    <Table>
-                        <Thead>
-                            <Tr>
-                                <Th>供应商</Th>
-                                <Th>请求数</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {stats.by_provider?.map((p, i) => (
-                                <Tr key={i}>
-                                    <Td>{p.provider_name}</Td>
-                                    <Td>{p.request_count}</Td>
-                                </Tr>
-                            ))}
-                            {(!stats.by_provider || stats.by_provider.length === 0) && (
-                                <Tr>
-                                    <Td colSpan={2}><div className="text-center py-4 text-gray-500">暂无数据</div></Td>
-                                </Tr>
-                            )}
-                        </Tbody>
-                    </Table>
-                </Card>
+  if (!stats) {
+    return null;
+  }
 
-                <Card title="按模型统计" padding="0">
-                    <Table>
-                        <Thead>
-                            <Tr>
-                                <Th>模型</Th>
-                                <Th>请求数</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {stats.by_model?.map((m, i) => (
-                                <Tr key={i}>
-                                    <Td>
-                                        <code style={{ backgroundColor: 'var(--gray-100)', padding: '0.2rem 0.4rem', borderRadius: '0.25rem', fontSize: '0.875em' }}>
-                                            {m.model_name}
-                                        </code>
-                                    </Td>
-                                    <Td>{m.request_count}</Td>
-                                </Tr>
-                            ))}
-                            {(!stats.by_model || stats.by_model.length === 0) && (
-                                <Tr>
-                                    <Td colSpan={2}><div className="text-center py-4 text-gray-500">暂无数据</div></Td>
-                                </Tr>
-                            )}
-                        </Tbody>
-                    </Table>
-                </Card>
-            </div>
-        </div>
-    );
+  return (
+    <div className='dashboard-shell'>
+      <div className='dashboard-stat-grid'>
+        <StatCard title='总请求数' value={stats.total_requests} icon={Activity} color='blue' />
+        <StatCard title='成功请求' value={stats.success_requests} icon={CheckCircle} color='green' />
+        <StatCard title='失败请求' value={stats.failed_requests} icon={XCircle} color='red' />
+        <StatCard title='活跃供应商' value={stats.total_providers} icon={Server} color='purple' />
+        <StatCard title='可用模型' value={stats.total_models} icon={Box} color='cyan' />
+        <StatCard title='路由条目' value={stats.total_routes} icon={GitBranch} color='orange' />
+      </div>
+
+      <div className='dashboard-panel-grid'>
+        <HorizontalMetricList
+          title='供应商请求分布'
+          icon={Server}
+          items={stats.by_provider || []}
+          labelField='provider_name'
+          valueField='request_count'
+          emptyText='暂无供应商请求数据'
+        />
+        <HorizontalMetricList
+          title='模型请求分布'
+          icon={Box}
+          items={stats.by_model || []}
+          labelField='model_name'
+          valueField='request_count'
+          emptyText='暂无模型请求数据'
+        />
+      </div>
+
+      <RecentTrendCard items={stats.recent_requests || []} />
+    </div>
+  );
 };
 
 export default DashboardPanel;

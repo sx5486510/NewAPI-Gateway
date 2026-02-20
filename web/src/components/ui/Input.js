@@ -9,10 +9,14 @@ const Input = ({
     name,
     error,
     icon: Icon,
-    disabled
+    disabled,
+    style,
+    className = '',
+    inputStyle,
+    ...rest
 }) => {
     return (
-        <div style={{ marginBottom: '1rem' }}>
+        <div style={{ marginBottom: '1rem', ...style }} className={className}>
             {label && (
                 <label
                     style={{
@@ -56,10 +60,11 @@ const Input = ({
                         fontSize: '0.875rem',
                         borderRadius: 'var(--radius-md)',
                         border: error ? '1px solid var(--error)' : '1px solid var(--border-color)',
-                        backgroundColor: disabled ? 'var(--gray-100)' : 'white',
+                        backgroundColor: disabled ? 'var(--gray-100)' : 'var(--bg-primary)',
                         color: 'var(--text-primary)',
                         outline: 'none',
                         transition: 'border-color 0.2s, box-shadow 0.2s',
+                        ...inputStyle,
                     }}
                     onFocus={(e) => {
                         if (!error) {
@@ -73,6 +78,7 @@ const Input = ({
                             e.target.style.boxShadow = 'none';
                         }
                     }}
+                    {...rest}
                 />
             </div>
             {error && (

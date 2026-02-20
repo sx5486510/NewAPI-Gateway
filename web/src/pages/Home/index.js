@@ -36,7 +36,7 @@ const Home = () => {
         <iframe
           src={homePageLink}
           style={{ width: '100%', height: '100vh', border: 'none' }}
-          title="Home Page"
+          title="首页"
         />
       ) : (
         <Card padding="1.5rem">

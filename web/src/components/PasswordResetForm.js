@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { API, showError, showInfo, showSuccess } from '../helpers';
 import Turnstile from 'react-turnstile';
+import { ThemeContext } from '../context/Theme';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Card from './ui/Card';
 import { Mail } from 'lucide-react';
 
 const PasswordResetForm = () => {
+  const [themeState] = useContext(ThemeContext);
   const [inputs, setInputs] = useState({
     email: '',
   });
@@ -75,6 +77,7 @@ const PasswordResetForm = () => {
               <div style={{ margin: '1rem 0' }}>
                 <Turnstile
                   sitekey={turnstileSiteKey}
+                  theme={themeState.theme}
                   onVerify={(token) => {
                     setTurnstileToken(token);
                   }}

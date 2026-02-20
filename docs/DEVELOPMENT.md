@@ -97,7 +97,7 @@ SyncProvider(provider)
 
 ```bash
 cd web && npm install && npm run build && cd ..
-go build -ldflags "-s -w -X 'gin-template/common.Version=v1.0.0'" -o gateway-aggregator
+go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=v1.0.0'" -o gateway-aggregator
 ```
 
 ### Docker 构建

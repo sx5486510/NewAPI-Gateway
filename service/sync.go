@@ -3,8 +3,8 @@ package service
 import (
 	"encoding/json"
 	"fmt"
-	"gin-template/common"
-	"gin-template/model"
+	"NewAPI-Gateway/common"
+	"NewAPI-Gateway/model"
 	"strings"
 	"time"
 )

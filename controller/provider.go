@@ -3,9 +3,9 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
-	"gin-template/common"
-	"gin-template/model"
-	"gin-template/service"
+	"NewAPI-Gateway/common"
+	"NewAPI-Gateway/model"
+	"NewAPI-Gateway/service"
 	"net/http"
 	"strconv"
 
@@ -310,6 +310,19 @@ func DeleteProviderToken(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "Token 不存在"})
 		return
+	}
+	// If this token came from upstream, delete upstream first; otherwise it will be re-synced later.
+	if token.UpstreamTokenId > 0 {
+		provider, err := model.GetProviderById(token.ProviderId)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "供应商不存在"})
+			return
+		}
+		client := service.NewUpstreamClient(provider.BaseURL, provider.AccessToken, provider.UserID)
+		if err := client.DeleteUpstreamToken(token.UpstreamTokenId); err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "上游删除 Token 失败: " + err.Error()})
+			return
+		}
 	}
 	if err := token.Delete(); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})

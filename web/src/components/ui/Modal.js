@@ -35,7 +35,7 @@ const Modal = ({ isOpen, onClose, title, children, actions }) => {
         >
             <div
                 style={{
-                    backgroundColor: 'white',
+                    backgroundColor: 'var(--bg-primary)',
                     borderRadius: 'var(--radius-lg)',
                     boxShadow: 'var(--shadow-lg)',
                     width: '100%',

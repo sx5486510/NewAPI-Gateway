@@ -17,13 +17,13 @@ export const Thead = ({ children }) => (
 );
 
 export const Tbody = ({ children }) => (
-    <tbody style={{ backgroundColor: 'white' }}>
+    <tbody style={{ backgroundColor: 'var(--bg-primary)' }}>
         {children}
     </tbody>
 );
 
-export const Tr = ({ children }) => (
-    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+export const Tr = ({ children, style, ...props }) => (
+    <tr style={{ borderBottom: '1px solid var(--border-color)', ...style }} {...props}>
         {children}
     </tr>
 );
@@ -34,8 +34,8 @@ export const Th = ({ children }) => (
     </th>
 );
 
-export const Td = ({ children }) => (
-    <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+export const Td = ({ children, colSpan, style, ...props }) => (
+    <td colSpan={colSpan} style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', color: 'var(--text-secondary)', ...style }} {...props}>
         {children}
     </td>
 );

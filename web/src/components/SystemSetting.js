@@ -295,20 +295,20 @@ const SystemSetting = () => {
       </Card>
 
       <Card padding="1.5rem">
-        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>配置 GitHub OAuth App</h3>
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>配置 GitHub OAuth 应用</h3>
         <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
           用以支持通过 GitHub 进行登录注册，
           <a href='https://github.com/settings/developers' target='_blank' rel="noreferrer" style={{ color: 'var(--primary-600)' }}> 点击此处 </a>
-          管理你的 GitHub OAuth App
+          管理你的 GitHub OAuth 应用
         </p>
         <div style={{ backgroundColor: 'var(--gray-50)', padding: '1rem', borderRadius: 'var(--radius-md)', marginBottom: '1rem', fontSize: '0.875rem' }}>
-          Homepage URL 填 <code style={{ backgroundColor: 'var(--gray-200)', padding: '0.2rem' }}>{inputs.ServerAddress}</code>
-          ，Authorization callback URL 填{' '}
+          首页地址填写 <code style={{ backgroundColor: 'var(--gray-200)', padding: '0.2rem' }}>{inputs.ServerAddress}</code>
+          ，授权回调地址填写{' '}
           <code style={{ backgroundColor: 'var(--gray-200)', padding: '0.2rem' }}>{`${inputs.ServerAddress}/oauth/github`}</code>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
           <Input
-            label='GitHub Client ID'
+            label='GitHub 客户端 ID'
             name='GitHubClientId'
             onChange={handleInputChange}
             autoComplete='new-password'
@@ -316,7 +316,7 @@ const SystemSetting = () => {
             placeholder='输入 ID'
           />
           <Input
-            label='GitHub Client Secret'
+            label='GitHub 客户端密钥'
             name='GitHubClientSecret'
             onChange={handleInputChange}
             type='password'
@@ -329,15 +329,15 @@ const SystemSetting = () => {
       </Card>
 
       <Card padding="1.5rem">
-        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>配置 WeChat Server</h3>
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>配置微信服务</h3>
         <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
           用以支持通过微信进行登录注册，
           <a href='https://github.com/songquanpeng/wechat-server' target='_blank' rel="noreferrer" style={{ color: 'var(--primary-600)' }}> 点击此处 </a>
-          了解 WeChat Server
+          了解微信服务
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
           <Input
-            label='WeChat Server 服务器地址'
+            label='微信服务地址'
             name='WeChatServerAddress'
             placeholder='例如：https://yourdomain.com'
             onChange={handleInputChange}
@@ -345,7 +345,7 @@ const SystemSetting = () => {
             value={inputs.WeChatServerAddress}
           />
           <Input
-            label='WeChat Server 访问凭证'
+            label='微信服务访问凭证'
             name='WeChatServerToken'
             type='password'
             onChange={handleInputChange}
@@ -362,7 +362,7 @@ const SystemSetting = () => {
             placeholder='输入图片链接'
           />
         </div>
-        <Button onClick={submitWeChat} variant="secondary" disabled={loading}>保存 WeChat Server 设置</Button>
+        <Button onClick={submitWeChat} variant="secondary" disabled={loading}>保存微信服务设置</Button>
       </Card>
 
       <Card padding="1.5rem">
@@ -370,19 +370,19 @@ const SystemSetting = () => {
         <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
           用以支持用户校验，
           <a href='https://dash.cloudflare.com/' target='_blank' rel="noreferrer" style={{ color: 'var(--primary-600)' }}> 点击此处 </a>
-          管理你的 Turnstile Sites，推荐选择 Invisible Widget Type
+          管理你的 Turnstile 站点，推荐选择隐形组件类型
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
           <Input
-            label='Turnstile Site Key'
+            label='Turnstile 站点密钥'
             name='TurnstileSiteKey'
             onChange={handleInputChange}
             autoComplete='new-password'
             value={inputs.TurnstileSiteKey}
-            placeholder='输入 Site Key'
+            placeholder='输入站点密钥'
           />
           <Input
-            label='Turnstile Secret Key'
+            label='Turnstile 密钥'
             name='TurnstileSecretKey'
             onChange={handleInputChange}
             type='password'

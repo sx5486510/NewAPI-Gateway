@@ -1,13 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { API, showError, showInfo, showSuccess } from '../helpers';
 import Turnstile from 'react-turnstile';
+import { ThemeContext } from '../context/Theme';
 import { User, Lock, Mail } from 'lucide-react';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Card from './ui/Card';
 
 const RegisterForm = () => {
+  const [themeState] = useContext(ThemeContext);
   const [inputs, setInputs] = useState({
     username: '',
     password: '',
@@ -153,6 +155,7 @@ const RegisterForm = () => {
               <div style={{ margin: '1rem 0' }}>
                 <Turnstile
                   sitekey={turnstileSiteKey}
+                  theme={themeState.theme}
                   onVerify={(token) => setTurnstileToken(token)}
                 />
               </div>

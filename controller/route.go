@@ -1,9 +1,9 @@
 package controller
 
 import (
-	"gin-template/common"
-	"gin-template/model"
-	"gin-template/service"
+	"NewAPI-Gateway/common"
+	"NewAPI-Gateway/model"
+	"NewAPI-Gateway/service"
 	"net/http"
 	"strconv"
 

@@ -1,13 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { API, copy, showError, showInfo, showSuccess } from '../helpers';
 import Turnstile from 'react-turnstile';
+import { ThemeContext } from '../context/Theme';
 import Button from './ui/Button';
 import Modal from './ui/Modal';
 import Input from './ui/Input';
 import Card from './ui/Card';
 
 const PersonalSetting = () => {
+  const [themeState] = useContext(ThemeContext);
   const [inputs, setInputs] = useState({
     wechat_verification_code: '',
     email_verification_code: '',
@@ -105,10 +107,13 @@ const PersonalSetting = () => {
   };
 
   return (
-    <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-      <Card padding="1.5rem" className="mb-6">
-        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '1rem' }}>通用设置</h3>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+    <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <Card padding="1.5rem">
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>个人设置</h3>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+          管理个人资料与访问凭证，令牌重置后会自动复制到剪贴板。
+        </p>
+        <div className='settings-action-grid'>
           <Link to={`/user/edit/`}>
             <Button variant="secondary">更新个人信息</Button>
           </Link>
@@ -117,8 +122,11 @@ const PersonalSetting = () => {
       </Card>
 
       <Card padding="1.5rem">
-        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '1rem' }}>账号绑定</h3>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>账号绑定</h3>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+          可选绑定微信、GitHub 与邮箱，便于登录和找回能力。
+        </p>
+        <div className='settings-action-grid'>
           {status.wechat_login && (
             <Button
               variant="secondary"
@@ -128,7 +136,7 @@ const PersonalSetting = () => {
             </Button>
           )}
           {status.github_oauth && (
-            <Button variant="secondary" onClick={openGitHubOAuth}>绑定 GitHub 账号</Button>
+            <Button variant="secondary" onClick={openGitHubOAuth}>绑定 GitHub 账户</Button>
           )}
           <Button
             variant="secondary"
@@ -146,7 +154,7 @@ const PersonalSetting = () => {
       >
         <div style={{ textAlign: 'center' }}>
           {status.wechat_qrcode && (
-            <img src={status.wechat_qrcode} alt="WeChat QRCode" style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)', marginBottom: '1rem' }} />
+            <img src={status.wechat_qrcode} alt="微信二维码" style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)', marginBottom: '1rem' }} />
           )}
           <p style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>
             微信扫码关注公众号，输入「验证码」获取验证码（三分钟内有效）
@@ -194,6 +202,7 @@ const PersonalSetting = () => {
             <div style={{ margin: '1rem 0' }}>
               <Turnstile
                 sitekey={turnstileSiteKey}
+                theme={themeState.theme}
                 onVerify={(token) => setTurnstileToken(token)}
               />
             </div>

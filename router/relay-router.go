@@ -1,8 +1,8 @@
 package router
 
 import (
-	"gin-template/controller"
-	"gin-template/middleware"
+	"NewAPI-Gateway/controller"
+	"NewAPI-Gateway/middleware"
 
 	"github.com/gin-gonic/gin"
 )

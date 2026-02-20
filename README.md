@@ -77,7 +77,7 @@ cd ..
 
 # 3. 构建后端
 go mod download
-go build -ldflags "-s -w -X 'gin-template/common.Version=$(cat VERSION)'" -o gateway-aggregator
+go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)'" -o gateway-aggregator
 
 # 4. 运行
 ./gateway-aggregator --port 3000 --log-dir ./logs
@@ -217,7 +217,7 @@ curl https://your-gateway.com/v1/chat/completions \
 
 #### 用户管理 & 系统设置
 
-沿用原始 gin-template 框架的用户管理和系统设置接口，详见 `/api/user/*` 和 `/api/option/*`。
+沿用原始 NewAPI-Gateway 框架的用户管理和系统设置接口，详见 `/api/user/*` 和 `/api/option/*`。
 
 ---
 
@@ -330,7 +330,7 @@ API-Gateway-Aggregator-main/
 
 ## 致谢
 
-- 框架基础：[gin-template](https://github.com/songquanpeng/gin-template) by songquanpeng
+- 框架基础：[NewAPI-Gateway](https://github.com/songquanpeng/NewAPI-Gateway) by songquanpeng
 - 上游协议兼容：[new-api](https://github.com/QuantumNous/new-api) API 规范
 
 ## License

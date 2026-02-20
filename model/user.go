@@ -2,7 +2,7 @@ package model
 
 import (
 	"errors"
-	"gin-template/common"
+	"NewAPI-Gateway/common"
 	"strings"
 )
 

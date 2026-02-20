@@ -21,8 +21,8 @@ var UploadPath = "upload"
 func printHelp() {
 	fmt.Println("Gin Template " + Version + " - Your next project starts from here.")
 	fmt.Println("Copyright (C) 2023 JustSong. All rights reserved.")
-	fmt.Println("GitHub: https://github.com/songquanpeng/gin-template")
-	fmt.Println("Usage: gin-template [--port <port>] [--log-dir <log directory>] [--version] [--help]")
+	fmt.Println("GitHub: https://github.com/songquanpeng/NewAPI-Gateway")
+	fmt.Println("Usage: NewAPI-Gateway [--port <port>] [--log-dir <log directory>] [--version] [--help]")
 }
 
 func init() {

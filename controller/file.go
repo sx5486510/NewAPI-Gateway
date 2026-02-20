@@ -2,8 +2,8 @@ package controller
 
 import (
 	"fmt"
-	"gin-template/common"
-	"gin-template/model"
+	"NewAPI-Gateway/common"
+	"NewAPI-Gateway/model"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"path/filepath"

@@ -45,7 +45,7 @@ const Loading = () => {
             style={{ opacity: 0.75 }}
           ></path>
         </svg>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Loading...</span>
+        <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>加载中...</span>
       </div>
     </div>
   );

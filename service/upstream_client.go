@@ -193,6 +193,32 @@ func (c *UpstreamClient) CreateUpstreamToken(name string, group string, unlimite
 	return nil
 }
 
+// DeleteUpstreamToken calls upstream DELETE /api/token/:id to remove a token.
+// Some upstream deployments accept trailing slash variants, so we try both.
+func (c *UpstreamClient) DeleteUpstreamToken(tokenId int) error {
+	paths := []string{
+		fmt.Sprintf("/api/token/%d", tokenId),
+		fmt.Sprintf("/api/token/%d/", tokenId),
+	}
+	var lastErr error
+	for _, path := range paths {
+		body, err := c.doRequest("DELETE", path)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var resp UpstreamResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return err
+		}
+		if !resp.Success {
+			return fmt.Errorf("upstream delete token failed: %s", resp.Message)
+		}
+		return nil
+	}
+	return lastErr
+}
+
 // GetUserSelf fetches /api/user/self from the upstream
 func (c *UpstreamClient) GetUserSelf() (*UpstreamUserSelf, error) {
 	body, err := c.doRequest("GET", "/api/user/self")

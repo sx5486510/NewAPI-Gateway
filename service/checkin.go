@@ -2,8 +2,8 @@ package service
 
 import (
 	"fmt"
-	"gin-template/common"
-	"gin-template/model"
+	"NewAPI-Gateway/common"
+	"NewAPI-Gateway/model"
 )
 
 // CheckinProvider performs a checkin for a specific provider

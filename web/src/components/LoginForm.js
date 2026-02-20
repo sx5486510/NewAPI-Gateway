@@ -1,8 +1,10 @@
 import React, { useContext, useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { UserContext } from '../context/User';
-import { API, showError, showSuccess } from '../helpers';
-import { User, Lock, Github, CheckCircle } from 'lucide-react';
+import { ThemeContext } from '../context/Theme';
+import { API, showError, showInfo, showSuccess } from '../helpers';
+import Turnstile from 'react-turnstile';
+import { User, Lock, Github, CheckCircle, Sun, Moon } from 'lucide-react';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Card from './ui/Card';
@@ -38,9 +40,13 @@ const LoginForm = () => {
   const { username, password } = inputs;
   // eslint-disable-next-line
   const [userState, userDispatch] = useContext(UserContext);
+  const [themeState, themeDispatch] = useContext(ThemeContext);
   let navigate = useNavigate();
 
   const [status, setStatus] = useState({});
+  const [turnstileEnabled, setTurnstileEnabled] = useState(false);
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
 
   useEffect(() => {
     if (searchParams.get("expired")) {
@@ -50,10 +56,18 @@ const LoginForm = () => {
     if (status) {
       status = JSON.parse(status);
       setStatus(status);
+      if (status.turnstile_check) {
+        setTurnstileEnabled(true);
+        setTurnstileSiteKey(status.turnstile_site_key);
+      }
     }
   }, [searchParams]);
 
   const [showWeChatLoginModal, setShowWeChatLoginModal] = useState(false);
+
+  const toggleTheme = () => {
+    themeDispatch({ type: 'toggle' });
+  };
 
   const onGitHubOAuthClicked = () => {
     window.open(
@@ -89,8 +103,12 @@ const LoginForm = () => {
   async function handleSubmit(e) {
     e.preventDefault();
     setSubmitted(true);
+    if (turnstileEnabled && turnstileToken === '') {
+      showInfo('请稍后几秒重试，Turnstile 正在检查用户环境！');
+      return;
+    }
     if (username && password) {
-      const res = await API.post('/api/user/login', {
+      const res = await API.post(`/api/user/login?turnstile=${encodeURIComponent(turnstileToken)}`, {
         username,
         password,
       });
@@ -108,10 +126,33 @@ const LoginForm = () => {
 
   return (
     <div className="flex h-screen items-center justify-center bg-gray-50 scale-100" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-secondary)' }}>
+      <button
+        onClick={toggleTheme}
+        aria-label='切换主题'
+        style={{
+          position: 'fixed',
+          top: '1rem',
+          right: '1rem',
+          width: '2.5rem',
+          height: '2.5rem',
+          borderRadius: '9999px',
+          border: '1px solid var(--border-color)',
+          backgroundColor: 'var(--bg-primary)',
+          color: 'var(--text-secondary)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          boxShadow: 'var(--shadow-sm)',
+          zIndex: 10,
+        }}
+      >
+        {themeState.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+      </button>
       <div style={{ width: '100%', maxWidth: '28rem' }}>
         <div className="text-center mb-8" style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <img src="/logo.png" alt="Logo" style={{ height: '4rem', margin: '0 auto 1rem' }} />
-          <h2 style={{ fontSize: '1.875rem', fontWeight: '800', color: 'var(--text-primary)' }}>NewAPI Gateway</h2>
+          <h2 style={{ fontSize: '1.875rem', fontWeight: '800', color: 'var(--text-primary)' }}>NewAPI 网关</h2>
           <p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}>
             欢迎回来，请登录您的账户
           </p>
@@ -136,6 +177,16 @@ const LoginForm = () => {
               value={password}
               onChange={handleChange}
             />
+            {turnstileEnabled && (
+              <div style={{ margin: '1rem 0' }}>
+                <Turnstile
+                  sitekey={turnstileSiteKey}
+                  theme={themeState.theme}
+                  onVerify={(token) => setTurnstileToken(token)}
+                  onExpire={() => setTurnstileToken('')}
+                />
+              </div>
+            )}
 
             <Button
               variant="primary"
@@ -150,7 +201,7 @@ const LoginForm = () => {
 
           <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
             <div className="flex justify-between" style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Link to="/reset" style={{ color: 'var(--primary-600)' }}>忘记密码?</Link>
+              <Link to="/reset" style={{ color: 'var(--primary-600)' }}>忘记密码？</Link>
               <Link to="/register" style={{ color: 'var(--primary-600)' }}>注册账户</Link>
             </div>
           </div>
@@ -162,7 +213,7 @@ const LoginForm = () => {
                   <div style={{ width: '100%', borderTop: '1px solid var(--border-color)' }}></div>
                 </div>
                 <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
-                  <span style={{ backgroundColor: 'white', padding: '0 0.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Or continue with</span>
+                  <span style={{ backgroundColor: 'var(--bg-primary)', padding: '0 0.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>或使用以下方式继续</span>
                 </div>
               </div>
 
@@ -172,7 +223,7 @@ const LoginForm = () => {
                     variant="secondary"
                     onClick={onGitHubOAuthClicked}
                     icon={Github}
-                    aria-label="GitHub Login"
+                    aria-label="GitHub 登录"
                     style={{ borderRadius: '50%', padding: '0.75rem', width: 'auto' }}
                   />
                 )}
@@ -182,7 +233,7 @@ const LoginForm = () => {
                     onClick={onWeChatLoginClicked}
                     icon={WechatIcon}
                     className="text-green-600"
-                    aria-label="WeChat Login"
+                    aria-label="微信登录"
                     style={{ borderRadius: '50%', padding: '0.75rem', width: 'auto', color: '#16a34a' }}
                   />
                 )}
@@ -207,7 +258,7 @@ const LoginForm = () => {
       >
         <div className="text-center" style={{ textAlign: 'center' }}>
           {status.wechat_qrcode && (
-            <img src={status.wechat_qrcode} alt="WeChat QRCode" style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)', marginBottom: '1rem' }} />
+            <img src={status.wechat_qrcode} alt="微信二维码" style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)', marginBottom: '1rem' }} />
           )}
           <p style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>
             微信扫码关注公众号，输入「验证码」获取验证码（三分钟内有效）

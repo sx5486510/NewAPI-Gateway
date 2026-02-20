@@ -31,7 +31,7 @@ const Button = ({
             border: '1px solid var(--primary-600)',
         },
         secondary: {
-            backgroundColor: 'white',
+            backgroundColor: 'var(--bg-primary)',
             color: 'var(--gray-700)',
             border: '1px solid var(--gray-300)',
         },

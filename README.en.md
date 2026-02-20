@@ -50,7 +50,7 @@ cd web && npm install && npm run build && cd ..
 
 # 3. Build backend
 go mod download
-go build -ldflags "-s -w -X 'gin-template/common.Version=$(cat VERSION)'" -o gateway-aggregator
+go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)'" -o gateway-aggregator
 
 # 4. Run
 ./gateway-aggregator --port 3000 --log-dir ./logs
@@ -179,7 +179,7 @@ The gateway ensures upstream providers **cannot detect its presence**:
 
 ## Credits
 
-- Framework: [gin-template](https://github.com/songquanpeng/gin-template) by songquanpeng
+- Framework: [NewAPI-Gateway](https://github.com/songquanpeng/NewAPI-Gateway) by songquanpeng
 - Upstream protocol: [new-api](https://github.com/QuantumNous/new-api)
 
 ## License

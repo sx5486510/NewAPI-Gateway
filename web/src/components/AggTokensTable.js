@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     Plus,
     Trash2,
     Edit,
-    Copy
+    Copy,
+    Search
 } from 'lucide-react';
 import { API, showError, showSuccess } from '../helpers';
 import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
@@ -18,6 +19,8 @@ const AggTokensTable = () => {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editToken, setEditToken] = useState(null);
+    const [searchKeyword, setSearchKeyword] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all');
 
     const loadTokens = async () => {
         setLoading(true);
@@ -30,7 +33,7 @@ const AggTokensTable = () => {
                 showError(message);
             }
         } catch (e) {
-            showError('加载 Token 失败');
+            showError('加载令牌失败');
         } finally {
             setLoading(false);
         }
@@ -41,7 +44,7 @@ const AggTokensTable = () => {
     }, []);
 
     const deleteToken = async (id) => {
-        if (!window.confirm('确定要删除此 Token 吗？')) return;
+        if (!window.confirm('确定要删除此令牌吗？')) return;
         const res = await API.delete(`/api/agg-token/${id}`);
         const { success, message } = res.data;
         if (success) {
@@ -83,7 +86,7 @@ const AggTokensTable = () => {
             const res = await API.post('/api/agg-token/', editToken);
             const { success, data, message } = res.data;
             if (success) {
-                showSuccess(`Token 创建成功: ${data}`);
+                showSuccess(`令牌创建成功：${data}`);
                 setShowModal(false);
                 loadTokens();
             } else {
@@ -102,12 +105,49 @@ const AggTokensTable = () => {
         return new Date(t * 1000).toLocaleString();
     };
 
+    const filteredTokens = useMemo(() => {
+        const keyword = searchKeyword.trim().toLowerCase();
+        return tokens.filter((token) => {
+            if (statusFilter === 'enabled' && token.status !== 1) {
+                return false;
+            }
+            if (statusFilter === 'disabled' && token.status === 1) {
+                return false;
+            }
+            if (!keyword) {
+                return true;
+            }
+            const haystack = [token.name, token.key, token.id]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+            return haystack.includes(keyword);
+        });
+    }, [tokens, searchKeyword, statusFilter]);
+
     return (
         <>
             <Card padding="0">
-                <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontWeight: '600' }}>Token 列表</div>
-                    <Button variant="primary" onClick={openAdd} icon={Plus}>创建 Token</Button>
+                <div className='table-toolbar'>
+                    <div className='toolbar-form'>
+                        <Input
+                            icon={Search}
+                            placeholder='搜索令牌名称 / key / 编号'
+                            value={searchKeyword}
+                            onChange={(e) => setSearchKeyword(e.target.value)}
+                            style={{ marginBottom: 0, flex: 1, minWidth: '220px' }}
+                        />
+                        <select
+                            className='filter-select'
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                        >
+                            <option value='all'>全部状态</option>
+                            <option value='enabled'>仅启用</option>
+                            <option value='disabled'>仅禁用</option>
+                        </select>
+                    </div>
+                    <Button variant="primary" onClick={openAdd} icon={Plus}>创建令牌</Button>
                 </div>
 
                 {loading ? (
@@ -116,9 +156,9 @@ const AggTokensTable = () => {
                     <Table>
                         <Thead>
                             <Tr>
-                                <Th>ID</Th>
+                                <Th>编号</Th>
                                 <Th>名称</Th>
-                                <Th>Key</Th>
+                                <Th>密钥</Th>
                                 <Th>状态</Th>
                                 <Th>过期时间</Th>
                                 <Th>模型限制</Th>
@@ -126,7 +166,7 @@ const AggTokensTable = () => {
                             </Tr>
                         </Thead>
                         <Tbody>
-                            {tokens.map((t) => (
+                            {filteredTokens.map((t) => (
                                 <Tr key={t.id}>
                                     <Td>{t.id}</Td>
                                     <Td>{t.name}</Td>
@@ -163,13 +203,20 @@ const AggTokensTable = () => {
                                     </Td>
                                 </Tr>
                             ))}
+                            {filteredTokens.length === 0 && (
+                                <Tr>
+                                    <Td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                                        当前筛选条件下没有令牌
+                                    </Td>
+                                </Tr>
+                            )}
                         </Tbody>
                     </Table>
                 )}
             </Card>
 
             <Modal
-                title={editToken?.id ? '编辑 Token' : '创建 Token'}
+                title={editToken?.id ? '编辑令牌' : '创建令牌'}
                 isOpen={showModal}
                 onClose={() => setShowModal(false)}
                 actions={

@@ -16,7 +16,7 @@ WORKDIR /build
 COPY . .
 COPY --from=builder /build/build ./web/build
 RUN go mod download
-RUN go build -ldflags "-s -w -X 'gin-template/common.Version=$(cat VERSION)' -extldflags '-static'" -o gateway-aggregator
+RUN go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)' -extldflags '-static'" -o gateway-aggregator
 
 FROM alpine
 

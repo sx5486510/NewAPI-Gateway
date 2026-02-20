@@ -3,7 +3,7 @@ import AggTokensTable from '../../components/AggTokensTable';
 
 const Token = () => (
     <>
-        <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>聚合 Token 管理</h2>
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>聚合令牌管理</h2>
         <AggTokensTable />
     </>
 );

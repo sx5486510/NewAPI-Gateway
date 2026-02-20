@@ -90,8 +90,8 @@ const ModelRoutesTable = () => {
                     <Thead>
                         <Tr>
                             <Th>模型</Th>
-                            <Th>供应商 ID</Th>
-                            <Th>Token ID</Th>
+                            <Th>供应商编号</Th>
+                            <Th>令牌编号</Th>
                             <Th>状态</Th>
                             <Th>优先级</Th>
                             <Th>权重</Th>

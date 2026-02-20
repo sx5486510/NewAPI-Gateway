@@ -2,8 +2,8 @@ package controller
 
 import (
 	"encoding/json"
-	"gin-template/model"
-	"gin-template/service"
+	"NewAPI-Gateway/model"
+	"NewAPI-Gateway/service"
 	"io"
 	"net/http"
 

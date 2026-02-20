@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Search,
   UserPlus,
@@ -39,7 +39,7 @@ const UsersTable = () => {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [searching, setSearching] = useState(false);
 
-  const loadUsers = async (startIdx) => {
+  const loadUsers = useCallback(async (startIdx) => {
     try {
       const res = await API.get(`/api/user/?p=${startIdx}`);
       const { success, message, data } = res.data;
@@ -47,9 +47,7 @@ const UsersTable = () => {
         if (startIdx === 0) {
           setUsers(data);
         } else {
-          let newUsers = users;
-          newUsers.push(...data);
-          setUsers(newUsers);
+          setUsers((prevUsers) => [...prevUsers, ...(data || [])]);
         }
       } else {
         showError(message);
@@ -59,7 +57,7 @@ const UsersTable = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const onPaginationChange = (e, { activePage }) => {
     (async () => {
@@ -72,7 +70,7 @@ const UsersTable = () => {
 
   useEffect(() => {
     loadUsers(0);
-  }, []);
+  }, [loadUsers]);
 
   const manageUser = (username, action, idx) => {
     (async () => {
@@ -112,13 +110,14 @@ const UsersTable = () => {
 
   const searchUsers = async (e) => {
     e?.preventDefault();
-    if (searchKeyword === '') {
+    const keyword = searchKeyword.trim();
+    if (keyword === '') {
       await loadUsers(0);
       setActivePage(1);
       return;
     }
     setSearching(true);
-    const res = await API.get(`/api/user/search?keyword=${searchKeyword}`);
+    const res = await API.get(`/api/user/search?keyword=${encodeURIComponent(keyword)}`);
     const { success, message, data } = res.data;
     if (success) {
       setUsers(data);
@@ -130,7 +129,13 @@ const UsersTable = () => {
   };
 
   const handleKeywordChange = async (e) => {
-    setSearchKeyword(e.target.value.trim());
+    setSearchKeyword(e.target.value);
+  };
+
+  const resetSearch = async () => {
+    setSearchKeyword('');
+    await loadUsers(0);
+    setActivePage(1);
   };
 
   const sortUser = (key) => {
@@ -149,18 +154,20 @@ const UsersTable = () => {
 
   return (
     <Card padding="0">
-      <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-        <form onSubmit={searchUsers} style={{ flex: 1, maxWidth: '400px' }}>
+      <div className='table-toolbar'>
+        <form onSubmit={searchUsers} className='toolbar-form'>
           <Input
             icon={Search}
             placeholder='搜索用户的 ID，用户名，显示名称，以及邮箱地址 ...'
             value={searchKeyword}
             onChange={handleKeywordChange}
             disabled={searching}
-            style={{ margin: 0 }}
+            style={{ marginBottom: 0, flex: 1, minWidth: '220px' }}
           />
+          <Button type='submit' variant='secondary' loading={searching}>搜索</Button>
+          <Button type='button' variant='outline' onClick={resetSearch}>重置</Button>
         </form>
-        <Link to='/user/add'>
+        <Link to='/user/add' className='toolbar-action-link'>
           <Button variant="primary" icon={UserPlus}>添加用户</Button>
         </Link>
       </div>

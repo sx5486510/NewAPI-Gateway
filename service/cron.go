@@ -1,8 +1,8 @@
 package service
 
 import (
-	"gin-template/common"
-	"gin-template/model"
+	"NewAPI-Gateway/common"
+	"NewAPI-Gateway/model"
 	"time"
 )
 

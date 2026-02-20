@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"gin-template/model"
+	"NewAPI-Gateway/model"
 	"net/http"
 	"strings"
 
