@@ -1,45 +1,36 @@
 import React from 'react';
-import { Segment, Tab } from 'semantic-ui-react';
 import SystemSetting from '../../components/SystemSetting';
 import { isRoot } from '../../helpers';
 import OtherSetting from '../../components/OtherSetting';
 import PersonalSetting from '../../components/PersonalSetting';
+import Tabs from '../../components/ui/Tabs';
 
 const Setting = () => {
-  let panes = [
+  let tabs = [
     {
-      menuItem: '个人设置',
-      render: () => (
-        <Tab.Pane attached={false}>
-          <PersonalSetting />
-        </Tab.Pane>
-      )
+      label: '个人设置',
+      content: <PersonalSetting />
     }
   ];
 
   if (isRoot()) {
-    panes.push({
-      menuItem: '系统设置',
-      render: () => (
-        <Tab.Pane attached={false}>
-          <SystemSetting />
-        </Tab.Pane>
-      )
+    tabs.push({
+      label: '系统设置',
+      content: <SystemSetting />
     });
-    panes.push({
-      menuItem: '其他设置',
-      render: () => (
-        <Tab.Pane attached={false}>
-          <OtherSetting />
-        </Tab.Pane>
-      )
+    tabs.push({
+      label: '其他设置',
+      content: <OtherSetting />
     });
   }
 
   return (
-    <Segment>
-      <Tab menu={{ secondary: true, pointing: true }} panes={panes} />
-    </Segment>
+    <>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>设置</h2>
+      <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)' }}>
+        <Tabs items={tabs} />
+      </div>
+    </>
   );
 };
 

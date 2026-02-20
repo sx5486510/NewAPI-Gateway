@@ -1,13 +1,10 @@
 import React from 'react';
-import { Header, Segment } from 'semantic-ui-react';
 import FilesTable from '../../components/FilesTable';
 
 const File = () => (
   <>
-    <Segment>
-      <Header as='h3'>管理文件</Header>
-      <FilesTable />
-    </Segment>
+    <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>管理文件</h2>
+    <FilesTable />
   </>
 );
 

@@ -1,14 +1,16 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { Dimmer, Loader, Segment } from 'semantic-ui-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { API, showError, showSuccess } from '../helpers';
 import { UserContext } from '../context/User';
+import Loading from './Loading';
 
 const GitHubOAuth = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
+  // eslint-disable-next-line
   const [userState, userDispatch] = useContext(UserContext);
   const [prompt, setPrompt] = useState('处理中...');
+  // eslint-disable-next-line
   const [processing, setProcessing] = useState(true);
 
   let navigate = useNavigate();
@@ -43,14 +45,13 @@ const GitHubOAuth = () => {
   useEffect(() => {
     let code = searchParams.get('code');
     sendCode(code, 0).then();
-  }, []);
+  }, [searchParams]);
 
   return (
-    <Segment style={{ minHeight: '300px' }}>
-      <Dimmer active inverted>
-        <Loader size='large'>{prompt}</Loader>
-      </Dimmer>
-    </Segment>
+    <div style={{ minHeight: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+      <Loading />
+      <p style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>{prompt}</p>
+    </div>
   );
 };
 

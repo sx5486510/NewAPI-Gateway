@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"fmt"
 	"gin-template/common"
 	"gin-template/model"
 	"gin-template/service"
@@ -26,6 +27,109 @@ func GetProviders(c *gin.Context) {
 		provider.CleanForResponse()
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": providers})
+}
+
+func GetProviderDetail(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的 ID"})
+		return
+	}
+	provider, err := model.GetProviderById(id)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "供应商不存在"})
+		return
+	}
+	provider.CleanForResponse()
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": provider})
+}
+
+func ExportProviders(c *gin.Context) {
+	providers, err := model.GetAllProviders(0, 1000)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	// Export format: include access_token for re-import
+	type ExportItem struct {
+		Name           string `json:"name"`
+		BaseURL        string `json:"base_url"`
+		AccessToken    string `json:"access_token"`
+		UserID         int    `json:"user_id,omitempty"`
+		Status         int    `json:"status,omitempty"`
+		Priority       int    `json:"priority,omitempty"`
+		Weight         int    `json:"weight,omitempty"`
+		CheckinEnabled bool   `json:"checkin_enabled,omitempty"`
+		Remark         string `json:"remark,omitempty"`
+	}
+	var items []ExportItem
+	for _, p := range providers {
+		items = append(items, ExportItem{
+			Name:           p.Name,
+			BaseURL:        p.BaseURL,
+			AccessToken:    p.AccessToken,
+			UserID:         p.UserID,
+			Status:         p.Status,
+			Priority:       p.Priority,
+			Weight:         p.Weight,
+			CheckinEnabled: p.CheckinEnabled,
+			Remark:         p.Remark,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": items})
+}
+
+func ImportProviders(c *gin.Context) {
+	// Use a flexible import struct to accept user_id as string or int
+	type ImportItem struct {
+		Name           string      `json:"name"`
+		BaseURL        string      `json:"base_url"`
+		AccessToken    string      `json:"access_token"`
+		UserID         json.Number `json:"user_id"`
+		Status         int         `json:"status"`
+		Priority       int         `json:"priority"`
+		Weight         int         `json:"weight"`
+		CheckinEnabled bool        `json:"checkin_enabled"`
+		Remark         string      `json:"remark"`
+	}
+	var items []ImportItem
+	if err := json.NewDecoder(c.Request.Body).Decode(&items); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "JSON 格式错误: " + err.Error()})
+		return
+	}
+	imported := 0
+	skipped := 0
+	for _, item := range items {
+		if item.Name == "" || item.BaseURL == "" || item.AccessToken == "" {
+			skipped++
+			continue
+		}
+		uid, _ := item.UserID.Int64()
+		p := model.Provider{
+			Name:           item.Name,
+			BaseURL:        item.BaseURL,
+			AccessToken:    item.AccessToken,
+			UserID:         int(uid),
+			Status:         item.Status,
+			Priority:       item.Priority,
+			Weight:         item.Weight,
+			CheckinEnabled: item.CheckinEnabled,
+			Remark:         item.Remark,
+		}
+		if p.Status == 0 {
+			p.Status = 1
+		}
+		if p.Weight == 0 {
+			p.Weight = 10
+		}
+		if err := p.Insert(); err != nil {
+			skipped++
+		} else {
+			imported++
+		}
+	}
+	msg := fmt.Sprintf("成功导入 %d 个，跳过 %d 个", imported, skipped)
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": msg})
 }
 
 func CreateProvider(c *gin.Context) {
@@ -124,4 +228,92 @@ func GetProviderTokens(c *gin.Context) {
 		t.CleanForResponse()
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": tokens})
+}
+
+func GetProviderPricing(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的 ID"})
+		return
+	}
+	pricing, err := model.GetModelPricingByProvider(id)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": pricing})
+}
+
+func CreateProviderToken(c *gin.Context) {
+	providerId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的供应商 ID"})
+		return
+	}
+	provider, err := model.GetProviderById(providerId)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "供应商不存在"})
+		return
+	}
+	var req struct {
+		Name           string `json:"name"`
+		GroupName      string `json:"group_name"`
+		UnlimitedQuota bool   `json:"unlimited_quota"`
+		RemainQuota    int64  `json:"remain_quota"`
+		ModelLimits    string `json:"model_limits"`
+	}
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	// Call upstream to create token (upstream generates SK key)
+	client := service.NewUpstreamClient(provider.BaseURL, provider.AccessToken, provider.UserID)
+	if err := client.CreateUpstreamToken(req.Name, req.GroupName, req.UnlimitedQuota, req.RemainQuota, req.ModelLimits); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "上游创建 Token 失败: " + err.Error()})
+		return
+	}
+	// Sync tokens back to get the newly created token
+	go func() {
+		if err := service.SyncProvider(provider); err != nil {
+			common.SysLog("sync after create token failed: " + err.Error())
+		}
+	}()
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Token 已在上游创建，正在同步回本地"})
+}
+
+func UpdateProviderToken(c *gin.Context) {
+	tokenId, err := strconv.Atoi(c.Param("token_id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的 Token ID"})
+		return
+	}
+	var token model.ProviderToken
+	if err := json.NewDecoder(c.Request.Body).Decode(&token); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	token.Id = tokenId
+	if err := token.Update(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+}
+
+func DeleteProviderToken(c *gin.Context) {
+	tokenId, err := strconv.Atoi(c.Param("token_id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的 Token ID"})
+		return
+	}
+	token, err := model.GetProviderTokenById(tokenId)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "Token 不存在"})
+		return
+	}
+	if err := token.Delete(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }

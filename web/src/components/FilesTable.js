@@ -1,18 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import {
-  Button,
-  Form,
-  Header,
-  Icon,
-  Pagination,
-  Popup,
-  Progress,
-  Segment,
-  Table,
-} from 'semantic-ui-react';
 import { API, copy, showError, showSuccess } from '../helpers';
 import { useDropzone } from 'react-dropzone';
 import { ITEMS_PER_PAGE } from '../constants';
+import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
+import Button from './ui/Button';
+import Input from './ui/Input';
+import ProgressBar from './ui/ProgressBar';
+import Pagination from './ui/Pagination';
+import { UploadCloud, Search, Download, Trash2, Copy } from 'lucide-react';
 
 const FilesTable = () => {
   const [files, setFiles] = useState([]);
@@ -22,7 +17,7 @@ const FilesTable = () => {
   const [searching, setSearching] = useState(false);
   const { acceptedFiles, getRootProps, getInputProps } = useDropzone();
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState('0');
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const loadFiles = async (startIdx) => {
     const res = await API.get(`/api/file/?p=${startIdx}`);
@@ -79,7 +74,6 @@ const FilesTable = () => {
       let newFiles = [...files];
       let realIdx = (activePage - 1) * ITEMS_PER_PAGE + idx;
       newFiles[realIdx].deleted = true;
-      // newFiles.splice(idx, 1);
       setFiles(newFiles);
       showSuccess('文件已删除！');
     } else {
@@ -87,9 +81,9 @@ const FilesTable = () => {
     }
   };
 
-  const searchFiles = async () => {
+  const searchFiles = async (e) => {
+    if (e) e.preventDefault();
     if (searchKeyword === '') {
-      // if keyword is blank, load files instead.
       await loadFiles(0);
       setActivePage(1);
       return;
@@ -106,8 +100,8 @@ const FilesTable = () => {
     setSearching(false);
   };
 
-  const handleKeywordChange = async (e, { value }) => {
-    setSearchKeyword(value.trim());
+  const handleKeywordChange = async (e) => {
+    setSearchKeyword(e.target.value.trim());
   };
 
   const sortFile = (key) => {
@@ -147,7 +141,7 @@ const FilesTable = () => {
       showError(message);
     }
     setUploading(false);
-    setUploadProgress('0');
+    setUploadProgress(0);
     setSearchKeyword('');
     loadFiles(0).then();
     setActivePage(1);
@@ -158,145 +152,116 @@ const FilesTable = () => {
   }, [acceptedFiles]);
 
   return (
-    <>
-      <Segment
-        placeholder
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div
         {...getRootProps({ className: 'dropzone' })}
-        loading={uploading || loading}
-        style={{ cursor: 'pointer' }}
+        style={{
+          border: '2px dashed var(--border-color)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '2rem',
+          textAlign: 'center',
+          backgroundColor: 'var(--gray-50)',
+          cursor: 'pointer',
+          transition: 'all 0.2s'
+        }}
       >
-        <Header icon>
-          <Icon name='file outline' />
-          拖拽上传或点击上传
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+          <UploadCloud size={40} color="var(--text-secondary)" />
+          <span style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--text-primary)' }}>拖拽上传或点击上传</span>
           <input {...getInputProps()} />
-        </Header>
-      </Segment>
-      {uploading ? (
-        <Progress
-          percent={uploadProgress}
-          success
-          progress='percent'
-        ></Progress>
-      ) : (
-        <></>
+        </div>
+      </div>
+
+      {uploading && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
+            <span>上传中...</span>
+            <span>{uploadProgress}%</span>
+          </div>
+          <ProgressBar percent={uploadProgress} />
+        </div>
       )}
-      <Form onSubmit={searchFiles}>
-        <Form.Input
-          icon='search'
-          fluid
-          iconPosition='left'
+
+      <form onSubmit={searchFiles}>
+        <Input
+          icon={Search}
           placeholder='搜索文件的名称，上传者以及描述信息 ...'
           value={searchKeyword}
-          loading={searching}
           onChange={handleKeywordChange}
         />
-      </Form>
+      </form>
 
-      <Table basic>
-        <Table.Header>
-          <Table.Row>
-            <Table.HeaderCell
-              style={{ cursor: 'pointer' }}
-              onClick={() => {
-                sortFile('filename');
-              }}
-            >
-              文件名
-            </Table.HeaderCell>
-            <Table.HeaderCell
-              style={{ cursor: 'pointer' }}
-              onClick={() => {
-                sortFile('uploader_id');
-              }}
-            >
-              上传者
-            </Table.HeaderCell>
-            <Table.HeaderCell
-              style={{ cursor: 'pointer' }}
-              onClick={() => {
-                sortFile('email');
-              }}
-            >
-              上传时间
-            </Table.HeaderCell>
-            <Table.HeaderCell>操作</Table.HeaderCell>
-          </Table.Row>
-        </Table.Header>
-
-        <Table.Body>
-          {files
-            .slice(
-              (activePage - 1) * ITEMS_PER_PAGE,
-              activePage * ITEMS_PER_PAGE
-            )
-            .map((file, idx) => {
-              if (file.deleted) return <></>;
-              return (
-                <Table.Row key={file.id}>
-                  <Table.Cell>
-                    <a href={'/upload/' + file.link} target='_blank'>
-                      {file.filename}
-                    </a>
-                  </Table.Cell>
-                  <Popup
-                    content={'上传者 ID：' + file.uploader_id}
-                    trigger={<Table.Cell>{file.uploader}</Table.Cell>}
-                  />
-                  <Table.Cell>{file.upload_time}</Table.Cell>
-                  <Table.Cell>
-                    <div>
-                      <Button
-                        size={'small'}
-                        positive
-                        onClick={() => {
-                          downloadFile(file.link, file.filename);
-                        }}
-                      >
-                        下载
-                      </Button>
-                      <Button
-                        size={'small'}
-                        negative
-                        onClick={() => {
-                          deleteFile(file.id, idx).then();
-                        }}
-                      >
-                        删除
-                      </Button>
-                      <Button
-                        size={'small'}
-                        onClick={() => {
-                          copyLink(file.link);
-                        }}
-                      >
-                        复制链接
-                      </Button>
-                    </div>
-                  </Table.Cell>
-                </Table.Row>
-              );
-            })}
-        </Table.Body>
-
-        <Table.Footer>
-          <Table.Row>
-            <Table.HeaderCell colSpan='6'>
-              <Pagination
-                floated='right'
-                activePage={activePage}
-                onPageChange={onPaginationChange}
-                size='small'
-                siblingRange={1}
-                totalPages={
-                  Math.ceil(files.length / ITEMS_PER_PAGE) +
-                  (files.length % ITEMS_PER_PAGE === 0 ? 1 : 0)
-                }
-              />
-            </Table.HeaderCell>
-          </Table.Row>
-        </Table.Footer>
-      </Table>
-    </>
+      <div style={{ backgroundColor: 'white', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+        <Table>
+          <Thead>
+            <Tr>
+              <Th onClick={() => sortFile('filename')} style={{ cursor: 'pointer' }}>文件名</Th>
+              <Th onClick={() => sortFile('uploader_id')} style={{ cursor: 'pointer' }}>上传者</Th>
+              <Th onClick={() => sortFile('email')} style={{ cursor: 'pointer' }}>上传时间</Th>
+              <Th>操作</Th>
+            </Tr>
+          </Thead>
+          <Tbody>
+            {files
+              .slice(
+                (activePage - 1) * ITEMS_PER_PAGE,
+                activePage * ITEMS_PER_PAGE
+              )
+              .map((file, idx) => {
+                if (file.deleted) return null;
+                return (
+                  <Tr key={file.id}>
+                    <Td>
+                      <a href={'/upload/' + file.link} target='_blank' rel="noreferrer" style={{ color: 'var(--primary-600)', textDecoration: 'none' }}>
+                        {file.filename}
+                      </a>
+                    </Td>
+                    <Td title={'上传者 ID：' + file.uploader_id}>{file.uploader}</Td>
+                    <Td>{file.upload_time}</Td>
+                    <Td>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <Button
+                          size="sm"
+                          title="下载"
+                          onClick={() => downloadFile(file.link, file.filename)}
+                        >
+                          <Download size={16} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          title="复制链接"
+                          onClick={() => copyLink(file.link)}
+                        >
+                          <Copy size={16} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          title="删除"
+                          onClick={() => deleteFile(file.id, idx)}
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      </div>
+                    </Td>
+                  </Tr>
+                );
+              })}
+          </Tbody>
+        </Table>
+        <div style={{ padding: '1rem', borderTop: '1px solid var(--border-color)' }}>
+          <Pagination
+            activePage={activePage}
+            totalPages={
+              Math.ceil(files.length / ITEMS_PER_PAGE) +
+              (files.length % ITEMS_PER_PAGE === 0 ? 1 : 0)
+            }
+            onPageChange={onPaginationChange}
+          />
+        </div>
+      </div>
+    </div>
   );
 };
 

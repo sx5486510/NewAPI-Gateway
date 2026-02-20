@@ -62,12 +62,19 @@ func SetApiRouter(router *gin.Engine) {
 		providerRoute.Use(middleware.AdminAuth(), middleware.NoTokenAuth())
 		{
 			providerRoute.GET("/", controller.GetProviders)
+			providerRoute.GET("/export", controller.ExportProviders)
+			providerRoute.POST("/import", controller.ImportProviders)
+			providerRoute.GET("/:id", controller.GetProviderDetail)
 			providerRoute.POST("/", controller.CreateProvider)
 			providerRoute.PUT("/", controller.UpdateProvider)
 			providerRoute.DELETE("/:id", controller.DeleteProvider)
 			providerRoute.POST("/:id/sync", controller.SyncProviderHandler)
 			providerRoute.POST("/:id/checkin", controller.CheckinProviderHandler)
 			providerRoute.GET("/:id/tokens", controller.GetProviderTokens)
+			providerRoute.GET("/:id/pricing", controller.GetProviderPricing)
+			providerRoute.POST("/:id/tokens", controller.CreateProviderToken)
+			providerRoute.PUT("/token/:token_id", controller.UpdateProviderToken)
+			providerRoute.DELETE("/token/:token_id", controller.DeleteProviderToken)
 		}
 
 		// === Aggregated Token (User) ===

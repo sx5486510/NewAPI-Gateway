@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Header, Segment } from 'semantic-ui-react';
 import { API, showError } from '../../helpers';
 import { marked } from 'marked';
+import Card from '../../components/ui/Card';
 
 const About = () => {
   const [about, setAbout] = useState('');
@@ -9,41 +9,44 @@ const About = () => {
 
   const displayAbout = async () => {
     setAbout(localStorage.getItem('about') || '');
-    const res = await API.get('/api/about');
-    const { success, message, data } = res.data;
-    if (success) {
-      let HTMLAbout = marked.parse(data);
-      setAbout(HTMLAbout);
-      localStorage.setItem('about', HTMLAbout);
-    } else {
-      showError(message);
-      setAbout('加载关于内容失败...');
+    try {
+      const res = await API.get('/api/about');
+      const { success, message, data } = res.data;
+      if (success) {
+        let HTMLAbout = marked.parse(data);
+        setAbout(HTMLAbout);
+        localStorage.setItem('about', HTMLAbout);
+      } else {
+        showError(message);
+        setAbout('加载关于内容失败...');
+      }
+    } catch (e) {
+      showError("加载关于页失败");
     }
     setAboutLoaded(true);
   };
 
   useEffect(() => {
-    displayAbout().then();
+    displayAbout();
   }, []);
 
   return (
     <>
-      <Segment>
+      <Card padding="2rem" className="prose">
         {aboutLoaded && about === '' ? (
           <>
-            <Header as='h3'>关于</Header>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>关于</h2>
             <p>可在设置页面设置关于内容，支持 HTML & Markdown</p>
-            项目仓库地址：
-            <a href='https://github.com/songquanpeng/gin-template'>
-              https://github.com/songquanpeng/gin-template
-            </a>
+            <p>项目仓库地址：
+              <a href='https://github.com/xxbbzy/API-Gateway-Aggregator' style={{ color: 'var(--primary-600)', marginLeft: '0.5rem' }}>
+                https://github.com/xxbbzy/API-Gateway-Aggregator
+              </a>
+            </p>
           </>
         ) : (
-          <>
-            <div dangerouslySetInnerHTML={{ __html: about }}></div>
-          </>
+          <div dangerouslySetInnerHTML={{ __html: about }}></div>
         )}
-      </Segment>
+      </Card>
     </>
   );
 };

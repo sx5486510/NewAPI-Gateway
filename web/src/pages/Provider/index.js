@@ -1,16 +1,10 @@
 import React from 'react';
-import { Container } from 'semantic-ui-react';
 import ProvidersTable from '../../components/ProvidersTable';
-import Header from '../../components/Header';
-import Footer from '../../components/Footer';
 
 const Provider = () => (
     <>
-        <Header />
-        <Container>
-            <ProvidersTable />
-        </Container>
-        <Footer />
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>供应商管理</h2>
+        <ProvidersTable />
     </>
 );
 

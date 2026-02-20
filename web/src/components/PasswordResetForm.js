@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Form, Grid, Header, Image, Segment } from 'semantic-ui-react';
 import { API, showError, showInfo, showSuccess } from '../helpers';
 import Turnstile from 'react-turnstile';
+import Button from './ui/Button';
+import Input from './ui/Input';
+import Card from './ui/Card';
+import { Mail } from 'lucide-react';
 
 const PasswordResetForm = () => {
   const [inputs, setInputs] = useState({
@@ -31,6 +34,7 @@ const PasswordResetForm = () => {
   }
 
   async function handleSubmit(e) {
+    if (e) e.preventDefault();
     if (!email) return;
     if (turnstileEnabled && turnstileToken === '') {
       showInfo('请稍后几秒重试，Turnstile 正在检查用户环境！');
@@ -51,45 +55,46 @@ const PasswordResetForm = () => {
   }
 
   return (
-    <Grid textAlign='center' style={{ marginTop: '48px' }}>
-      <Grid.Column style={{ maxWidth: 450 }}>
-        <Header as='h2' color='' textAlign='center'>
-          <Image src='/logo.png' /> 密码重置
-        </Header>
-        <Form size='large'>
-          <Segment>
-            <Form.Input
-              fluid
-              icon='mail'
-              iconPosition='left'
-              placeholder='邮箱地址'
+    <div className="flex h-screen items-center justify-center bg-gray-50" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-secondary)' }}>
+      <div style={{ width: '100%', maxWidth: '28rem', padding: '1rem' }}>
+        <div className="text-center mb-8" style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <img src="/logo.png" alt="Logo" style={{ height: '3rem', margin: '0 auto 1rem' }} />
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>密码重置</h2>
+        </div>
+
+        <Card padding="2rem" className="shadow-xl">
+          <form size='large' onSubmit={handleSubmit}>
+            <Input
+              icon={Mail}
+              placeholder='输入邮箱地址'
               name='email'
               value={email}
               onChange={handleChange}
             />
-            {turnstileEnabled ? (
-              <Turnstile
-                sitekey={turnstileSiteKey}
-                onVerify={(token) => {
-                  setTurnstileToken(token);
-                }}
-              />
-            ) : (
-              <></>
+            {turnstileEnabled && (
+              <div style={{ margin: '1rem 0' }}>
+                <Turnstile
+                  sitekey={turnstileSiteKey}
+                  onVerify={(token) => {
+                    setTurnstileToken(token);
+                  }}
+                />
+              </div>
             )}
             <Button
-              color=''
-              fluid
-              size='large'
+              variant="primary"
+              className="w-full mt-4"
+              style={{ width: '100%', marginTop: '1rem' }}
               onClick={handleSubmit}
               loading={loading}
+              type="submit"
             >
               提交
             </Button>
-          </Segment>
-        </Form>
-      </Grid.Column>
-    </Grid>
+          </form>
+        </Card>
+      </div>
+    </div>
   );
 };
 

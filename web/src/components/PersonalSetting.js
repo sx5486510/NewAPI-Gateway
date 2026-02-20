@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Divider, Form, Header, Image, Modal } from 'semantic-ui-react';
 import { Link } from 'react-router-dom';
 import { API, copy, showError, showInfo, showSuccess } from '../helpers';
 import Turnstile from 'react-turnstile';
+import Button from './ui/Button';
+import Modal from './ui/Modal';
+import Input from './ui/Input';
+import Card from './ui/Card';
 
 const PersonalSetting = () => {
   const [inputs, setInputs] = useState({
@@ -30,7 +33,8 @@ const PersonalSetting = () => {
     }
   }, []);
 
-  const handleInputChange = (e, { name, value }) => {
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
     setInputs((inputs) => ({ ...inputs, [name]: value }));
   };
 
@@ -101,114 +105,108 @@ const PersonalSetting = () => {
   };
 
   return (
-    <div style={{ lineHeight: '40px' }}>
-      <Header as='h3'>通用设置</Header>
-      <Button as={Link} to={`/user/edit/`}>
-        更新个人信息
-      </Button>
-      <Button onClick={generateToken}>生成访问令牌</Button>
-      <Divider />
-      <Header as='h3'>账号绑定</Header>
-      {status.wechat_login && (
-        <Button
-          onClick={() => {
-            setShowWeChatBindModal(true);
-          }}
-        >
-          绑定微信账号
-        </Button>
-      )}
+    <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+      <Card padding="1.5rem" className="mb-6">
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '1rem' }}>通用设置</h3>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <Link to={`/user/edit/`}>
+            <Button variant="secondary">更新个人信息</Button>
+          </Link>
+          <Button variant="outline" onClick={generateToken}>生成访问令牌</Button>
+        </div>
+      </Card>
+
+      <Card padding="1.5rem">
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '1rem' }}>账号绑定</h3>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          {status.wechat_login && (
+            <Button
+              variant="secondary"
+              onClick={() => setShowWeChatBindModal(true)}
+            >
+              绑定微信账号
+            </Button>
+          )}
+          {status.github_oauth && (
+            <Button variant="secondary" onClick={openGitHubOAuth}>绑定 GitHub 账号</Button>
+          )}
+          <Button
+            variant="secondary"
+            onClick={() => setShowEmailBindModal(true)}
+          >
+            绑定邮箱地址
+          </Button>
+        </div>
+      </Card>
+
       <Modal
+        title="绑定微信账号"
+        isOpen={showWeChatBindModal}
         onClose={() => setShowWeChatBindModal(false)}
-        onOpen={() => setShowWeChatBindModal(true)}
-        open={showWeChatBindModal}
-        size={'mini'}
       >
-        <Modal.Content>
-          <Modal.Description>
-            <Image src={status.wechat_qrcode} fluid />
-            <div style={{ textAlign: 'center' }}>
-              <p>
-                微信扫码关注公众号，输入「验证码」获取验证码（三分钟内有效）
-              </p>
-            </div>
-            <Form size='large'>
-              <Form.Input
-                fluid
-                placeholder='验证码'
-                name='wechat_verification_code'
-                value={inputs.wechat_verification_code}
-                onChange={handleInputChange}
-              />
-              <Button color='' fluid size='large' onClick={bindWeChat}>
-                绑定
-              </Button>
-            </Form>
-          </Modal.Description>
-        </Modal.Content>
+        <div style={{ textAlign: 'center' }}>
+          {status.wechat_qrcode && (
+            <img src={status.wechat_qrcode} alt="WeChat QRCode" style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)', marginBottom: '1rem' }} />
+          )}
+          <p style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>
+            微信扫码关注公众号，输入「验证码」获取验证码（三分钟内有效）
+          </p>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <Input
+              placeholder='验证码'
+              name='wechat_verification_code'
+              value={inputs.wechat_verification_code}
+              onChange={handleInputChange}
+              style={{ marginBottom: 0 }}
+            />
+            <Button variant="primary" onClick={bindWeChat}>
+              绑定
+            </Button>
+          </div>
+        </div>
       </Modal>
-      {status.github_oauth && (
-        <Button onClick={openGitHubOAuth}>绑定 GitHub 账号</Button>
-      )}
-      <Button
-        onClick={() => {
-          setShowEmailBindModal(true);
-        }}
-      >
-        绑定邮箱地址
-      </Button>
+
       <Modal
+        title="绑定邮箱地址"
+        isOpen={showEmailBindModal}
         onClose={() => setShowEmailBindModal(false)}
-        onOpen={() => setShowEmailBindModal(true)}
-        open={showEmailBindModal}
-        size={'tiny'}
-        style={{ maxWidth: '450px' }}
       >
-        <Modal.Header>绑定邮箱地址</Modal.Header>
-        <Modal.Content>
-          <Modal.Description>
-            <Form size='large'>
-              <Form.Input
-                fluid
-                placeholder='输入邮箱地址'
-                onChange={handleInputChange}
-                name='email'
-                type='email'
-                action={
-                  <Button onClick={sendVerificationCode} disabled={loading}>
-                    获取验证码
-                  </Button>
-                }
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <Input
+              placeholder='输入邮箱地址'
+              onChange={handleInputChange}
+              name='email'
+              type='email'
+              style={{ marginBottom: 0, flex: 1 }}
+            />
+            <Button onClick={sendVerificationCode} disabled={loading} variant="outline">
+              获取验证码
+            </Button>
+          </div>
+          <Input
+            placeholder='验证码'
+            name='email_verification_code'
+            value={inputs.email_verification_code}
+            onChange={handleInputChange}
+          />
+          {turnstileEnabled && (
+            <div style={{ margin: '1rem 0' }}>
+              <Turnstile
+                sitekey={turnstileSiteKey}
+                onVerify={(token) => setTurnstileToken(token)}
               />
-              <Form.Input
-                fluid
-                placeholder='验证码'
-                name='email_verification_code'
-                value={inputs.email_verification_code}
-                onChange={handleInputChange}
-              />
-              {turnstileEnabled ? (
-                <Turnstile
-                  sitekey={turnstileSiteKey}
-                  onVerify={(token) => {
-                    setTurnstileToken(token);
-                  }}
-                />
-              ) : (
-                <></>
-              )}
-              <Button
-                color=''
-                fluid
-                size='large'
-                onClick={bindEmail}
-                loading={loading}
-              >
-                绑定
-              </Button>
-            </Form>
-          </Modal.Description>
-        </Modal.Content>
+            </div>
+          )}
+          <Button
+            variant="primary"
+            className="w-full"
+            onClick={bindEmail}
+            disabled={loading}
+          >
+            绑定
+          </Button>
+        </div>
       </Modal>
     </div>
   );

@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Form, Grid, Header, Image, Segment } from 'semantic-ui-react';
 import { API, copy, showError, showSuccess } from '../helpers';
 import { useSearchParams } from 'react-router-dom';
+import Button from './ui/Button';
+import Input from './ui/Input';
+import Card from './ui/Card';
+import { Mail } from 'lucide-react';
 
 const PasswordResetConfirm = () => {
   const [inputs, setInputs] = useState({
@@ -12,7 +15,7 @@ const PasswordResetConfirm = () => {
 
   const [loading, setLoading] = useState(false);
 
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   useEffect(() => {
     let token = searchParams.get('token');
     let email = searchParams.get('email');
@@ -20,9 +23,10 @@ const PasswordResetConfirm = () => {
       token,
       email,
     });
-  }, []);
+  }, [searchParams]);
 
   async function handleSubmit(e) {
+    if (e) e.preventDefault();
     if (!email) return;
     setLoading(true);
     const res = await API.post(`/api/user/reset`, {
@@ -41,35 +45,36 @@ const PasswordResetConfirm = () => {
   }
 
   return (
-    <Grid textAlign='center' style={{ marginTop: '48px' }}>
-      <Grid.Column style={{ maxWidth: 450 }}>
-        <Header as='h2' color='' textAlign='center'>
-          <Image src='/logo.png' /> 密码重置确认
-        </Header>
-        <Form size='large'>
-          <Segment>
-            <Form.Input
-              fluid
-              icon='mail'
-              iconPosition='left'
+    <div className="flex h-screen items-center justify-center bg-gray-50" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-secondary)' }}>
+      <div style={{ width: '100%', maxWidth: '28rem', padding: '1rem' }}>
+        <div className="text-center mb-8" style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <img src="/logo.png" alt="Logo" style={{ height: '3rem', margin: '0 auto 1rem' }} />
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>密码重置确认</h2>
+        </div>
+
+        <Card padding="2rem" className="shadow-xl">
+          <form size='large' onSubmit={handleSubmit}>
+            <Input
+              icon={Mail}
               placeholder='邮箱地址'
               name='email'
               value={email}
               readOnly
             />
             <Button
-              color=''
-              fluid
-              size='large'
+              variant="primary"
+              className="w-full mt-4"
+              style={{ width: '100%', marginTop: '1rem' }}
               onClick={handleSubmit}
               loading={loading}
+              type="submit"
             >
               提交
             </Button>
-          </Segment>
-        </Form>
-      </Grid.Column>
-    </Grid>
+          </form>
+        </Card>
+      </div>
+    </div>
   );
 };
 

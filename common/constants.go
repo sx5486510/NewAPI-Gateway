@@ -67,8 +67,8 @@ var (
 	GlobalApiRateLimitNum            = 60
 	GlobalApiRateLimitDuration int64 = 3 * 60
 
-	GlobalWebRateLimitNum            = 60
-	GlobalWebRateLimitDuration int64 = 3 * 60
+	GlobalWebRateLimitNum            = 300
+	GlobalWebRateLimitDuration int64 = 60
 
 	UploadRateLimitNum            = 10
 	UploadRateLimitDuration int64 = 60

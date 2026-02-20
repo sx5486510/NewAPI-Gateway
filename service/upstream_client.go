@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -99,6 +100,37 @@ func (c *UpstreamClient) doRequest(method string, path string) ([]byte, error) {
 	return body, nil
 }
 
+// doRequestWithBody performs an HTTP request with a JSON body
+func (c *UpstreamClient) doRequestWithBody(method string, path string, payload interface{}) ([]byte, error) {
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	url := c.BaseURL + path
+	req, err := http.NewRequest(method, url, bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.AccessToken)
+	req.Header.Set("New-Api-User", strconv.Itoa(c.UserID))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("upstream returned status %d: %s", resp.StatusCode, string(body))
+	}
+	return body, nil
+}
+
 // GetPricing fetches /api/pricing from the upstream
 func (c *UpstreamClient) GetPricing() ([]UpstreamPricing, error) {
 	body, err := c.doRequest("GET", "/api/pricing")
@@ -125,11 +157,40 @@ func (c *UpstreamClient) GetTokens(page int, pageSize int) ([]UpstreamToken, err
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, err
 	}
-	var tokens []UpstreamToken
-	if err := json.Unmarshal(resp.Data, &tokens); err != nil {
-		return nil, err
+	// Upstream returns a paginated object: {page, page_size, total, items: [...tokens]}
+	var pageInfo struct {
+		Items []UpstreamToken `json:"items"`
+		Total int             `json:"total"`
 	}
-	return tokens, nil
+	if err := json.Unmarshal(resp.Data, &pageInfo); err != nil {
+		return nil, fmt.Errorf("failed to parse paginated token response: %w", err)
+	}
+	return pageInfo.Items, nil
+}
+
+// CreateUpstreamToken calls upstream POST /api/token/ to create a new token
+func (c *UpstreamClient) CreateUpstreamToken(name string, group string, unlimitedQuota bool, remainQuota int64, modelLimits string) error {
+	payload := map[string]interface{}{
+		"name":                 name,
+		"group":                group,
+		"unlimited_quota":      unlimitedQuota,
+		"remain_quota":         remainQuota,
+		"expired_time":         -1,
+		"model_limits_enabled": modelLimits != "",
+		"model_limits":         modelLimits,
+	}
+	body, err := c.doRequestWithBody("POST", "/api/token/", payload)
+	if err != nil {
+		return err
+	}
+	var resp UpstreamResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf("upstream create token failed: %s", resp.Message)
+	}
+	return nil
 }
 
 // GetUserSelf fetches /api/user/self from the upstream

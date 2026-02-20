@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Divider, Form, Grid, Header, Modal } from 'semantic-ui-react';
 import { API, showError, showSuccess } from '../helpers';
 import { marked } from 'marked';
+import Button from './ui/Button';
+import Input from './ui/Input';
+import Modal from './ui/Modal';
+import Card from './ui/Card';
 
 const OtherSetting = () => {
   let [inputs, setInputs] = useState({
@@ -35,7 +38,7 @@ const OtherSetting = () => {
   };
 
   useEffect(() => {
-    getOptions().then();
+    getOptions();
   }, []);
 
   const updateOption = async (key, value) => {
@@ -47,13 +50,15 @@ const OtherSetting = () => {
     const { success, message } = res.data;
     if (success) {
       setInputs((inputs) => ({ ...inputs, [key]: value }));
+      showSuccess('设置保存成功');
     } else {
       showError(message);
     }
     setLoading(false);
   };
 
-  const handleInputChange = async (e, { name, value }) => {
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
     setInputs((inputs) => ({ ...inputs, [name]: value }));
   };
 
@@ -79,12 +84,12 @@ const OtherSetting = () => {
 
   const openGitHubRelease = () => {
     window.location =
-      'https://github.com/songquanpeng/gin-template/releases/latest';
+      'https://github.com/xxbbzy/API-Gateway-Aggregator/releases/latest';
   };
 
   const checkUpdate = async () => {
     const res = await API.get(
-      'https://api.github.com/repos/songquanpeng/gin-template/releases/latest'
+      'https://api.github.com/repos/xxbbzy/API-Gateway-Aggregator/releases/latest'
     );
     const { tag_name, body } = res.data;
     if (tag_name === process.env.REACT_APP_VERSION) {
@@ -99,91 +104,114 @@ const OtherSetting = () => {
   };
 
   return (
-    <Grid columns={1}>
-      <Grid.Column>
-        <Form loading={loading}>
-          <Header as='h3'>通用设置</Header>
-          <Form.Button onClick={checkUpdate}>检查更新</Form.Button>
-          <Form.Group widths='equal'>
-            <Form.TextArea
-              label='公告'
-              placeholder='在此输入新的公告内容'
-              value={inputs.Notice}
-              name='Notice'
-              onChange={handleInputChange}
-              style={{ minHeight: 150, fontFamily: 'JetBrains Mono, Consolas' }}
-            />
-          </Form.Group>
-          <Form.Button onClick={submitNotice}>保存公告</Form.Button>
-          <Divider />
-          <Header as='h3'>个性化设置</Header>
-          <Form.Group widths='equal'>
-            <Form.Input
-              label='系统名称'
-              placeholder='在此输入系统名称'
-              value={inputs.SystemName}
-              name='SystemName'
-              onChange={handleInputChange}
-            />
-          </Form.Group>
-          <Form.Button onClick={submitSystemName}>设置系统名称</Form.Button>
-          <Form.Group widths='equal'>
-            <Form.Input
-              label='首页链接'
-              placeholder='在此输入首页链接，设置后将通过 iframe 方式嵌入该网页'
-              value={inputs.HomePageLink}
-              name='HomePageLink'
-              onChange={handleInputChange}
-              type='url'
-            />
-          </Form.Group>
-          <Form.Button onClick={submitHomePageLink}>设置首页链接</Form.Button>
-          <Form.Group widths='equal'>
-            <Form.TextArea
-              label='关于'
-              placeholder='在此输入新的关于内容，支持 Markdown & HTML 代码'
-              value={inputs.About}
-              name='About'
-              onChange={handleInputChange}
-              style={{ minHeight: 150, fontFamily: 'JetBrains Mono, Consolas' }}
-            />
-          </Form.Group>
-          <Form.Button onClick={submitAbout}>保存关于</Form.Button>
-          <Form.Group widths='equal'>
-            <Form.Input
-              label='页脚'
-              placeholder='在此输入新的页脚，留空则使用默认页脚，支持 HTML 代码'
-              value={inputs.Footer}
-              name='Footer'
-              onChange={handleInputChange}
-            />
-          </Form.Group>
-          <Form.Button onClick={submitFooter}>设置页脚</Form.Button>
-        </Form>
-      </Grid.Column>
-      <Modal
-        onClose={() => setShowUpdateModal(false)}
-        onOpen={() => setShowUpdateModal(true)}
-        open={showUpdateModal}
-      >
-        <Modal.Header>新版本：{updateData.tag_name}</Modal.Header>
-        <Modal.Content>
-          <Modal.Description>
-            <div dangerouslySetInnerHTML={{ __html: updateData.content }}></div>
-          </Modal.Description>
-        </Modal.Content>
-        <Modal.Actions>
-          <Button onClick={() => setShowUpdateModal(false)}>关闭</Button>
-          <Button
-            content='详情'
-            onClick={() => {
-              setShowUpdateModal(false);
-              openGitHubRelease();
+    <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <Card padding="1.5rem">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>通用设置</h3>
+          <Button onClick={checkUpdate} size="sm" variant="outline">检查更新</Button>
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>公告</label>
+          <textarea
+            value={inputs.Notice}
+            name='Notice'
+            onChange={handleInputChange}
+            rows={6}
+            placeholder='在此输入新的公告内容'
+            style={{
+              padding: '0.75rem',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-color)',
+              width: '100%',
+              fontFamily: 'monospace',
+              resize: 'vertical'
             }}
           />
-        </Modal.Actions>
+        </div>
+        <Button onClick={submitNotice} variant="primary" disabled={loading}>保存公告</Button>
+      </Card>
+
+      <Card padding="1.5rem">
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '1rem' }}>个性化设置</h3>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <Input
+            label='系统名称'
+            placeholder='在此输入系统名称'
+            value={inputs.SystemName}
+            name='SystemName'
+            onChange={handleInputChange}
+          />
+          <Button onClick={submitSystemName} variant="secondary" disabled={loading}>设置系统名称</Button>
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <Input
+            label='首页链接'
+            placeholder='在此输入首页链接，设置后将通过 iframe 方式嵌入该网页'
+            value={inputs.HomePageLink}
+            name='HomePageLink'
+            onChange={handleInputChange}
+            type='url'
+          />
+          <Button onClick={submitHomePageLink} variant="secondary" disabled={loading}>设置首页链接</Button>
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>关于</label>
+          <textarea
+            value={inputs.About}
+            name='About'
+            onChange={handleInputChange}
+            rows={6}
+            placeholder='在此输入新的关于内容，支持 Markdown & HTML 代码'
+            style={{
+              padding: '0.75rem',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-color)',
+              width: '100%',
+              fontFamily: 'monospace',
+              resize: 'vertical'
+            }}
+          />
+          <Button onClick={submitAbout} variant="secondary" className="mt-2" disabled={loading}>保存关于</Button>
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <Input
+            label='页脚'
+            placeholder='在此输入新的页脚，留空则使用默认页脚，支持 HTML 代码'
+            value={inputs.Footer}
+            name='Footer'
+            onChange={handleInputChange}
+          />
+          <Button onClick={submitFooter} variant="secondary" disabled={loading}>设置页脚</Button>
+        </div>
+      </Card>
+
+      <Modal
+        title={`新版本：${updateData.tag_name}`}
+        isOpen={showUpdateModal}
+        onClose={() => setShowUpdateModal(false)}
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setShowUpdateModal(false)}>关闭</Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setShowUpdateModal(false);
+                openGitHubRelease();
+              }}
+            >
+              详情
+            </Button>
+          </>
+        }
+      >
+        <div dangerouslySetInnerHTML={{ __html: updateData.content }} style={{ lineHeight: 1.6 }}></div>
       </Modal>
-    </Grid>
+    </div>
   );
 };
 

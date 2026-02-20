@@ -118,7 +118,8 @@ func syncBalance(client *UpstreamClient, provider *model.Provider) error {
 	if err != nil {
 		return err
 	}
-	provider.UpdateBalance(fmt.Sprintf("%d", userSelf.Balance))
+	balanceUSD := float64(userSelf.Balance) / 500000.0
+	provider.UpdateBalance(fmt.Sprintf("$%.2f", balanceUSD))
 	return nil
 }
 

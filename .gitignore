@@ -7,3 +7,5 @@ build
 node_modules
 /bin
 /logs
+/yewu
+.DS_Store

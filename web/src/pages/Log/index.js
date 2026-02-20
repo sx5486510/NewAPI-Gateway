@@ -1,16 +1,10 @@
 import React from 'react';
-import { Container } from 'semantic-ui-react';
 import LogsTable from '../../components/LogsTable';
-import Header from '../../components/Header';
-import Footer from '../../components/Footer';
 
 const Log = () => (
     <>
-        <Header />
-        <Container>
-            <LogsTable selfOnly={false} />
-        </Container>
-        <Footer />
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>日志查询</h2>
+        <LogsTable selfOnly={false} />
     </>
 );
 

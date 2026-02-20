@@ -1,16 +1,10 @@
 import React from 'react';
-import { Container } from 'semantic-ui-react';
 import ModelRoutesTable from '../../components/ModelRoutesTable';
-import Header from '../../components/Header';
-import Footer from '../../components/Footer';
 
 const Routes = () => (
     <>
-        <Header />
-        <Container>
-            <ModelRoutesTable />
-        </Container>
-        <Footer />
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>模型路由</h2>
+        <ModelRoutesTable />
     </>
 );
 
