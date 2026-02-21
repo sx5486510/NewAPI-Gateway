@@ -38,18 +38,25 @@ type UpstreamResponse struct {
 
 // UpstreamPricing mirrors the upstream Pricing structure
 type UpstreamPricing struct {
-	ModelName       string   `json:"model_name"`
-	QuotaType       int      `json:"quota_type"`
-	ModelRatio      float64  `json:"model_ratio"`
-	ModelPrice      float64  `json:"model_price"`
-	CompletionRatio float64  `json:"completion_ratio"`
-	EnableGroups    []string `json:"enable_groups"`
+	ModelName              string   `json:"model_name"`
+	QuotaType              int      `json:"quota_type"`
+	ModelRatio             float64  `json:"model_ratio"`
+	ModelPrice             float64  `json:"model_price"`
+	CompletionRatio        float64  `json:"completion_ratio"`
+	EnableGroups           []string `json:"enable_groups"`
+	SupportedEndpointTypes []string `json:"supported_endpoint_types"`
+}
+
+type UpstreamEndpointInfo struct {
+	Path   string `json:"path"`
+	Method string `json:"method"`
 }
 
 type UpstreamPricingPayload struct {
-	Data        []UpstreamPricing  `json:"data"`
-	GroupRatio  map[string]float64 `json:"group_ratio"`
-	UsableGroup map[string]string  `json:"usable_group"`
+	Data              []UpstreamPricing               `json:"data"`
+	GroupRatio        map[string]float64              `json:"group_ratio"`
+	UsableGroup       map[string]string               `json:"usable_group"`
+	SupportedEndpoint map[string]UpstreamEndpointInfo `json:"supported_endpoint"`
 }
 
 // UpstreamToken mirrors the upstream Token structure
@@ -155,6 +162,9 @@ func (c *UpstreamClient) GetPricing() (*UpstreamPricingPayload, error) {
 	}
 	if resp.UsableGroup == nil {
 		resp.UsableGroup = make(map[string]string)
+	}
+	if resp.SupportedEndpoint == nil {
+		resp.SupportedEndpoint = make(map[string]UpstreamEndpointInfo)
 	}
 	return &resp, nil
 }

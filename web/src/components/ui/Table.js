@@ -1,9 +1,9 @@
 import React from 'react';
 
-export const Table = ({ children }) => {
+export const Table = ({ children, containerStyle, tableStyle, minWidth = '600px' }) => {
     return (
-        <div style={{ overflowX: 'auto', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+        <div style={{ overflowX: 'auto', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', ...containerStyle }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth, ...tableStyle }}>
                 {children}
             </table>
         </div>

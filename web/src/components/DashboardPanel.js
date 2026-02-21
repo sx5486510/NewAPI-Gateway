@@ -5,8 +5,7 @@ import {
   XCircle,
   Server,
   Box,
-  GitBranch,
-  BarChart3
+  GitBranch
 } from 'lucide-react';
 import { API, showError } from '../helpers';
 import Card from './ui/Card';
@@ -93,40 +92,6 @@ const HorizontalMetricList = ({
   );
 };
 
-const RecentTrendCard = ({ items = [] }) => {
-  const maxValue = useMemo(
-    () => Math.max(...items.map((item) => Number(item.request_count || 0)), 0),
-    [items]
-  );
-
-  return (
-    <Card padding='1.25rem' className='dashboard-panel-card'>
-      <div className='dashboard-panel-title'>
-        <BarChart3 size={16} />
-        <span>最近请求趋势</span>
-      </div>
-      {items.length === 0 ? (
-        <div className='dashboard-empty'>暂无趋势数据</div>
-      ) : (
-        <div className='dashboard-trend-chart'>
-          {items.slice(-10).map((item) => {
-            const count = Number(item.request_count || 0);
-            const height = maxValue > 0 ? Math.max((count / maxValue) * 100, 6) : 6;
-            return (
-              <div key={item.date} className='dashboard-trend-item' title={`${item.date}: ${formatNumber(count)}`}>
-                <div className='dashboard-trend-track'>
-                  <div className='dashboard-trend-bar' style={{ height: `${height}%` }} />
-                </div>
-                <div className='dashboard-trend-label'>{item.date?.slice(5) || '-'}</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </Card>
-  );
-};
-
 const DashboardPanel = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -188,8 +153,6 @@ const DashboardPanel = () => {
           emptyText='暂无模型请求数据'
         />
       </div>
-
-      <RecentTrendCard items={stats.recent_requests || []} />
     </div>
   );
 };

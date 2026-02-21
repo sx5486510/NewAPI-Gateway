@@ -1,57 +1,212 @@
 package model
 
-import "time"
+import (
+	"math"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+)
 
 type UsageLog struct {
-	Id                int64  `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserId            int    `json:"user_id" gorm:"index"`
-	AggregatedTokenId int    `json:"aggregated_token_id"`
-	ProviderId        int    `json:"provider_id" gorm:"index"`
-	ProviderName      string `json:"provider_name" gorm:"type:varchar(128)"`
-	ProviderTokenId   int    `json:"provider_token_id"`
-	ModelName         string `json:"model_name" gorm:"type:varchar(255);index"`
-	PromptTokens      int    `json:"prompt_tokens"`
-	CompletionTokens  int    `json:"completion_tokens"`
-	ResponseTimeMs    int    `json:"response_time_ms"`
-	Status            int    `json:"status"`
-	ErrorMessage      string `json:"error_message" gorm:"type:text"`
-	ClientIp          string `json:"client_ip" gorm:"type:varchar(64)"`
-	RequestId         string `json:"request_id" gorm:"type:varchar(64);index"`
-	CreatedAt         int64  `json:"created_at" gorm:"index"`
+	Id                    int64   `json:"id" gorm:"primaryKey;autoIncrement"`
+	UserId                int     `json:"user_id" gorm:"index"`
+	AggregatedTokenId     int     `json:"aggregated_token_id"`
+	ProviderId            int     `json:"provider_id" gorm:"index"`
+	ProviderName          string  `json:"provider_name" gorm:"type:varchar(128)"`
+	ProviderTokenId       int     `json:"provider_token_id"`
+	ModelName             string  `json:"model_name" gorm:"type:varchar(255);index"`
+	PromptTokens          int     `json:"prompt_tokens"`
+	CompletionTokens      int     `json:"completion_tokens"`
+	CacheTokens           int     `json:"cache_tokens"`
+	CacheCreationTokens   int     `json:"cache_creation_tokens"`
+	CacheCreation5mTokens int     `json:"cache_creation_5m_tokens"`
+	CacheCreation1hTokens int     `json:"cache_creation_1h_tokens"`
+	ResponseTimeMs        int     `json:"response_time_ms"`
+	FirstTokenMs          int     `json:"first_token_ms"`
+	IsStream              bool    `json:"is_stream"`
+	CostUSD               float64 `json:"cost_usd"`
+	Status                int     `json:"status"`
+	ErrorMessage          string  `json:"error_message" gorm:"type:text"`
+	ClientIp              string  `json:"client_ip" gorm:"type:varchar(64)"`
+	RequestId             string  `json:"request_id" gorm:"type:varchar(64);index"`
+	CreatedAt             int64   `json:"created_at" gorm:"index"`
 }
 
 func (l *UsageLog) Insert() error {
 	l.CreatedAt = time.Now().Unix()
 	return DB.Model(&UsageLog{}).Create(map[string]interface{}{
-		"user_id":             l.UserId,
-		"aggregated_token_id": l.AggregatedTokenId,
-		"provider_id":         l.ProviderId,
-		"provider_name":       l.ProviderName,
-		"provider_token_id":   l.ProviderTokenId,
-		"model_name":          l.ModelName,
-		"prompt_tokens":       l.PromptTokens,
-		"completion_tokens":   l.CompletionTokens,
-		"response_time_ms":    l.ResponseTimeMs,
-		"status":              l.Status,
-		"error_message":       l.ErrorMessage,
-		"client_ip":           l.ClientIp,
-		"request_id":          l.RequestId,
-		"created_at":          l.CreatedAt,
+		"user_id":                 l.UserId,
+		"aggregated_token_id":     l.AggregatedTokenId,
+		"provider_id":             l.ProviderId,
+		"provider_name":           l.ProviderName,
+		"provider_token_id":       l.ProviderTokenId,
+		"model_name":              l.ModelName,
+		"prompt_tokens":           l.PromptTokens,
+		"completion_tokens":       l.CompletionTokens,
+		"cache_tokens":            l.CacheTokens,
+		"cache_creation_tokens":   l.CacheCreationTokens,
+		"cache_creation5m_tokens": l.CacheCreation5mTokens,
+		"cache_creation1h_tokens": l.CacheCreation1hTokens,
+		"response_time_ms":        l.ResponseTimeMs,
+		"first_token_ms":          l.FirstTokenMs,
+		"is_stream":               l.IsStream,
+		"cost_usd":                l.CostUSD,
+		"status":                  l.Status,
+		"error_message":           l.ErrorMessage,
+		"client_ip":               l.ClientIp,
+		"request_id":              l.RequestId,
+		"created_at":              l.CreatedAt,
 	}).Error
+}
+
+type UsageLogQuery struct {
+	UserID       *int
+	Offset       int
+	Limit        int
+	Keyword      string
+	ProviderName string
+	Status       string
+	ViewTab      string
+}
+
+type UsageLogSummary struct {
+	Total        int64   `json:"total"`
+	SuccessCount int64   `json:"success_count"`
+	ErrorCount   int64   `json:"error_count"`
+	InputTokens  int64   `json:"input_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
+	CacheTokens  int64   `json:"cache_tokens"`
+	TotalCost    float64 `json:"total_cost"`
+	AvgLatency   int64   `json:"avg_latency"`
+}
+
+func applyUsageLogFilters(db *gorm.DB, query UsageLogQuery) *gorm.DB {
+	if query.UserID != nil {
+		db = db.Where("user_id = ?", *query.UserID)
+	}
+	if providerName := strings.TrimSpace(query.ProviderName); providerName != "" {
+		db = db.Where("provider_name = ?", providerName)
+	}
+	if keyword := strings.TrimSpace(query.Keyword); keyword != "" {
+		like := "%" + keyword + "%"
+		db = db.Where(
+			"(model_name LIKE ? OR provider_name LIKE ? OR request_id LIKE ? OR error_message LIKE ? OR client_ip LIKE ?)",
+			like, like, like, like, like,
+		)
+	}
+
+	isErrorCondition := "(status <> 1 OR (error_message IS NOT NULL AND TRIM(error_message) <> ''))"
+	isSuccessCondition := "(status = 1 AND (error_message IS NULL OR TRIM(error_message) = ''))"
+	if query.ViewTab == "error" {
+		db = db.Where(isErrorCondition)
+	}
+	switch query.Status {
+	case "success":
+		db = db.Where(isSuccessCondition)
+	case "error":
+		db = db.Where(isErrorCondition)
+	}
+	return db
+}
+
+func QueryUsageLogs(query UsageLogQuery) ([]*UsageLog, int64, error) {
+	if query.Limit <= 0 {
+		query.Limit = 15
+	}
+	if query.Offset < 0 {
+		query.Offset = 0
+	}
+
+	baseQuery := applyUsageLogFilters(DB.Model(&UsageLog{}), query)
+
+	var total int64
+	if err := baseQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var logs []*UsageLog
+	err := baseQuery.Order("id desc").Limit(query.Limit).Offset(query.Offset).Find(&logs).Error
+	return logs, total, err
+}
+
+func QueryUsageLogProviders(query UsageLogQuery) ([]string, error) {
+	// Provider options should not collapse to the currently selected provider.
+	// Keep other filters, but ignore provider_name itself.
+	providerQuery := query
+	providerQuery.ProviderName = ""
+
+	var providers []string
+	err := applyUsageLogFilters(DB.Model(&UsageLog{}), providerQuery).
+		Where("provider_name IS NOT NULL AND TRIM(provider_name) <> ''").
+		Distinct("provider_name").
+		Order("provider_name asc").
+		Pluck("provider_name", &providers).Error
+	return providers, err
+}
+
+func QueryUsageLogSummary(query UsageLogQuery) (UsageLogSummary, error) {
+	isErrorCondition := "(status <> 1 OR (error_message IS NOT NULL AND TRIM(error_message) <> ''))"
+	isSuccessCondition := "(status = 1 AND (error_message IS NULL OR TRIM(error_message) = ''))"
+
+	type usageLogSummaryRaw struct {
+		Total        int64
+		SuccessCount int64
+		ErrorCount   int64
+		InputTokens  int64
+		OutputTokens int64
+		CacheTokens  int64
+		TotalCost    float64
+		AvgLatency   float64
+	}
+
+	var raw usageLogSummaryRaw
+	err := applyUsageLogFilters(DB.Model(&UsageLog{}), query).
+		Select(
+			"COUNT(*) AS total",
+			"SUM(CASE WHEN "+isSuccessCondition+" THEN 1 ELSE 0 END) AS success_count",
+			"SUM(CASE WHEN "+isErrorCondition+" THEN 1 ELSE 0 END) AS error_count",
+			"COALESCE(SUM(prompt_tokens), 0) AS input_tokens",
+			"COALESCE(SUM(completion_tokens), 0) AS output_tokens",
+			"COALESCE(SUM(cache_tokens), 0) AS cache_tokens",
+			"COALESCE(SUM(cost_usd), 0) AS total_cost",
+			"COALESCE(AVG(response_time_ms), 0) AS avg_latency",
+		).
+		Scan(&raw).Error
+	if err != nil {
+		return UsageLogSummary{}, err
+	}
+
+	return UsageLogSummary{
+		Total:        raw.Total,
+		SuccessCount: raw.SuccessCount,
+		ErrorCount:   raw.ErrorCount,
+		InputTokens:  raw.InputTokens,
+		OutputTokens: raw.OutputTokens,
+		CacheTokens:  raw.CacheTokens,
+		TotalCost:    raw.TotalCost,
+		AvgLatency:   int64(math.Round(raw.AvgLatency)),
+	}, nil
 }
 
 // GetUserLogs returns logs for a specific user
 func GetUserLogs(userId int, startIdx int, num int) ([]*UsageLog, error) {
-	var logs []*UsageLog
-	err := DB.Where("user_id = ?", userId).Order("id desc").
-		Limit(num).Offset(startIdx).Find(&logs).Error
+	logQuery := UsageLogQuery{
+		UserID: &userId,
+		Offset: startIdx,
+		Limit:  num,
+	}
+	logs, _, err := QueryUsageLogs(logQuery)
 	return logs, err
 }
 
 // GetAllLogs returns all logs (admin)
 func GetAllLogs(startIdx int, num int) ([]*UsageLog, error) {
-	var logs []*UsageLog
-	err := DB.Order("id desc").Limit(num).Offset(startIdx).Find(&logs).Error
+	logQuery := UsageLogQuery{
+		Offset: startIdx,
+		Limit:  num,
+	}
+	logs, _, err := QueryUsageLogs(logQuery)
 	return logs, err
 }
 

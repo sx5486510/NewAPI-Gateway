@@ -251,7 +251,19 @@ func GetProviderPricing(c *gin.Context) {
 	if provider.PricingGroupRatio != "" {
 		_ = json.Unmarshal([]byte(provider.PricingGroupRatio), &groupRatio)
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": pricing, "group_ratio": groupRatio})
+
+	supportedEndpoint := map[string]map[string]string{}
+	if provider.PricingSupportedEndpoint != "" {
+		_ = json.Unmarshal([]byte(provider.PricingSupportedEndpoint), &supportedEndpoint)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":            true,
+		"message":            "",
+		"data":               pricing,
+		"group_ratio":        groupRatio,
+		"supported_endpoint": supportedEndpoint,
+	})
 }
 
 func CreateProviderToken(c *gin.Context) {

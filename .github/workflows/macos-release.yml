@@ -33,12 +33,12 @@ jobs:
       - name: Build Backend
         run: |
           go mod download
-          go build -ldflags "-X 'gin-template/common.Version=$(git describe --tags)'" -o gin-template-macos
+          go build -ldflags "-X 'newapi-gateway/common.Version=$(git describe --tags)'" -o newapi-gateway-macos
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: gin-template-macos
+          files: newapi-gateway-macos
           draft: false
           generate_release_notes: true
         env:

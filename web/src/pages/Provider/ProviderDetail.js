@@ -25,6 +25,7 @@ const ProviderDetail = () => {
     const [tokens, setTokens] = useState([]);
     const [pricing, setPricing] = useState([]);
     const [pricingGroupRatio, setPricingGroupRatio] = useState({});
+    const [endpointMap, setEndpointMap] = useState({});
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [showTokenModal, setShowTokenModal] = useState(false);
@@ -52,10 +53,11 @@ const ProviderDetail = () => {
     const loadPricing = useCallback(async () => {
         try {
             const res = await API.get(`/api/provider/${id}/pricing`);
-            const { success, data, message, group_ratio } = res.data;
+            const { success, data, message, group_ratio, supported_endpoint } = res.data;
             if (success) {
                 setPricing(data || []);
                 setPricingGroupRatio(group_ratio || {});
+                setEndpointMap(supported_endpoint || {});
             }
             else showError(message);
         } catch (e) { showError('加载定价失败'); }
@@ -130,6 +132,35 @@ const ProviderDetail = () => {
         } catch (e) {
             return [];
         }
+    };
+
+    const parseSupportedEndpointTypes = (supportedEndpointTypes) => {
+        try {
+            const types = JSON.parse(supportedEndpointTypes || '[]');
+            if (!Array.isArray(types)) return [];
+            return types.filter((t) => typeof t === 'string' && t.trim() !== '');
+        } catch (e) {
+            return [];
+        }
+    };
+
+    const resolveModelEndpoints = (pricingItem) => {
+        const defaultEndpoint = [{ type: 'openai', path: '/v1/chat/completions', method: 'POST' }];
+        if (!pricingItem) return defaultEndpoint;
+        const endpointTypes = parseSupportedEndpointTypes(pricingItem.supported_endpoint_types);
+        if (endpointTypes.length === 0) return defaultEndpoint;
+        return endpointTypes.map((type) => {
+            const info = endpointMap?.[type] || {};
+            let path = info.path || '';
+            if (path.includes('{model}')) {
+                path = path.replaceAll('{model}', pricingItem.model_name || '');
+            }
+            return {
+                type,
+                path,
+                method: info.method || 'POST'
+            };
+        });
     };
 
     const isPerRequestBilling = (pricingItem) => Number(pricingItem.model_price || 0) > 0 || Number(pricingItem.quota_type) === 1;
@@ -552,14 +583,46 @@ const ProviderDetail = () => {
                             <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
                                 模型支持的接口端点信息
                             </div>
-                            <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>openai：</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                    <code style={{ fontSize: '0.8rem', backgroundColor: 'var(--gray-100)', padding: '0.15rem 0.4rem', borderRadius: '0.25rem' }}>
-                                        /v1/chat/completions
-                                    </code>
-                                    <Badge color="green">POST</Badge>
-                                </div>
+                            <div style={{ marginTop: '0.75rem' }}>
+                                {(() => {
+                                    const modelEndpoints = resolveModelEndpoints(selectedPricing);
+                                    return (
+                                        <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                                            {modelEndpoints.map((endpoint, idx) => (
+                                                <div
+                                                    key={`${endpoint.type}-${idx}`}
+                                                    style={{
+                                                        display: 'grid',
+                                                        gridTemplateColumns: 'minmax(72px, 120px) 16px minmax(0, 1fr) auto',
+                                                        alignItems: 'center',
+                                                        columnGap: '0.5rem',
+                                                        padding: '0.65rem 0.75rem',
+                                                        borderBottom: idx === modelEndpoints.length - 1 ? 'none' : '1px dashed var(--border-color)'
+                                                    }}
+                                                >
+                                                    <span style={{ color: 'var(--text-primary)', fontWeight: '500' }}>{endpoint.type || '-'}</span>
+                                                    <span style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>：</span>
+                                                    <code style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', overflowWrap: 'anywhere' }}>
+                                                        {endpoint.path || '-'}
+                                                    </code>
+                                                    <span
+                                                        style={{
+                                                            fontSize: '0.75rem',
+                                                            color: 'var(--text-secondary)',
+                                                            padding: '0.1rem 0.45rem',
+                                                            borderRadius: '999px',
+                                                            border: '1px solid var(--border-color)',
+                                                            textTransform: 'uppercase',
+                                                            letterSpacing: '0.02em'
+                                                        }}
+                                                    >
+                                                        {endpoint.method || 'POST'}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         </Card>
 

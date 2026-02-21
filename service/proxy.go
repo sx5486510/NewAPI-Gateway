@@ -1,13 +1,14 @@
 package service
 
 import (
+	"NewAPI-Gateway/common"
+	"NewAPI-Gateway/model"
 	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"NewAPI-Gateway/common"
-	"NewAPI-Gateway/model"
 	"io"
 	"net/http"
 	"os"
@@ -106,7 +107,18 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 	if err != nil {
 		errorMsg := buildErrorMessage(err.Error(), c, bodyBytes)
 		logProxyErrorTrace(c, requestId, provider, token, errorMsg)
-		logUsage(aggToken, provider, token, c, requestId, "", 0, 0, startTime, 0, errorMsg)
+		logUsage(
+			aggToken,
+			provider,
+			token,
+			c,
+			requestId,
+			usageMetrics{ModelName: c.GetString("request_model")},
+			false,
+			0,
+			0,
+			errorMsg,
+		)
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": gin.H{
 				"message": "upstream request failed: " + err.Error(),
@@ -142,12 +154,33 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		var streamErrLines []string
+		streamUsage := usageMetrics{}
+		firstTokenMs := 0
 		errorStatus := resp.StatusCode >= 400
 		for scanner.Scan() {
 			line := scanner.Text()
 			fmt.Fprintf(c.Writer, "%s\n", line)
 			if errorStatus && len(streamErrLines) < 5 {
 				streamErrLines = append(streamErrLines, line)
+			}
+			currentUsage, hasData := extractUsageAndModelFromSSELine(line)
+			if hasData && firstTokenMs == 0 {
+				firstTokenMs = int(time.Since(startTime).Milliseconds())
+			}
+			if currentUsage.PromptTokens > streamUsage.PromptTokens {
+				streamUsage.PromptTokens = currentUsage.PromptTokens
+			}
+			if currentUsage.CompletionTokens > streamUsage.CompletionTokens {
+				streamUsage.CompletionTokens = currentUsage.CompletionTokens
+			}
+			if currentUsage.CacheTokens > streamUsage.CacheTokens {
+				streamUsage.CacheTokens = currentUsage.CacheTokens
+			}
+			if currentUsage.CostUSD > streamUsage.CostUSD {
+				streamUsage.CostUSD = currentUsage.CostUSD
+			}
+			if currentUsage.ModelName != "" {
+				streamUsage.ModelName = currentUsage.ModelName
 			}
 			if ok {
 				flusher.Flush()
@@ -172,9 +205,14 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			errorMsg = buildErrorMessage(errorMsg, c, bodyBytes)
 			logProxyErrorTrace(c, requestId, provider, token, errorMsg)
 		}
-		// Log usage (for stream, we can't easily count tokens from SSE, set 0)
+		if streamUsage.ModelName == "" {
+			streamUsage.ModelName = c.GetString("request_model")
+		}
 		elapsed := time.Since(startTime).Milliseconds()
-		logUsage(aggToken, provider, token, c, requestId, "", 0, 0, startTime, int(elapsed), errorMsg)
+		logUsage(
+			aggToken, provider, token, c, requestId,
+			streamUsage, true, firstTokenMs, int(elapsed), errorMsg,
+		)
 	} else {
 		// Non-streaming response
 		c.Status(resp.StatusCode)
@@ -182,18 +220,36 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		c.Writer.Write(respBody)
 
 		elapsed := time.Since(startTime).Milliseconds()
+		usage := extractUsageAndModelFromJSON(respBody)
+		if usage.ModelName == "" {
+			usage.ModelName = c.GetString("request_model")
+		}
 		errorMsg := ""
 		if resp.StatusCode >= 400 {
 			errorMsg = buildErrorMessage(string(respBody), c, bodyBytes)
 			logProxyErrorTrace(c, requestId, provider, token, errorMsg)
 		}
-		logUsage(aggToken, provider, token, c, requestId, "", 0, 0, startTime, int(elapsed), errorMsg)
+		logUsage(
+			aggToken, provider, token, c, requestId,
+			usage, false, 0, int(elapsed), errorMsg,
+		)
 	}
 }
 
+type usageMetrics struct {
+	ModelName             string
+	PromptTokens          int
+	CompletionTokens      int
+	CacheTokens           int
+	CacheCreationTokens   int
+	CacheCreation5mTokens int
+	CacheCreation1hTokens int
+	CostUSD               float64
+}
+
 func logUsage(aggToken *model.AggregatedToken, provider *model.Provider, token *model.ProviderToken,
-	c *gin.Context, requestId string, modelName string,
-	promptTokens int, completionTokens int, startTime time.Time, responseTimeMs int, errorMsg string) {
+	c *gin.Context, requestId string, usage usageMetrics, isStream bool, firstTokenMs int,
+	responseTimeMs int, errorMsg string) {
 
 	status := 1
 	if errorMsg != "" {
@@ -201,24 +257,39 @@ func logUsage(aggToken *model.AggregatedToken, provider *model.Provider, token *
 	}
 
 	// Try to extract model from request path or body
-	if modelName == "" {
-		modelName = c.GetString("request_model")
+	if usage.ModelName == "" {
+		usage.ModelName = c.GetString("request_model")
+	}
+	if usage.CostUSD <= 0 {
+		usage.CostUSD = estimateUsageCostUSD(
+			provider.Id,
+			usage.ModelName,
+			usage.PromptTokens,
+			usage.CompletionTokens,
+		)
 	}
 
 	log := &model.UsageLog{
-		UserId:            aggToken.UserId,
-		AggregatedTokenId: aggToken.Id,
-		ProviderId:        provider.Id,
-		ProviderName:      provider.Name,
-		ProviderTokenId:   token.Id,
-		ModelName:         modelName,
-		PromptTokens:      promptTokens,
-		CompletionTokens:  completionTokens,
-		ResponseTimeMs:    responseTimeMs,
-		Status:            status,
-		ErrorMessage:      errorMsg,
-		ClientIp:          c.ClientIP(),
-		RequestId:         requestId,
+		UserId:                aggToken.UserId,
+		AggregatedTokenId:     aggToken.Id,
+		ProviderId:            provider.Id,
+		ProviderName:          provider.Name,
+		ProviderTokenId:       token.Id,
+		ModelName:             usage.ModelName,
+		PromptTokens:          usage.PromptTokens,
+		CompletionTokens:      usage.CompletionTokens,
+		CacheTokens:           usage.CacheTokens,
+		CacheCreationTokens:   usage.CacheCreationTokens,
+		CacheCreation5mTokens: usage.CacheCreation5mTokens,
+		CacheCreation1hTokens: usage.CacheCreation1hTokens,
+		ResponseTimeMs:        responseTimeMs,
+		FirstTokenMs:          firstTokenMs,
+		IsStream:              isStream,
+		CostUSD:               usage.CostUSD,
+		Status:                status,
+		ErrorMessage:          errorMsg,
+		ClientIp:              c.ClientIP(),
+		RequestId:             requestId,
 	}
 	go func() {
 		if err := log.Insert(); err != nil {
@@ -334,4 +405,201 @@ func logProxyErrorTrace(c *gin.Context, requestId string, provider *model.Provid
 		c.ClientIP(),
 		compactError,
 	))
+}
+
+func extractUsageAndModelFromSSELine(line string) (usageMetrics, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "data:") {
+		return usageMetrics{}, false
+	}
+	payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+	if payload == "" || payload == "[DONE]" {
+		return usageMetrics{}, false
+	}
+	return extractUsageAndModelFromJSON([]byte(payload)), true
+}
+
+func extractUsageAndModelFromJSON(body []byte) usageMetrics {
+	if len(body) == 0 {
+		return usageMetrics{}
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return usageMetrics{}
+	}
+
+	out := usageMetrics{}
+	if modelName := getStringValue(payload["model"]); modelName != "" {
+		out.ModelName = modelName
+	}
+
+	usage, modelName := extractUsageMap(payload)
+	if modelName != "" && out.ModelName == "" {
+		out.ModelName = modelName
+	}
+	if usage == nil {
+		return out
+	}
+
+	out.PromptTokens = getIntValue(usage["prompt_tokens"])
+	if out.PromptTokens == 0 {
+		out.PromptTokens = getIntValue(usage["input_tokens"])
+	}
+	out.CompletionTokens = getIntValue(usage["completion_tokens"])
+	if out.CompletionTokens == 0 {
+		out.CompletionTokens = getIntValue(usage["output_tokens"])
+	}
+	out.CacheTokens = getIntValue(usage["cached_tokens"])
+	out.CacheTokens = maxInt(out.CacheTokens, getIntFromMap(usage, "prompt_tokens_details", "cached_tokens"))
+	out.CacheTokens = maxInt(out.CacheTokens, getIntFromMap(usage, "input_tokens_details", "cached_tokens"))
+	out.CacheTokens = maxInt(out.CacheTokens, getIntValue(usage["prompt_cache_hit_tokens"]))
+	out.CacheTokens = maxInt(out.CacheTokens, getIntValue(usage["cache_read_input_tokens"]))
+
+	out.CacheCreationTokens = getIntValue(usage["cache_creation_tokens"])
+	out.CacheCreationTokens = maxInt(out.CacheCreationTokens, getIntFromMap(usage, "prompt_tokens_details", "cached_creation_tokens"))
+	out.CacheCreationTokens = maxInt(out.CacheCreationTokens, getIntValue(usage["cache_creation_input_tokens"]))
+	out.CacheCreation5mTokens = getIntValue(usage["cache_creation_5m_tokens"])
+	out.CacheCreation5mTokens = maxInt(out.CacheCreation5mTokens, getIntValue(usage["claude_cache_creation_5_m_tokens"]))
+	out.CacheCreation5mTokens = maxInt(out.CacheCreation5mTokens, getIntFromMap(usage, "cache_creation", "ephemeral_5m_input_tokens"))
+	out.CacheCreation1hTokens = getIntValue(usage["cache_creation_1h_tokens"])
+	out.CacheCreation1hTokens = maxInt(out.CacheCreation1hTokens, getIntValue(usage["claude_cache_creation_1_h_tokens"]))
+	out.CacheCreation1hTokens = maxInt(out.CacheCreation1hTokens, getIntFromMap(usage, "cache_creation", "ephemeral_1h_input_tokens"))
+	cacheCreationSum := out.CacheCreation5mTokens + out.CacheCreation1hTokens
+	out.CacheCreationTokens = maxInt(out.CacheCreationTokens, cacheCreationSum)
+
+	out.CostUSD = getFloatValue(usage["cost"])
+	if out.CostUSD == 0 {
+		out.CostUSD = getFloatValue(usage["total_cost"])
+	}
+	return out
+}
+
+func getStringValue(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	default:
+		return ""
+	}
+}
+
+func getIntValue(value interface{}) int {
+	switch v := value.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case string:
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return 0
+		}
+		var parsed int
+		_, err := fmt.Sscanf(v, "%d", &parsed)
+		if err != nil {
+			return 0
+		}
+		return parsed
+	default:
+		return 0
+	}
+}
+
+func getFloatValue(value interface{}) float64 {
+	switch v := value.(type) {
+	case float64:
+		return v
+	case float32:
+		return float64(v)
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case string:
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return 0
+		}
+		var parsed float64
+		_, err := fmt.Sscanf(v, "%f", &parsed)
+		if err != nil {
+			return 0
+		}
+		return parsed
+	default:
+		return 0
+	}
+}
+
+func getIntFromMap(parent map[string]interface{}, key string, subKey string) int {
+	nestedRaw, ok := parent[key]
+	if !ok {
+		return 0
+	}
+	nested, ok := nestedRaw.(map[string]interface{})
+	if !ok {
+		return 0
+	}
+	return getIntValue(nested[subKey])
+}
+
+func extractUsageMap(payload map[string]interface{}) (map[string]interface{}, string) {
+	if payload == nil {
+		return nil, ""
+	}
+	if usageRaw, ok := payload["usage"]; ok {
+		if usage, ok := usageRaw.(map[string]interface{}); ok {
+			return usage, getStringValue(payload["model"])
+		}
+	}
+	messageRaw, ok := payload["message"]
+	if !ok {
+		return nil, ""
+	}
+	message, ok := messageRaw.(map[string]interface{})
+	if !ok {
+		return nil, ""
+	}
+	usageRaw, ok := message["usage"]
+	if !ok {
+		return nil, getStringValue(message["model"])
+	}
+	usage, ok := usageRaw.(map[string]interface{})
+	if !ok {
+		return nil, getStringValue(message["model"])
+	}
+	return usage, getStringValue(message["model"])
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func estimateUsageCostUSD(providerId int, modelName string, promptTokens int, completionTokens int) float64 {
+	if modelName == "" {
+		return 0
+	}
+	pricing, err := model.GetModelPricingByProviderAndModel(providerId, modelName)
+	if err != nil || pricing == nil {
+		return 0
+	}
+	if pricing.ModelPrice > 0 && promptTokens == 0 && completionTokens == 0 {
+		return pricing.ModelPrice
+	}
+	modelRatio := pricing.ModelRatio
+	if modelRatio <= 0 {
+		return 0
+	}
+	completionRatio := pricing.CompletionRatio
+	if completionRatio <= 0 {
+		completionRatio = 1
+	}
+	inputCost := float64(promptTokens) * modelRatio / 500000.0
+	outputCost := float64(completionTokens) * modelRatio * completionRatio / 500000.0
+	return inputCost + outputCost
 }

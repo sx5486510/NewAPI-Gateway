@@ -14,15 +14,69 @@ const formatTime = (ts) => {
   return new Date(ts * 1000).toLocaleString();
 };
 
+const formatCost = (value) => {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return '$0.000000';
+  }
+  return `$${amount.toFixed(6)}`;
+};
+
+const formatUseTimeAndFirstToken = (log) => {
+  const useTime = Number(log?.response_time_ms || 0);
+  const firstToken = Number(log?.first_token_ms || 0);
+  const isStream = Boolean(log?.is_stream);
+  const firstTokenText = isStream ? `${firstToken} ms` : '-';
+  const streamText = isStream ? '流式' : '非流式';
+  return `${useTime} ms / ${firstTokenText} (${streamText})`;
+};
+
+const renderCacheValue = (log) => {
+  const cacheTokens = Number(log?.cache_tokens || 0);
+  const creationTokens = Number(log?.cache_creation_tokens || 0);
+  const creation5mTokens = Number(log?.cache_creation_5m_tokens || 0);
+  const creation1hTokens = Number(log?.cache_creation_1h_tokens || 0);
+
+  const creationTooltip = `5分钟: ${creation5mTokens}, 1小时: ${creation1hTokens}`;
+
+  return (
+    <div className='log-cache-tags'>
+      <span className='log-cache-tag log-cache-hit'>{cacheTokens}</span>
+      {creationTokens > 0 && (
+        <span className='log-cache-tag log-cache-create' title={creationTooltip}>
+          +{creationTokens}
+        </span>
+      )}
+    </div>
+  );
+};
+
+const buildSummaryFromLogs = (logs, isErrorLog) => {
+  const total = logs.length;
+  const successCount = logs.filter((log) => !isErrorLog(log)).length;
+  const errorCount = total - successCount;
+  const inputTokens = logs.reduce((sum, log) => sum + Number(log.prompt_tokens || 0), 0);
+  const outputTokens = logs.reduce((sum, log) => sum + Number(log.completion_tokens || 0), 0);
+  const cacheTokens = logs.reduce((sum, log) => sum + Number(log.cache_tokens || 0), 0);
+  const totalCost = logs.reduce((sum, log) => sum + Number(log.cost_usd || 0), 0);
+  const avgLatency = total
+    ? Math.round(logs.reduce((sum, log) => sum + Number(log.response_time_ms || 0), 0) / total)
+    : 0;
+  return { total, successCount, errorCount, inputTokens, outputTokens, cacheTokens, totalCost, avgLatency };
+};
+
 const LogsTable = ({ selfOnly }) => {
   const [logs, setLogs] = useState([]);
+  const [total, setTotal] = useState(null);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [keyword, setKeyword] = useState('');
   const [providerFilter, setProviderFilter] = useState('all');
+  const [providerOptions, setProviderOptions] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewTab, setViewTab] = useState('all');
+  const [serverSummary, setServerSummary] = useState(null);
   const isErrorLog = useCallback(
     (log) =>
       Number(log?.status) !== 1 || (log?.error_message && String(log.error_message).trim() !== ''),
@@ -33,10 +87,61 @@ const LogsTable = ({ selfOnly }) => {
     setLoading(true);
     try {
       const endpoint = selfOnly ? '/api/log/self' : '/api/log/';
-      const res = await API.get(`${endpoint}?p=${page}`);
+      const params = new URLSearchParams();
+      params.set('p', String(page));
+      params.set('page_size', String(ITEMS_PER_PAGE));
+      const cleanKeyword = keyword.trim();
+      if (cleanKeyword) {
+        params.set('keyword', cleanKeyword);
+      }
+      if (providerFilter !== 'all') {
+        params.set('provider', providerFilter);
+      }
+      if (statusFilter !== 'all') {
+        params.set('status', statusFilter);
+      }
+      if (viewTab !== 'all') {
+        params.set('view', viewTab);
+      }
+      const res = await API.get(`${endpoint}?${params.toString()}`);
       const { success, data, message } = res.data;
       if (success) {
-        setLogs(data || []);
+        if (Array.isArray(data)) {
+          setLogs(data);
+          setTotal(null);
+          setProviderOptions(
+            Array.from(new Set(data.map((log) => log.provider_name).filter(Boolean))).sort((a, b) =>
+              a.localeCompare(b, 'zh-Hans-CN')
+            )
+          );
+          setServerSummary(null);
+        } else {
+          const pageItems = Array.isArray(data?.items) ? data.items : [];
+          setLogs(pageItems);
+          setTotal(Number.isFinite(Number(data?.total)) ? Number(data.total) : null);
+          const providers = Array.isArray(data?.providers) ? data.providers : [];
+          setProviderOptions(
+            providers
+              .filter(Boolean)
+              .map((item) => String(item))
+              .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+          );
+          const nextSummary = data?.summary;
+          if (nextSummary && typeof nextSummary === 'object') {
+            setServerSummary({
+              total: Number(nextSummary.total || 0),
+              successCount: Number(nextSummary.success_count || 0),
+              errorCount: Number(nextSummary.error_count || 0),
+              inputTokens: Number(nextSummary.input_tokens || 0),
+              outputTokens: Number(nextSummary.output_tokens || 0),
+              cacheTokens: Number(nextSummary.cache_tokens || 0),
+              totalCost: Number(nextSummary.total_cost || 0),
+              avgLatency: Number(nextSummary.avg_latency || 0)
+            });
+          } else {
+            setServerSummary(null);
+          }
+        }
       } else {
         showError(message);
       }
@@ -45,74 +150,26 @@ const LogsTable = ({ selfOnly }) => {
     } finally {
       setLoading(false);
     }
-  }, [page, selfOnly]);
+  }, [page, selfOnly, keyword, providerFilter, statusFilter, viewTab]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [keyword, providerFilter, statusFilter, viewTab]);
 
   useEffect(() => {
     loadLogs();
   }, [loadLogs]);
 
   const providers = useMemo(() => {
-    const set = new Set();
-    logs.forEach((log) => {
-      if (log.provider_name) {
-        set.add(log.provider_name);
-      }
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
-  }, [logs]);
+    const options = [...providerOptions];
+    if (providerFilter !== 'all' && !options.includes(providerFilter)) {
+      options.push(providerFilter);
+    }
+    return options.sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  }, [providerOptions, providerFilter]);
 
-  const filteredLogs = useMemo(() => {
-    const lowerKeyword = keyword.trim().toLowerCase();
-
-    return logs.filter((log) => {
-      const hasError = isErrorLog(log);
-
-      if (viewTab === 'error' && !hasError) {
-        return false;
-      }
-
-      if (providerFilter !== 'all' && log.provider_name !== providerFilter) {
-        return false;
-      }
-
-      if (statusFilter === 'success' && hasError) {
-        return false;
-      }
-      if (statusFilter === 'error' && !hasError) {
-        return false;
-      }
-
-      if (!lowerKeyword) {
-        return true;
-      }
-
-      const haystack = [
-        log.model_name,
-        log.provider_name,
-        log.request_id,
-        log.error_message,
-        log.client_ip
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-
-      return haystack.includes(lowerKeyword);
-    });
-  }, [logs, keyword, providerFilter, statusFilter, viewTab, isErrorLog]);
-
-  const summary = useMemo(() => {
-    const total = filteredLogs.length;
-    const successCount = filteredLogs.filter((log) => !isErrorLog(log)).length;
-    const errorCount = total - successCount;
-    const avgLatency = total
-      ? Math.round(
-          filteredLogs.reduce((sum, log) => sum + Number(log.response_time_ms || 0), 0) /
-            total
-        )
-      : 0;
-    return { total, successCount, errorCount, avgLatency };
-  }, [filteredLogs, isErrorLog]);
+  const pageSummary = useMemo(() => buildSummaryFromLogs(logs, isErrorLog), [logs, isErrorLog]);
+  const summary = serverSummary || pageSummary;
 
   const toggleExpand = (id) => {
     setExpandedRowId(expandedRowId === id ? null : id);
@@ -172,7 +229,7 @@ const LogsTable = ({ selfOnly }) => {
     }
   };
 
-  const canGoNext = logs.length === ITEMS_PER_PAGE;
+  const canGoNext = total === null ? logs.length === ITEMS_PER_PAGE : (page + 1) * ITEMS_PER_PAGE < total;
 
   return (
     <Card padding='0'>
@@ -243,6 +300,10 @@ const LogsTable = ({ selfOnly }) => {
 
       <div className='logs-summary'>
         <Badge color='blue'>总计 {summary.total}</Badge>
+        <Badge color='blue'>输入 {summary.inputTokens}</Badge>
+        <Badge color='yellow'>输出 {summary.outputTokens}</Badge>
+        <Badge color='gray'>缓存 {summary.cacheTokens}</Badge>
+        <Badge color='green'>花费 {formatCost(summary.totalCost)}</Badge>
         <Badge color='green'>成功 {summary.successCount}</Badge>
         <Badge color='red'>失败 {summary.errorCount}</Badge>
         <Badge color='gray'>平均耗时 {summary.avgLatency}ms</Badge>
@@ -250,11 +311,11 @@ const LogsTable = ({ selfOnly }) => {
 
       {loading ? (
         <div className='logs-empty'>加载中...</div>
-      ) : filteredLogs.length === 0 ? (
+      ) : logs.length === 0 ? (
         <div className='logs-empty'>当前筛选条件下没有日志记录</div>
       ) : (
         <div className='logs-card-list'>
-          {filteredLogs.map((log) => (
+          {logs.map((log) => (
             <div key={log.id} className='log-card'>
               <div className='log-card-top'>
                 <div className='log-card-main'>
@@ -279,16 +340,24 @@ const LogsTable = ({ selfOnly }) => {
 
               <div className='log-meta-grid'>
                 <div>
-                  <span className='meta-label'>提示词</span>
+                  <span className='meta-label'>用时/首字（是否为流式）</span>
+                  <span className='meta-value'>{formatUseTimeAndFirstToken(log)}</span>
+                </div>
+                <div>
+                  <span className='meta-label'>输入</span>
                   <span className='meta-value'>{Number(log.prompt_tokens || 0)}</span>
                 </div>
                 <div>
-                  <span className='meta-label'>补全文本</span>
+                  <span className='meta-label'>输出</span>
                   <span className='meta-value'>{Number(log.completion_tokens || 0)}</span>
                 </div>
                 <div>
-                  <span className='meta-label'>耗时</span>
-                  <span className='meta-value'>{Number(log.response_time_ms || 0)} ms</span>
+                  <span className='meta-label'>缓存</span>
+                  <span className='meta-value'>{renderCacheValue(log)}</span>
+                </div>
+                <div>
+                  <span className='meta-label'>花费</span>
+                  <span className='meta-value'>{formatCost(log.cost_usd)}</span>
                 </div>
                 <div>
                   <span className='meta-label'>Request ID</span>
