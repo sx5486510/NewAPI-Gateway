@@ -16,7 +16,8 @@
     "react-turnstile": "^1.0.5",
     "recharts": "^2.15.4",
     "semantic-ui-css": "^2.5.0",
-    "semantic-ui-react": "^2.1.5"
+    "semantic-ui-react": "^2.1.5",
+    "yaml": "^2.8.2"
   },
   "scripts": {
     "start": "react-scripts start",

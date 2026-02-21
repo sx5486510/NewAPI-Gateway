@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.vscode
+.DS_Store
+
+logs
+upload
+yewu
+
+*.db
+*.exe
+
+web/node_modules
+web/build
