@@ -15,9 +15,22 @@ export function isRoot() {
   return user.role >= 100;
 }
 
+export function getRoleName(role) {
+  switch (Number(role)) {
+    case 1:
+      return '普通用户';
+    case 10:
+      return '管理员';
+    case 100:
+      return '超级管理员';
+    default:
+      return '未知身份';
+  }
+}
+
 export function getSystemName() {
   let system_name = localStorage.getItem('system_name');
-  if (!system_name) return '项目模板';
+  if (!system_name) return 'NewAPI Gateway';
   return system_name;
 }
 

@@ -2,6 +2,7 @@ import React, { useContext, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { UserContext } from '../context/User';
 import { ThemeContext } from '../context/Theme';
+import { getRoleName } from '../helpers';
 import {
     LayoutDashboard,
     Server,
@@ -21,6 +22,7 @@ const Layout = ({ children }) => {
     const [themeState, themeDispatch] = useContext(ThemeContext);
     const location = useLocation();
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const roleName = getRoleName(userState.user?.role);
 
     const isAdmin = userState.user && userState.user.role >= 1; // Assuming role 1 is min for admin
 
@@ -102,7 +104,7 @@ const Layout = ({ children }) => {
                         </div>
                         <div style={{ overflow: 'hidden' }}>
                             <div style={{ fontWeight: '500', truncate: true }}>{userState.user?.username}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>普通用户</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{roleName}</div>
                         </div>
                     </div>
                     <button

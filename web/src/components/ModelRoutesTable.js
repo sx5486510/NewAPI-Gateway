@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     RefreshCcw,
     Search
 } from 'lucide-react';
-import { API, showError, showSuccess } from '../helpers';
+import { API, copy, showError, showSuccess } from '../helpers';
 import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
 import Button from './ui/Button';
 import Card from './ui/Card';
@@ -15,15 +15,66 @@ const ModelRoutesTable = () => {
     const [models, setModels] = useState([]);
     const [filter, setFilter] = useState('');
     const [loading, setLoading] = useState(true);
+    const [providerNameMap, setProviderNameMap] = useState({});
+    const [tokenGroupMap, setTokenGroupMap] = useState({});
 
-    const loadRoutes = async () => {
+    const loadRouteMappings = useCallback(async (routeList) => {
+        const providerIds = [...new Set((routeList || []).map((route) => route.provider_id).filter((id) => id !== undefined && id !== null))];
+        if (providerIds.length === 0) {
+            setProviderNameMap({});
+            setTokenGroupMap({});
+            return;
+        }
+
+        const providerMap = {};
+        const groupMap = {};
+        const mappingTasks = providerIds.map(async (providerId) => {
+            const [providerRes, tokensRes] = await Promise.allSettled([
+                API.get(`/api/provider/${providerId}`),
+                API.get(`/api/provider/${providerId}/tokens`)
+            ]);
+
+            if (providerRes.status === 'fulfilled') {
+                const { success, data } = providerRes.value.data || {};
+                if (success && data?.name) {
+                    providerMap[providerId] = data.name;
+                }
+            }
+
+            if (tokensRes.status === 'fulfilled') {
+                const { success, data } = tokensRes.value.data || {};
+                if (success && Array.isArray(data)) {
+                    data.forEach((token) => {
+                        groupMap[token.id] = token.group_name || '';
+                    });
+                }
+            }
+        });
+
+        await Promise.all(mappingTasks);
+        setProviderNameMap(providerMap);
+        setTokenGroupMap(groupMap);
+    }, []);
+
+    const copyModelName = async (modelName) => {
+        const ok = await copy(modelName);
+        if (ok) {
+            showSuccess(`模型已复制：${modelName}`);
+            return;
+        }
+        showError('复制失败，请检查浏览器剪贴板权限');
+    };
+
+    const loadRoutes = useCallback(async () => {
         setLoading(true);
         try {
             const params = filter ? `?model=${filter}` : '';
             const res = await API.get(`/api/route/${params}`);
             const { success, data, message } = res.data;
             if (success) {
-                setRoutes(data || []);
+                const routeList = data || [];
+                setRoutes(routeList);
+                await loadRouteMappings(routeList);
             } else {
                 showError(message);
             }
@@ -32,15 +83,15 @@ const ModelRoutesTable = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [filter, loadRouteMappings]);
 
-    const loadModels = async () => {
+    const loadModels = useCallback(async () => {
         const res = await API.get('/api/route/models');
         const { success, data } = res.data;
         if (success) {
             setModels(data || []);
         }
-    };
+    }, []);
 
     const rebuildRoutes = async () => {
         const res = await API.post('/api/route/rebuild');
@@ -53,13 +104,12 @@ const ModelRoutesTable = () => {
     };
 
     useEffect(() => {
-        loadRoutes();
         loadModels();
-    }, []);
+    }, [loadModels]);
 
     useEffect(() => {
         loadRoutes();
-    }, [filter]);
+    }, [loadRoutes]);
 
     return (
         <Card padding="0">
@@ -90,8 +140,8 @@ const ModelRoutesTable = () => {
                     <Thead>
                         <Tr>
                             <Th>模型</Th>
-                            <Th>供应商编号</Th>
-                            <Th>令牌编号</Th>
+                            <Th>供应商</Th>
+                            <Th>令牌分组映射</Th>
                             <Th>状态</Th>
                             <Th>优先级</Th>
                             <Th>权重</Th>
@@ -101,12 +151,29 @@ const ModelRoutesTable = () => {
                         {routes.map((r) => (
                             <Tr key={r.id}>
                                 <Td>
-                                    <code style={{ fontSize: '0.875rem', backgroundColor: 'var(--gray-100)', padding: '0.2rem 0.4rem', borderRadius: '0.25rem' }}>
-                                        {r.model_name}
-                                    </code>
+                                    <button
+                                        type="button"
+                                        onClick={() => copyModelName(r.model_name)}
+                                        title="点击复制模型名称"
+                                        style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                                    >
+                                        <code style={{ fontSize: '0.875rem', backgroundColor: 'var(--gray-100)', padding: '0.2rem 0.4rem', borderRadius: '0.25rem' }}>
+                                            {r.model_name}
+                                        </code>
+                                    </button>
                                 </Td>
-                                <Td>{r.provider_id}</Td>
-                                <Td>{r.provider_token_id}</Td>
+                                <Td>
+                                    <div style={{ fontWeight: '500' }}>{providerNameMap[r.provider_id] || '未知供应商'}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>ID: {r.provider_id}</div>
+                                </Td>
+                                <Td>
+                                    {tokenGroupMap[r.provider_token_id] ? (
+                                        <Badge color="blue">{tokenGroupMap[r.provider_token_id]}</Badge>
+                                    ) : (
+                                        <Badge color="gray">未设置分组</Badge>
+                                    )}
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>Token ID: {r.provider_token_id}</div>
+                                </Td>
                                 <Td>
                                     {r.enabled ? (
                                         <Badge color="green">启用</Badge>

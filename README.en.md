@@ -36,7 +36,7 @@ API Gateway Aggregator is a transparent gateway that aggregates multiple [NewAPI
 
 - Go 1.18+
 - Node.js 16+
-- SQLite (default) or MySQL
+- SQLite (default) / MySQL / PostgreSQL
 
 ### Manual Deployment
 
@@ -148,10 +148,15 @@ curl https://your-gateway.com/v1/chat/completions \
 | Variable            | Description                      | Example                                |
 | ------------------- | -------------------------------- | -------------------------------------- |
 | `PORT`              | Listening port                   | `3000`                                 |
-| `SQL_DSN`           | MySQL DSN (defaults to SQLite)   | `root:pwd@tcp(localhost:3306)/gateway` |
+| `SQL_DRIVER`        | SQL driver (optional)            | `sqlite` / `mysql` / `postgres`        |
+| `SQL_DSN`           | Database DSN (required for MySQL/PostgreSQL) | `root:pwd@tcp(localhost:3306)/gateway` |
 | `REDIS_CONN_STRING` | Redis (for rate-limit & session) | `redis://default:pw@localhost:6379`    |
 | `SESSION_SECRET`    | Fixed session secret             | `random_string`                        |
 | `GIN_MODE`          | Run mode                         | `release` / `debug`                    |
+
+If `SQL_DRIVER` is not set, backward-compatible behavior is used:
+- `SQL_DSN` not set: uses SQLite (`SQLITE_PATH`, default `gateway-aggregator.db`)
+- `SQL_DSN` set: auto-detects PostgreSQL (`postgres://`, `postgresql://`, or `dbname=... user=...`), otherwise treats it as MySQL
 
 ### Command Line Arguments
 

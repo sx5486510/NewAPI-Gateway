@@ -10,7 +10,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { API, showError, showSuccess } from '../helpers';
+import { API, getRoleName, showError, showSuccess } from '../helpers';
 import { ITEMS_PER_PAGE } from '../constants';
 import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
 import Button from './ui/Button';
@@ -20,16 +20,15 @@ import Input from './ui/Input';
 import Pagination from './ui/Pagination';
 
 function renderRole(role) {
-  switch (role) {
-    case 1:
-      return <Badge color="gray">普通用户</Badge>;
-    case 10:
-      return <Badge color="yellow">管理员</Badge>;
-    case 100:
-      return <Badge color="orange">超级管理员</Badge>;
-    default:
-      return <Badge color="red">未知身份</Badge>;
-  }
+  const roleName = getRoleName(role);
+  const color = roleName === '普通用户'
+    ? 'gray'
+    : roleName === '管理员'
+      ? 'yellow'
+      : roleName === '超级管理员'
+        ? 'orange'
+        : 'red';
+  return <Badge color={color}>{roleName}</Badge>;
 }
 
 const UsersTable = () => {

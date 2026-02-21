@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft,
@@ -29,40 +29,40 @@ const ProviderDetail = () => {
     const [showTokenModal, setShowTokenModal] = useState(false);
     const [editToken, setEditToken] = useState(null);
 
-    const loadProvider = async () => {
+    const loadProvider = useCallback(async () => {
         try {
             const res = await API.get(`/api/provider/${id}`);
             const { success, data, message } = res.data;
             if (success) setProvider(data);
             else showError(message);
         } catch (e) { showError('加载供应商失败'); }
-    };
+    }, [id]);
 
-    const loadTokens = async () => {
+    const loadTokens = useCallback(async () => {
         try {
             const res = await API.get(`/api/provider/${id}/tokens`);
             const { success, data, message } = res.data;
             if (success) setTokens(data || []);
             else showError(message);
         } catch (e) { showError('加载令牌失败'); }
-    };
+    }, [id]);
 
-    const loadPricing = async () => {
+    const loadPricing = useCallback(async () => {
         try {
             const res = await API.get(`/api/provider/${id}/pricing`);
             const { success, data, message } = res.data;
             if (success) setPricing(data || []);
             else showError(message);
         } catch (e) { showError('加载定价失败'); }
-    };
+    }, [id]);
 
-    const loadAll = async () => {
+    const loadAll = useCallback(async () => {
         setLoading(true);
         await Promise.all([loadProvider(), loadTokens(), loadPricing()]);
         setLoading(false);
-    };
+    }, [loadPricing, loadProvider, loadTokens]);
 
-    useEffect(() => { loadAll(); }, [id]);
+    useEffect(() => { loadAll(); }, [loadAll]);
 
     const syncProvider = async () => {
         setSyncing(true);

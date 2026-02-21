@@ -296,20 +296,6 @@ const LogsTable = ({ selfOnly }) => {
                 </div>
               </div>
 
-              {isErrorLog(log) && (
-                <div className='log-error-box'>
-                  <div className='log-error-main'>
-                    <AlertTriangle size={14} />
-                    <span className='log-error-hint'>错误详情已隐藏，点击按钮在新页面查看</span>
-                  </div>
-                  <div className='log-error-action'>
-                    <Button size='sm' variant='secondary' onClick={() => openErrorRawView(log)}>
-                      查看 RAW 详情
-                    </Button>
-                  </div>
-                </div>
-              )}
-
               <div className='log-card-actions'>
                 <Button size='sm' variant='ghost' onClick={() => toggleExpand(log.id)}>
                   {expandedRowId === log.id ? '收起详情' : '展开详情'}
@@ -317,18 +303,33 @@ const LogsTable = ({ selfOnly }) => {
               </div>
 
               {expandedRowId === log.id && (
-                <pre className='log-json-detail'>
-                  {JSON.stringify(
-                    {
-                      ...log,
-                      error_message: isErrorLog(log)
-                        ? '[Hidden] 使用“查看 RAW 详情”按钮打开错误内容'
-                        : log.error_message
-                    },
-                    null,
-                    2
+                <>
+                  {isErrorLog(log) && (
+                    <div className='log-error-box'>
+                      <div className='log-error-main'>
+                        <AlertTriangle size={14} />
+                        <span className='log-error-hint'>错误详情已隐藏，点击按钮在新页面查看</span>
+                      </div>
+                      <div className='log-error-action'>
+                        <Button size='sm' variant='secondary' onClick={() => openErrorRawView(log)}>
+                          查看 RAW 详情
+                        </Button>
+                      </div>
+                    </div>
                   )}
-                </pre>
+                  <pre className='log-json-detail'>
+                    {JSON.stringify(
+                      {
+                        ...log,
+                        error_message: isErrorLog(log)
+                          ? '[Hidden] 使用“查看 RAW 详情”按钮打开错误内容'
+                          : log.error_message
+                      },
+                      null,
+                      2
+                    )}
+                  </pre>
+                </>
               )}
             </div>
           ))}

@@ -1,5 +1,5 @@
-import React, { lazy, Suspense, useContext, useEffect } from 'react';
-import { Route, Routes, Outlet, Navigate } from 'react-router-dom';
+import React, { lazy, Suspense, useCallback, useContext, useEffect } from 'react';
+import { Route, Routes, Outlet } from 'react-router-dom';
 import Loading from './components/Loading';
 import User from './pages/User';
 import { PrivateRoute } from './components/PrivateRoute';
@@ -38,17 +38,18 @@ const AppLayout = () => {
 };
 
 function App() {
-  const [userState, userDispatch] = useContext(UserContext);
-  const [statusState, statusDispatch] = useContext(StatusContext);
+  const [, userDispatch] = useContext(UserContext);
+  const [, statusDispatch] = useContext(StatusContext);
 
-  const loadUser = () => {
+  const loadUser = useCallback(() => {
     let user = localStorage.getItem('user');
     if (user) {
       let data = JSON.parse(user);
       userDispatch({ type: 'login', payload: data });
     }
-  };
-  const loadStatus = async () => {
+  }, [userDispatch]);
+
+  const loadStatus = useCallback(async () => {
     try {
       const res = await API.get('/api/status');
       const { success, data } = res.data;
@@ -64,12 +65,12 @@ function App() {
     } catch (e) {
       showError('无法正常连接至服务器！');
     }
-  };
+  }, [statusDispatch]);
 
   useEffect(() => {
     loadUser();
-    loadStatus().then();
-  }, []);
+    loadStatus();
+  }, [loadStatus, loadUser]);
 
   return (
     <Routes>

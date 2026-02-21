@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { API, showError, showSuccess } from '../helpers';
 import { marked } from 'marked';
 import Button from './ui/Button';
@@ -6,14 +6,16 @@ import Input from './ui/Input';
 import Modal from './ui/Modal';
 import Card from './ui/Card';
 
+const defaultInputs = {
+  Footer: '',
+  Notice: '',
+  About: '',
+  SystemName: '',
+  HomePageLink: '',
+};
+
 const OtherSetting = () => {
-  let [inputs, setInputs] = useState({
-    Footer: '',
-    Notice: '',
-    About: '',
-    SystemName: '',
-    HomePageLink: '',
-  });
+  let [inputs, setInputs] = useState(defaultInputs);
   let [loading, setLoading] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [updateData, setUpdateData] = useState({
@@ -21,13 +23,13 @@ const OtherSetting = () => {
     content: '',
   });
 
-  const getOptions = async () => {
+  const getOptions = useCallback(async () => {
     const res = await API.get('/api/option/');
     const { success, message, data } = res.data;
     if (success) {
-      let newInputs = {};
+      let newInputs = { ...defaultInputs };
       data.forEach((item) => {
-        if (item.key in inputs) {
+        if (item.key in newInputs) {
           newInputs[item.key] = item.value;
         }
       });
@@ -35,11 +37,11 @@ const OtherSetting = () => {
     } else {
       showError(message);
     }
-  };
+  }, []);
 
   useEffect(() => {
     getOptions();
-  }, []);
+  }, [getOptions]);
 
   const updateOption = async (key, value) => {
     setLoading(true);

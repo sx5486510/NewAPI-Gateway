@@ -116,4 +116,4 @@ CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o gateway-aggregator-linux-amd64
 CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o gateway-aggregator-darwin-arm64
 ```
 
-> 注意：CGO_ENABLED=1 是因为 SQLite 驱动需要 CGO。如使用 MySQL 可设为 0。
+> 注意：CGO_ENABLED=1 是因为 SQLite 驱动需要 CGO。如仅使用 MySQL / PostgreSQL，可尝试设为 0。

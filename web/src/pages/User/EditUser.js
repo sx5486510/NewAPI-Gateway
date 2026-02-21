@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { API, showError, showSuccess } from '../../helpers';
 import Card from '../../components/ui/Card';
@@ -25,7 +25,7 @@ const EditUser = () => {
     setInputs((inputs) => ({ ...inputs, [name]: value }));
   };
 
-  const loadUser = async () => {
+  const loadUser = useCallback(async () => {
     try {
       let res = undefined;
       if (userId) {
@@ -45,11 +45,11 @@ const EditUser = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
 
   useEffect(() => {
     loadUser();
-  }, []);
+  }, [loadUser]);
 
   const submit = async () => {
     let res = undefined;

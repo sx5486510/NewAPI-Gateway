@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { API, showError, showSuccess } from '../helpers';
 import { UserContext } from '../context/User';
@@ -6,16 +6,12 @@ import Loading from './Loading';
 
 const GitHubOAuth = () => {
   const [searchParams] = useSearchParams();
-
-  // eslint-disable-next-line
-  const [userState, userDispatch] = useContext(UserContext);
+  const [, userDispatch] = useContext(UserContext);
   const [prompt, setPrompt] = useState('处理中...');
-  // eslint-disable-next-line
-  const [processing, setProcessing] = useState(true);
 
-  let navigate = useNavigate();
+  const navigate = useNavigate();
 
-  const sendCode = async (code, count) => {
+  const sendCode = useCallback(async (code, count) => {
     const res = await API.get(`/api/oauth/github?code=${code}`);
     const { success, message, data } = res.data;
     if (success) {
@@ -40,12 +36,12 @@ const GitHubOAuth = () => {
       await new Promise((resolve) => setTimeout(resolve, count * 2000));
       await sendCode(code, count);
     }
-  };
+  }, [navigate, userDispatch]);
 
   useEffect(() => {
-    let code = searchParams.get('code');
-    sendCode(code, 0).then();
-  }, [searchParams]);
+    const code = searchParams.get('code');
+    sendCode(code, 0);
+  }, [searchParams, sendCode]);
 
   return (
     <div style={{ minHeight: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>

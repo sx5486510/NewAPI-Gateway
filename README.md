@@ -60,7 +60,7 @@ API Gateway Aggregator 是一个聚合多个 [NewAPI](https://github.com/Quantum
 
 - Go 1.18+
 - Node.js 16+
-- SQLite（默认）或 MySQL
+- SQLite（默认）/ MySQL / PostgreSQL
 
 ### 手动部署
 
@@ -228,10 +228,15 @@ curl https://your-gateway.com/v1/chat/completions \
 | 变量                | 说明                             | 示例                                   |
 | ------------------- | -------------------------------- | -------------------------------------- |
 | `PORT`              | 监听端口                         | `3000`                                 |
-| `SQL_DSN`           | MySQL 连接串（不设则用 SQLite）  | `root:pwd@tcp(localhost:3306)/gateway` |
+| `SQL_DRIVER`        | SQL 驱动（可选）                 | `sqlite` / `mysql` / `postgres`        |
+| `SQL_DSN`           | 数据库连接串（MySQL/PostgreSQL 必填） | `root:pwd@tcp(localhost:3306)/gateway` |
 | `REDIS_CONN_STRING` | Redis 连接（用于限流和 Session） | `redis://default:pw@localhost:6379`    |
 | `SESSION_SECRET`    | 固定 Session 密钥                | `random_string`                        |
 | `GIN_MODE`          | 运行模式                         | `release` / `debug`                    |
+
+未设置 `SQL_DRIVER` 时，程序会保持兼容旧行为：
+- 未设置 `SQL_DSN`：使用 SQLite（`SQLITE_PATH`，默认 `gateway-aggregator.db`）
+- 已设置 `SQL_DSN`：自动识别 PostgreSQL（`postgres://`、`postgresql://`、或 `dbname=... user=...`），否则按 MySQL 处理
 
 ### 命令行参数
 

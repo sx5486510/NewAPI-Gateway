@@ -1,9 +1,9 @@
-FROM node:16 AS builder
+FROM node:20 AS builder
 
 WORKDIR /build
 COPY ./web .
 COPY ./VERSION .
-RUN npm install
+RUN npm ci
 RUN REACT_APP_VERSION=$(cat VERSION) npm run build
 
 FROM golang AS builder2
