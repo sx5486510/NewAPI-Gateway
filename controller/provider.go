@@ -1,11 +1,11 @@
 package controller
 
 import (
-	"encoding/json"
-	"fmt"
 	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/model"
 	"NewAPI-Gateway/service"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -236,12 +236,34 @@ func GetProviderPricing(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的 ID"})
 		return
 	}
+	provider, err := model.GetProviderById(id)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "供应商不存在"})
+		return
+	}
 	pricing, err := model.GetModelPricingByProvider(id)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": pricing})
+
+	groupRatio := map[string]float64{}
+	if provider.PricingGroupRatio != "" {
+		_ = json.Unmarshal([]byte(provider.PricingGroupRatio), &groupRatio)
+	}
+
+	supportedEndpoint := map[string]map[string]string{}
+	if provider.PricingSupportedEndpoint != "" {
+		_ = json.Unmarshal([]byte(provider.PricingSupportedEndpoint), &supportedEndpoint)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":            true,
+		"message":            "",
+		"data":               pricing,
+		"group_ratio":        groupRatio,
+		"supported_endpoint": supportedEndpoint,
+	})
 }
 
 func CreateProviderToken(c *gin.Context) {

@@ -6,6 +6,7 @@ import (
 	"NewAPI-Gateway/service"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -39,17 +40,58 @@ func UpdateRoute(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的 ID"})
 		return
 	}
-	var route model.ModelRoute
-	if err := c.ShouldBindJSON(&route); err != nil {
+	var patch model.ModelRoutePatch
+	if err := c.ShouldBindJSON(&patch); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
 		return
 	}
-	route.Id = id
-	if err := route.Update(); err != nil {
+	patch.Id = id
+	updates := patch.ToUpdates()
+	if len(updates) == 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "没有可更新的字段"})
+		return
+	}
+	if err := model.UpdateModelRouteFields(id, updates); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+}
+
+func BatchUpdateRoutes(c *gin.Context) {
+	var req struct {
+		Items []model.ModelRoutePatch `json:"items"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if len(req.Items) == 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "更新列表为空"})
+		return
+	}
+	if err := model.BatchUpdateModelRoutes(req.Items); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+}
+
+func GetModelRouteOverview(c *gin.Context) {
+	modelName := strings.TrimSpace(c.Query("model"))
+	providerId, _ := strconv.Atoi(c.Query("provider_id"))
+	enabledOnly := false
+	enabledOnlyRaw := strings.TrimSpace(c.Query("enabled_only"))
+	if enabledOnlyRaw == "1" || strings.EqualFold(enabledOnlyRaw, "true") {
+		enabledOnly = true
+	}
+
+	overview, err := model.GetModelRouteOverview(modelName, providerId, enabledOnly)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": overview})
 }
 
 func RebuildRoutes(c *gin.Context) {

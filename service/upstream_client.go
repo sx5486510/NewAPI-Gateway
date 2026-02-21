@@ -38,12 +38,25 @@ type UpstreamResponse struct {
 
 // UpstreamPricing mirrors the upstream Pricing structure
 type UpstreamPricing struct {
-	ModelName       string   `json:"model_name"`
-	QuotaType       int      `json:"quota_type"`
-	ModelRatio      float64  `json:"model_ratio"`
-	ModelPrice      float64  `json:"model_price"`
-	CompletionRatio float64  `json:"completion_ratio"`
-	EnableGroups    []string `json:"enable_groups"`
+	ModelName              string   `json:"model_name"`
+	QuotaType              int      `json:"quota_type"`
+	ModelRatio             float64  `json:"model_ratio"`
+	ModelPrice             float64  `json:"model_price"`
+	CompletionRatio        float64  `json:"completion_ratio"`
+	EnableGroups           []string `json:"enable_groups"`
+	SupportedEndpointTypes []string `json:"supported_endpoint_types"`
+}
+
+type UpstreamEndpointInfo struct {
+	Path   string `json:"path"`
+	Method string `json:"method"`
+}
+
+type UpstreamPricingPayload struct {
+	Data              []UpstreamPricing               `json:"data"`
+	GroupRatio        map[string]float64              `json:"group_ratio"`
+	UsableGroup       map[string]string               `json:"usable_group"`
+	SupportedEndpoint map[string]UpstreamEndpointInfo `json:"supported_endpoint"`
 }
 
 // UpstreamToken mirrors the upstream Token structure
@@ -131,19 +144,29 @@ func (c *UpstreamClient) doRequestWithBody(method string, path string, payload i
 	return body, nil
 }
 
-// GetPricing fetches /api/pricing from the upstream
-func (c *UpstreamClient) GetPricing() ([]UpstreamPricing, error) {
+// GetPricing fetches /api/pricing from the upstream.
+// It is compatible with both:
+// 1) {data:[...]}
+// 2) {success:true,data:[...],group_ratio:{...},usable_group:{...}}
+func (c *UpstreamClient) GetPricing() (*UpstreamPricingPayload, error) {
 	body, err := c.doRequest("GET", "/api/pricing")
 	if err != nil {
 		return nil, err
 	}
-	var resp struct {
-		Data []UpstreamPricing `json:"data"`
-	}
+	var resp UpstreamPricingPayload
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	if resp.GroupRatio == nil {
+		resp.GroupRatio = make(map[string]float64)
+	}
+	if resp.UsableGroup == nil {
+		resp.UsableGroup = make(map[string]string)
+	}
+	if resp.SupportedEndpoint == nil {
+		resp.SupportedEndpoint = make(map[string]UpstreamEndpointInfo)
+	}
+	return &resp, nil
 }
 
 // GetTokens fetches /api/token/ from the upstream

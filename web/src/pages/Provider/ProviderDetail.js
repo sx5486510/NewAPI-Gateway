@@ -24,10 +24,13 @@ const ProviderDetail = () => {
     const [provider, setProvider] = useState(null);
     const [tokens, setTokens] = useState([]);
     const [pricing, setPricing] = useState([]);
+    const [pricingGroupRatio, setPricingGroupRatio] = useState({});
+    const [endpointMap, setEndpointMap] = useState({});
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [showTokenModal, setShowTokenModal] = useState(false);
     const [editToken, setEditToken] = useState(null);
+    const [selectedPricing, setSelectedPricing] = useState(null);
 
     const loadProvider = useCallback(async () => {
         try {
@@ -50,8 +53,12 @@ const ProviderDetail = () => {
     const loadPricing = useCallback(async () => {
         try {
             const res = await API.get(`/api/provider/${id}/pricing`);
-            const { success, data, message } = res.data;
-            if (success) setPricing(data || []);
+            const { success, data, message, group_ratio, supported_endpoint } = res.data;
+            if (success) {
+                setPricing(data || []);
+                setPricingGroupRatio(group_ratio || {});
+                setEndpointMap(supported_endpoint || {});
+            }
             else showError(message);
         } catch (e) { showError('加载定价失败'); }
     }, [id]);
@@ -117,12 +124,136 @@ const ProviderDetail = () => {
         return <Badge color="red">禁用</Badge>;
     };
 
+    const parseEnableGroups = (enableGroups) => {
+        try {
+            const groups = JSON.parse(enableGroups || '[]');
+            if (!Array.isArray(groups)) return [];
+            return groups.filter((g) => typeof g === 'string' && g.trim() !== '');
+        } catch (e) {
+            return [];
+        }
+    };
+
+    const parseSupportedEndpointTypes = (supportedEndpointTypes) => {
+        try {
+            const types = JSON.parse(supportedEndpointTypes || '[]');
+            if (!Array.isArray(types)) return [];
+            return types.filter((t) => typeof t === 'string' && t.trim() !== '');
+        } catch (e) {
+            return [];
+        }
+    };
+
+    const resolveModelEndpoints = (pricingItem) => {
+        const defaultEndpoint = [{ type: 'openai', path: '/v1/chat/completions', method: 'POST' }];
+        if (!pricingItem) return defaultEndpoint;
+        const endpointTypes = parseSupportedEndpointTypes(pricingItem.supported_endpoint_types);
+        if (endpointTypes.length === 0) return defaultEndpoint;
+        return endpointTypes.map((type) => {
+            const info = endpointMap?.[type] || {};
+            let path = info.path || '';
+            if (path.includes('{model}')) {
+                path = path.replaceAll('{model}', pricingItem.model_name || '');
+            }
+            return {
+                type,
+                path,
+                method: info.method || 'POST'
+            };
+        });
+    };
+
+    const isPerRequestBilling = (pricingItem) => Number(pricingItem.model_price || 0) > 0 || Number(pricingItem.quota_type) === 1;
+
+    const getGroupRatio = (groupName) => {
+        const ratio = Number(pricingGroupRatio?.[groupName]);
+        if (!Number.isFinite(ratio) || ratio <= 0) return 1;
+        return ratio;
+    };
+
+    const getModelAvailableGroups = (pricingItem) => {
+        const groups = parseEnableGroups(pricingItem?.enable_groups);
+        if (groups.length > 0) return groups;
+        return ['default'];
+    };
+
+    const calculatePromptPricePerMillion = (pricingItem, groupRatio = 1) => {
+        if (isPerRequestBilling(pricingItem)) return null;
+        return Number(pricingItem.model_ratio || 0) * 2 * groupRatio;
+    };
+
+    const calculateCompletionPricePerMillion = (pricingItem, groupRatio = 1) => {
+        const promptPrice = calculatePromptPricePerMillion(pricingItem, groupRatio);
+        if (promptPrice === null) return null;
+        const completionRatio = Number(pricingItem.completion_ratio || 0);
+        const ratio = completionRatio > 0 ? completionRatio : 1;
+        return promptPrice * ratio;
+    };
+
+    const calculatePerCallPrice = (pricingItem, groupRatio = 1) => {
+        if (!isPerRequestBilling(pricingItem)) return null;
+        return Number(pricingItem.model_price || 0) * groupRatio;
+    };
+
+    const getBestGroupPricing = (pricingItem) => {
+        const groups = getModelAvailableGroups(pricingItem);
+        let usedGroup = groups[0];
+        let usedGroupRatio = getGroupRatio(usedGroup);
+        for (const g of groups) {
+            const ratio = getGroupRatio(g);
+            if (ratio < usedGroupRatio) {
+                usedGroup = g;
+                usedGroupRatio = ratio;
+            }
+        }
+        return {
+            groupName: usedGroup,
+            groupRatio: usedGroupRatio,
+            promptPrice: calculatePromptPricePerMillion(pricingItem, usedGroupRatio),
+            completionPrice: calculateCompletionPricePerMillion(pricingItem, usedGroupRatio),
+            perCallPrice: calculatePerCallPrice(pricingItem, usedGroupRatio)
+        };
+    };
+
+    const formatPricePerMillion = (price) => {
+        if (price === null || Number.isNaN(price)) return '-';
+        return `$${price.toFixed(4)}`;
+    };
+
+    const formatRatio = (ratio) => {
+        if (!Number.isFinite(ratio)) return '1';
+        return ratio.toFixed(4).replace(/\.?0+$/, '');
+    };
+
+    const renderPerTokenPriceCell = (price) => {
+        if (price === null || Number.isNaN(price)) {
+            return <span style={{ color: 'var(--text-secondary)' }}>-</span>;
+        }
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                <span style={{ fontWeight: '600' }}>{formatPricePerMillion(price)}</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>/ 1M tokens</span>
+            </div>
+        );
+    };
+
+    const renderPerCallPriceCell = (price) => {
+        if (price === null || Number.isNaN(price)) {
+            return <span style={{ color: 'var(--text-secondary)' }}>-</span>;
+        }
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                <span style={{ fontWeight: '600' }}>{formatPricePerMillion(price)}</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>/ 次</span>
+            </div>
+        );
+    };
+
     // === Computed: Group → Model mapping from pricing data ===
     const groupModelMap = useMemo(() => {
         const map = {};
         for (const p of pricing) {
-            let groups = [];
-            try { groups = JSON.parse(p.enable_groups || '[]'); } catch (e) { continue; }
+            const groups = parseEnableGroups(p.enable_groups);
             for (const g of groups) {
                 if (!map[g]) map[g] = [];
                 map[g].push(p);
@@ -230,11 +361,16 @@ const ProviderDetail = () => {
                 <div>
                     <div style={{ fontWeight: '600' }}>模型定价</div>
                     <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                        从上游同步的模型价格信息，共 {pricing.length} 个模型
+                        价格按分组倍率计算，列表默认展示各模型可用分组中的最低价格，共 {pricing.length} 个模型
                     </div>
                 </div>
                 <Button variant="secondary" onClick={loadPricing} icon={RefreshCw}>刷新</Button>
             </div>
+            {Object.keys(pricingGroupRatio || {}).length === 0 && (
+                <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                    未获取到分组倍率，当前按默认倍率 x1 计算
+                </div>
+            )}
             {pricing.length === 0 ? (
                 <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <div style={{ marginBottom: '0.5rem', fontSize: '1rem' }}>暂无定价数据</div>
@@ -246,23 +382,25 @@ const ProviderDetail = () => {
                         <Tr>
                             <Th>模型名称</Th>
                             <Th>计费模式</Th>
-                            <Th>模型倍率</Th>
-                            <Th>补全倍率</Th>
-                            <Th>固定价格</Th>
-                            <Th>可用分组</Th>
+                            <Th>提示</Th>
+                            <Th>补全</Th>
+                            <Th>单次</Th>
+                            <Th>操作</Th>
                         </Tr>
                     </Thead>
                     <Tbody>
                         {pricing.map((p) => {
-                            let groups = [];
-                            try { groups = JSON.parse(p.enable_groups || '[]'); } catch (e) { /* ignore */ }
-                            const isFixedPrice = p.model_price > 0;
+                            const isFixedPrice = isPerRequestBilling(p);
+                            const bestGroupPricing = getBestGroupPricing(p);
                             return (
                                 <Tr key={p.id}>
                                     <Td>
                                         <code style={{ fontSize: '0.8rem', backgroundColor: 'var(--gray-100)', padding: '0.15rem 0.4rem', borderRadius: '0.25rem' }}>
                                             {p.model_name}
                                         </code>
+                                        <div style={{ marginTop: '0.35rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                            分组：{bestGroupPricing.groupName}（x{formatRatio(bestGroupPricing.groupRatio)}）
+                                        </div>
                                     </Td>
                                     <Td>
                                         {isFixedPrice ? (
@@ -271,17 +409,10 @@ const ProviderDetail = () => {
                                             <Badge color="blue">按量</Badge>
                                         )}
                                     </Td>
-                                    <Td>{p.model_ratio}</Td>
-                                    <Td>{p.completion_ratio}</Td>
-                                    <Td>{isFixedPrice ? `$${p.model_price}` : '-'}</Td>
-                                    <Td>
-                                        <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-                                            {groups.map((g, i) => (
-                                                <Badge key={i} color={tokenGroups.includes(g) ? 'green' : 'gray'}>{g}</Badge>
-                                            ))}
-                                            {groups.length === 0 && <span style={{ color: 'var(--text-secondary)' }}>-</span>}
-                                        </div>
-                                    </Td>
+                                    <Td>{renderPerTokenPriceCell(bestGroupPricing.promptPrice)}</Td>
+                                    <Td>{renderPerTokenPriceCell(bestGroupPricing.completionPrice)}</Td>
+                                    <Td>{renderPerCallPriceCell(bestGroupPricing.perCallPrice)}</Td>
+                                    <Td><Button size="sm" variant="secondary" onClick={() => setSelectedPricing(p)}>详情</Button></Td>
                                 </Tr>
                             );
                         })}
@@ -420,6 +551,125 @@ const ProviderDetail = () => {
                 { label: `模型与定价 (${pricing.length})`, content: pricingTab },
                 { label: `分组映射 (${Object.keys(groupModelMap).length})`, content: groupTab },
             ]} />
+
+            <Modal
+                title={selectedPricing ? `${selectedPricing.model_name} · 价格详情` : '价格详情'}
+                isOpen={!!selectedPricing}
+                onClose={() => setSelectedPricing(null)}
+                actions={<Button variant="primary" onClick={() => setSelectedPricing(null)}>关闭</Button>}
+            >
+                {selectedPricing && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <Card>
+                            <div style={{ fontWeight: '600' }}>基本信息</div>
+                            <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                                模型的详细描述和基本特性
+                            </div>
+                            <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <code style={{ fontSize: '0.8rem', backgroundColor: 'var(--gray-100)', padding: '0.15rem 0.4rem', borderRadius: '0.25rem' }}>
+                                    {selectedPricing.model_name}
+                                </code>
+                                {isPerRequestBilling(selectedPricing) ? (
+                                    <Badge color="purple">按次</Badge>
+                                ) : (
+                                    <Badge color="blue">按量</Badge>
+                                )}
+                            </div>
+                            <div style={{ marginTop: '0.75rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>暂无模型描述</div>
+                        </Card>
+
+                        <Card>
+                            <div style={{ fontWeight: '600' }}>API端点</div>
+                            <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                                模型支持的接口端点信息
+                            </div>
+                            <div style={{ marginTop: '0.75rem' }}>
+                                {(() => {
+                                    const modelEndpoints = resolveModelEndpoints(selectedPricing);
+                                    return (
+                                        <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                                            {modelEndpoints.map((endpoint, idx) => (
+                                                <div
+                                                    key={`${endpoint.type}-${idx}`}
+                                                    style={{
+                                                        display: 'grid',
+                                                        gridTemplateColumns: 'minmax(72px, 120px) 16px minmax(0, 1fr) auto',
+                                                        alignItems: 'center',
+                                                        columnGap: '0.5rem',
+                                                        padding: '0.65rem 0.75rem',
+                                                        borderBottom: idx === modelEndpoints.length - 1 ? 'none' : '1px dashed var(--border-color)'
+                                                    }}
+                                                >
+                                                    <span style={{ color: 'var(--text-primary)', fontWeight: '500' }}>{endpoint.type || '-'}</span>
+                                                    <span style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>：</span>
+                                                    <code style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', overflowWrap: 'anywhere' }}>
+                                                        {endpoint.path || '-'}
+                                                    </code>
+                                                    <span
+                                                        style={{
+                                                            fontSize: '0.75rem',
+                                                            color: 'var(--text-secondary)',
+                                                            padding: '0.1rem 0.45rem',
+                                                            borderRadius: '999px',
+                                                            border: '1px solid var(--border-color)',
+                                                            textTransform: 'uppercase',
+                                                            letterSpacing: '0.02em'
+                                                        }}
+                                                    >
+                                                        {endpoint.method || 'POST'}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        </Card>
+
+                        <Card padding="0">
+                            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)' }}>
+                                <div style={{ fontWeight: '600' }}>分组价格</div>
+                                <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                                    不同用户分组的价格信息
+                                </div>
+                            </div>
+                            <Table>
+                                <Thead>
+                                    <Tr>
+                                        <Th>分组</Th>
+                                        <Th>倍率</Th>
+                                        <Th>计费类型</Th>
+                                        <Th>提示</Th>
+                                        <Th>补全</Th>
+                                        <Th>单次</Th>
+                                    </Tr>
+                                </Thead>
+                                <Tbody>
+                                    {getModelAvailableGroups(selectedPricing).map((groupName) => {
+                                        const ratio = getGroupRatio(groupName);
+                                        return (
+                                            <Tr key={groupName}>
+                                                <Td>{groupName}</Td>
+                                                <Td>x{formatRatio(ratio)}</Td>
+                                                <Td>
+                                                    {isPerRequestBilling(selectedPricing) ? (
+                                                        <Badge color="purple">按次</Badge>
+                                                    ) : (
+                                                        <Badge color="blue">按量</Badge>
+                                                    )}
+                                                </Td>
+                                                <Td>{renderPerTokenPriceCell(calculatePromptPricePerMillion(selectedPricing, ratio))}</Td>
+                                                <Td>{renderPerTokenPriceCell(calculateCompletionPricePerMillion(selectedPricing, ratio))}</Td>
+                                                <Td>{renderPerCallPriceCell(calculatePerCallPrice(selectedPricing, ratio))}</Td>
+                                            </Tr>
+                                        );
+                                    })}
+                                </Tbody>
+                            </Table>
+                        </Card>
+                    </div>
+                )}
+            </Modal>
 
             {/* Token Modal */}
             <Modal

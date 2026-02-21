@@ -1,10 +1,10 @@
 package service
 
 import (
-	"encoding/json"
-	"fmt"
 	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/model"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -37,27 +37,35 @@ func SyncProvider(provider *model.Provider) error {
 }
 
 func syncPricing(client *UpstreamClient, provider *model.Provider) error {
-	pricingList, err := client.GetPricing()
+	pricingPayload, err := client.GetPricing()
 	if err != nil {
 		return err
 	}
+	pricingList := pricingPayload.Data
 
 	for _, p := range pricingList {
 		enableGroupsJSON, _ := json.Marshal(p.EnableGroups)
+		supportedEndpointTypesJSON, _ := json.Marshal(p.SupportedEndpointTypes)
 		mp := &model.ModelPricing{
-			ModelName:       p.ModelName,
-			ProviderId:      provider.Id,
-			QuotaType:       p.QuotaType,
-			ModelRatio:      p.ModelRatio,
-			CompletionRatio: p.CompletionRatio,
-			ModelPrice:      p.ModelPrice,
-			EnableGroups:    string(enableGroupsJSON),
-			LastSynced:      time.Now().Unix(),
+			ModelName:              p.ModelName,
+			ProviderId:             provider.Id,
+			QuotaType:              p.QuotaType,
+			ModelRatio:             p.ModelRatio,
+			CompletionRatio:        p.CompletionRatio,
+			ModelPrice:             p.ModelPrice,
+			EnableGroups:           string(enableGroupsJSON),
+			SupportedEndpointTypes: string(supportedEndpointTypesJSON),
+			LastSynced:             time.Now().Unix(),
 		}
 		if err := model.UpsertModelPricing(mp); err != nil {
 			common.SysLog(fmt.Sprintf("upsert pricing failed for model %s: %v", p.ModelName, err))
 		}
 	}
+
+	groupRatioJSON, _ := json.Marshal(pricingPayload.GroupRatio)
+	provider.UpdatePricingGroupRatio(string(groupRatioJSON))
+	supportedEndpointJSON, _ := json.Marshal(pricingPayload.SupportedEndpoint)
+	provider.UpdatePricingSupportedEndpoint(string(supportedEndpointJSON))
 
 	common.SysLog(fmt.Sprintf("synced %d pricing records for provider %s", len(pricingList), provider.Name))
 	return nil

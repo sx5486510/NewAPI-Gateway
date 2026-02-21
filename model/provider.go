@@ -1,26 +1,28 @@
 package model
 
 import (
-	"errors"
 	"NewAPI-Gateway/common"
+	"errors"
 	"time"
 )
 
 type Provider struct {
-	Id             int    `json:"id"`
-	Name           string `json:"name" gorm:"index;not null"`
-	BaseURL        string `json:"base_url" gorm:"not null"`
-	AccessToken    string `json:"access_token" gorm:"type:text"`
-	UserID         int    `json:"user_id"`
-	Status         int    `json:"status" gorm:"default:1"`
-	Priority       int    `json:"priority" gorm:"default:0"`
-	Weight         int    `json:"weight" gorm:"default:10"`
-	CheckinEnabled bool   `json:"checkin_enabled"`
-	LastCheckinAt  int64  `json:"last_checkin_at"`
-	Balance        string `json:"balance"`
-	BalanceUpdated int64  `json:"balance_updated"`
-	Remark         string `json:"remark" gorm:"type:text"`
-	CreatedAt      int64  `json:"created_at"`
+	Id                       int    `json:"id"`
+	Name                     string `json:"name" gorm:"index;not null"`
+	BaseURL                  string `json:"base_url" gorm:"not null"`
+	AccessToken              string `json:"access_token" gorm:"type:text"`
+	UserID                   int    `json:"user_id"`
+	Status                   int    `json:"status" gorm:"default:1"`
+	Priority                 int    `json:"priority" gorm:"default:0"`
+	Weight                   int    `json:"weight" gorm:"default:10"`
+	CheckinEnabled           bool   `json:"checkin_enabled"`
+	LastCheckinAt            int64  `json:"last_checkin_at"`
+	Balance                  string `json:"balance"`
+	BalanceUpdated           int64  `json:"balance_updated"`
+	PricingGroupRatio        string `json:"pricing_group_ratio" gorm:"type:text"`
+	PricingSupportedEndpoint string `json:"pricing_supported_endpoint" gorm:"type:text"`
+	Remark                   string `json:"remark" gorm:"type:text"`
+	CreatedAt                int64  `json:"created_at"`
 }
 
 func GetAllProviders(startIdx int, num int) ([]*Provider, error) {
@@ -75,6 +77,14 @@ func (p *Provider) UpdateBalance(balance string) {
 		"balance":         balance,
 		"balance_updated": time.Now().Unix(),
 	})
+}
+
+func (p *Provider) UpdatePricingGroupRatio(groupRatio string) {
+	DB.Model(p).Update("pricing_group_ratio", groupRatio)
+}
+
+func (p *Provider) UpdatePricingSupportedEndpoint(supportedEndpoint string) {
+	DB.Model(p).Update("pricing_supported_endpoint", supportedEndpoint)
 }
 
 func (p *Provider) UpdateCheckinTime() {

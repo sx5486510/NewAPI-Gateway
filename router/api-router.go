@@ -92,8 +92,10 @@ func SetApiRouter(router *gin.Engine) {
 		routeGroup.Use(middleware.AdminAuth(), middleware.NoTokenAuth())
 		{
 			routeGroup.GET("/", controller.GetModelRoutes)
+			routeGroup.GET("/overview", controller.GetModelRouteOverview)
 			routeGroup.GET("/models", controller.GetAllModels)
 			routeGroup.PUT("/:id", controller.UpdateRoute)
+			routeGroup.POST("/batch-update", controller.BatchUpdateRoutes)
 			routeGroup.POST("/rebuild", controller.RebuildRoutes)
 		}
 
