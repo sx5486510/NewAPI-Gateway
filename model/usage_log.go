@@ -226,15 +226,17 @@ func CountAllLogs() int64 {
 
 // DashboardStats holds aggregated statistics
 type DashboardStats struct {
-	TotalRequests   int64               `json:"total_requests"`
-	SuccessRequests int64               `json:"success_requests"`
-	FailedRequests  int64               `json:"failed_requests"`
-	TotalProviders  int64               `json:"total_providers"`
-	TotalModels     int64               `json:"total_models"`
-	TotalRoutes     int64               `json:"total_routes"`
-	ByProvider      []ProviderStat      `json:"by_provider"`
-	ByModel         []ModelStat         `json:"by_model"`
-	RecentRequests  []DailyRequestCount `json:"recent_requests"`
+	TotalRequests    int64               `json:"total_requests"`
+	SuccessRequests  int64               `json:"success_requests"`
+	FailedRequests   int64               `json:"failed_requests"`
+	TotalProviders   int64               `json:"total_providers"`
+	TotalModels      int64               `json:"total_models"`
+	TotalRoutes      int64               `json:"total_routes"`
+	ByProvider       []ProviderStat      `json:"by_provider"`
+	ByModel          []ModelStat         `json:"by_model"`
+	RecentRequests   []DailyRequestCount `json:"recent_requests"`
+	RecentMetrics    []DailyTrendStat    `json:"recent_metrics"`
+	RecentModelStats []DailyModelStat    `json:"recent_model_stats"`
 }
 
 type ProviderStat struct {
@@ -251,6 +253,19 @@ type ModelStat struct {
 type DailyRequestCount struct {
 	Date         string `json:"date"`
 	RequestCount int64  `json:"request_count"`
+}
+
+type DailyTrendStat struct {
+	Date         string  `json:"date"`
+	RequestCount int64   `json:"request_count"`
+	CostUSD      float64 `json:"cost_usd"`
+	TokenCount   int64   `json:"token_count"`
+}
+
+type DailyModelStat struct {
+	Date       string `json:"date"`
+	ModelName  string `json:"model_name"`
+	TokenCount int64  `json:"token_count"`
 }
 
 // GetDashboardStats returns aggregated stats for the admin dashboard
@@ -276,6 +291,110 @@ func GetDashboardStats() (*DashboardStats, error) {
 	DB.Model(&UsageLog{}).Select("model_name, count(*) as request_count").
 		Group("model_name").Order("request_count desc").
 		Limit(10).Scan(&stats.ByModel)
+
+	// Recent trends (last 7 days, including today)
+	type dailyTrendRow struct {
+		Date         string  `json:"date"`
+		RequestCount int64   `json:"request_count"`
+		CostUSD      float64 `json:"cost_usd"`
+		TokenCount   int64   `json:"token_count"`
+	}
+	now := time.Now()
+	startDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -6)
+	startUnix := startDay.Unix()
+
+	var dateExpr string
+	switch DB.Dialector.Name() {
+	case "mysql":
+		dateExpr = "DATE_FORMAT(FROM_UNIXTIME(created_at), '%Y-%m-%d')"
+	case "postgres":
+		dateExpr = "TO_CHAR(TO_TIMESTAMP(created_at), 'YYYY-MM-DD')"
+	default:
+		dateExpr = "strftime('%Y-%m-%d', datetime(created_at, 'unixepoch', 'localtime'))"
+	}
+
+	var recentRows []dailyTrendRow
+	if err := DB.Model(&UsageLog{}).
+		Select(dateExpr+" AS date, COUNT(*) AS request_count, COALESCE(SUM(cost_usd), 0) AS cost_usd, COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS token_count").
+		Where("created_at >= ?", startUnix).
+		Group(dateExpr).
+		Order(dateExpr + " ASC").
+		Scan(&recentRows).Error; err != nil {
+		return nil, err
+	}
+
+	trendMap := make(map[string]DailyTrendStat, len(recentRows))
+	for _, row := range recentRows {
+		trendMap[row.Date] = DailyTrendStat{
+			Date:         row.Date,
+			RequestCount: row.RequestCount,
+			CostUSD:      row.CostUSD,
+			TokenCount:   row.TokenCount,
+		}
+	}
+
+	stats.RecentRequests = make([]DailyRequestCount, 0, 7)
+	stats.RecentMetrics = make([]DailyTrendStat, 0, 7)
+	for i := 0; i < 7; i++ {
+		day := startDay.AddDate(0, 0, i)
+		dayStr := day.Format("2006-01-02")
+		trend := trendMap[dayStr]
+		trend.Date = dayStr
+
+		stats.RecentMetrics = append(stats.RecentMetrics, trend)
+		stats.RecentRequests = append(stats.RecentRequests, DailyRequestCount{
+			Date:         dayStr,
+			RequestCount: trend.RequestCount,
+		})
+	}
+
+	type modelTokenTotalRow struct {
+		ModelName  string `json:"model_name"`
+		TokenCount int64  `json:"token_count"`
+	}
+	type modelDailyRow struct {
+		Date       string `json:"date"`
+		ModelName  string `json:"model_name"`
+		TokenCount int64  `json:"token_count"`
+	}
+
+	var topModelRows []modelTokenTotalRow
+	if err := DB.Model(&UsageLog{}).
+		Select("model_name, COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS token_count").
+		Where("created_at >= ? AND model_name IS NOT NULL AND TRIM(model_name) <> ''", startUnix).
+		Group("model_name").
+		Order("token_count DESC").
+		Limit(8).
+		Scan(&topModelRows).Error; err != nil {
+		return nil, err
+	}
+
+	if len(topModelRows) > 0 {
+		modelNames := make([]string, 0, len(topModelRows))
+		for _, row := range topModelRows {
+			modelNames = append(modelNames, row.ModelName)
+		}
+
+		var modelRows []modelDailyRow
+		if err := DB.Model(&UsageLog{}).
+			Select(dateExpr+" AS date, model_name, COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS token_count").
+			Where("created_at >= ? AND model_name IN ?", startUnix, modelNames).
+			Group(dateExpr + ", model_name").
+			Order(dateExpr + " ASC").
+			Scan(&modelRows).Error; err != nil {
+			return nil, err
+		}
+		stats.RecentModelStats = make([]DailyModelStat, 0, len(modelRows))
+		for _, row := range modelRows {
+			stats.RecentModelStats = append(stats.RecentModelStats, DailyModelStat{
+				Date:       row.Date,
+				ModelName:  row.ModelName,
+				TokenCount: row.TokenCount,
+			})
+		}
+	} else {
+		stats.RecentModelStats = []DailyModelStat{}
+	}
 
 	return stats, nil
 }
