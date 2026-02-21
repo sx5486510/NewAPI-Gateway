@@ -3,7 +3,7 @@ FROM node:20 AS builder
 WORKDIR /build
 COPY ./web .
 COPY ./VERSION .
-RUN npm ci
+RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
 RUN REACT_APP_VERSION=$(cat VERSION) npm run build
 
 FROM golang AS builder2
