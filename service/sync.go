@@ -1,10 +1,10 @@
 package service
 
 import (
-	"encoding/json"
-	"fmt"
 	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/model"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -37,10 +37,11 @@ func SyncProvider(provider *model.Provider) error {
 }
 
 func syncPricing(client *UpstreamClient, provider *model.Provider) error {
-	pricingList, err := client.GetPricing()
+	pricingPayload, err := client.GetPricing()
 	if err != nil {
 		return err
 	}
+	pricingList := pricingPayload.Data
 
 	for _, p := range pricingList {
 		enableGroupsJSON, _ := json.Marshal(p.EnableGroups)
@@ -58,6 +59,9 @@ func syncPricing(client *UpstreamClient, provider *model.Provider) error {
 			common.SysLog(fmt.Sprintf("upsert pricing failed for model %s: %v", p.ModelName, err))
 		}
 	}
+
+	groupRatioJSON, _ := json.Marshal(pricingPayload.GroupRatio)
+	provider.UpdatePricingGroupRatio(string(groupRatioJSON))
 
 	common.SysLog(fmt.Sprintf("synced %d pricing records for provider %s", len(pricingList), provider.Name))
 	return nil

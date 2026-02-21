@@ -46,6 +46,12 @@ type UpstreamPricing struct {
 	EnableGroups    []string `json:"enable_groups"`
 }
 
+type UpstreamPricingPayload struct {
+	Data        []UpstreamPricing  `json:"data"`
+	GroupRatio  map[string]float64 `json:"group_ratio"`
+	UsableGroup map[string]string  `json:"usable_group"`
+}
+
 // UpstreamToken mirrors the upstream Token structure
 type UpstreamToken struct {
 	Id                 int    `json:"id"`
@@ -131,19 +137,26 @@ func (c *UpstreamClient) doRequestWithBody(method string, path string, payload i
 	return body, nil
 }
 
-// GetPricing fetches /api/pricing from the upstream
-func (c *UpstreamClient) GetPricing() ([]UpstreamPricing, error) {
+// GetPricing fetches /api/pricing from the upstream.
+// It is compatible with both:
+// 1) {data:[...]}
+// 2) {success:true,data:[...],group_ratio:{...},usable_group:{...}}
+func (c *UpstreamClient) GetPricing() (*UpstreamPricingPayload, error) {
 	body, err := c.doRequest("GET", "/api/pricing")
 	if err != nil {
 		return nil, err
 	}
-	var resp struct {
-		Data []UpstreamPricing `json:"data"`
-	}
+	var resp UpstreamPricingPayload
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	if resp.GroupRatio == nil {
+		resp.GroupRatio = make(map[string]float64)
+	}
+	if resp.UsableGroup == nil {
+		resp.UsableGroup = make(map[string]string)
+	}
+	return &resp, nil
 }
 
 // GetTokens fetches /api/token/ from the upstream
