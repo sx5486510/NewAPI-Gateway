@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { UserContext } from '../context/User';
 import { ThemeContext } from '../context/Theme';
@@ -13,6 +13,7 @@ import {
     Settings,
     LogOut,
     Menu,
+    X,
     Sun,
     Moon
 } from 'lucide-react';
@@ -24,7 +25,7 @@ const Layout = ({ children }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const roleName = getRoleName(userState.user?.role);
 
-    const isAdmin = userState.user && userState.user.role >= 1; // Assuming role 1 is min for admin
+    const isAdmin = userState.user && userState.user.role >= 1;
 
     const navItems = [
         { name: '仪表盘', path: '/', icon: LayoutDashboard, admin: true },
@@ -37,7 +38,6 @@ const Layout = ({ children }) => {
     ];
 
     const handleLogout = () => {
-        // Implement logout logic here
         userDispatch({ type: 'logout' });
         localStorage.removeItem('user');
         window.location.href = '/login';
@@ -47,144 +47,109 @@ const Layout = ({ children }) => {
         themeDispatch({ type: 'toggle' });
     };
 
-    return (
-        <div style={{ display: 'flex', height: '100vh', backgroundColor: 'var(--bg-secondary)' }}>
-            {/* Sidebar - Desktop */}
-            <aside
-                style={{
-                    width: '16rem',
-                    backgroundColor: 'var(--bg-primary)',
-                    borderRight: '1px solid var(--border-color)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                }}
-                className="hidden md:flex"
-            >
-                <div style={{ height: '4rem', display: 'flex', alignItems: 'center', padding: '0 1.5rem', borderBottom: '1px solid var(--border-color)' }}>
-                    <img src="/logo.png" alt="Logo" style={{ height: '2rem', marginRight: '0.75rem' }} />
-                    <span style={{ fontWeight: '700', fontSize: '1.125rem', color: 'var(--primary-600)' }}>NewAPI 网关</span>
-                </div>
+    const visibleNavItems = navItems.filter((item) => !(item.admin && !isAdmin));
 
-                <nav className='sidebar-nav'>
-                    {navItems.map((item) => {
-                        if (item.admin && !isAdmin) return null;
-                        const isActive = location.pathname === item.path;
+    const isPathActive = (path) => {
+        if (path === '/') {
+            return location.pathname === '/';
+        }
+        return location.pathname === path || location.pathname.startsWith(`${path}/`);
+    };
 
-                        return (
-                            <Link
-                                key={item.name}
-                                to={item.path}
-                                className={`sidebar-nav-link ${isActive ? 'active' : ''}`}
-                                aria-current={isActive ? 'page' : undefined}
-                            >
-                                <span className='sidebar-nav-icon'>
-                                    <item.icon size={20} />
-                                </span>
-                                <span className='sidebar-nav-label'>{item.name}</span>
-                            </Link>
-                        );
-                    })}
-                </nav>
+    useEffect(() => {
+        setSidebarOpen(false);
+    }, [location.pathname]);
 
-                <div style={{ padding: '1rem', borderTop: '1px solid var(--border-color)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
-                        <div style={{
-                            width: '2.5rem',
-                            height: '2.5rem',
-                            borderRadius: '50%',
-                            backgroundColor: 'var(--primary-100)',
-                            color: 'var(--primary-600)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontWeight: '600',
-                            marginRight: '0.75rem'
-                        }}>
-                            {userState.user?.username?.[0]?.toUpperCase() || 'U'}
-                        </div>
-                        <div style={{ overflow: 'hidden' }}>
-                            <div style={{ fontWeight: '500', truncate: true }}>{userState.user?.username}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{roleName}</div>
-                        </div>
-                    </div>
-                    <button
-                        onClick={toggleTheme}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            width: '100%',
-                            padding: '0.5rem',
-                            color: 'var(--gray-500)',
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            fontSize: '0.875rem',
-                            marginBottom: '0.25rem'
-                        }}
-                    >
-                        {themeState.theme === 'dark' ? (
-                            <Sun size={16} style={{ marginRight: '0.5rem' }} />
-                        ) : (
-                            <Moon size={16} style={{ marginRight: '0.5rem' }} />
-                        )}
-                        {themeState.theme === 'dark' ? '浅色模式' : '深色模式'}
-                    </button>
-                    <button
-                        onClick={handleLogout}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            width: '100%',
-                            padding: '0.5rem',
-                            color: 'var(--gray-500)',
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            fontSize: '0.875rem'
-                        }}
-                    >
-                        <LogOut size={16} style={{ marginRight: '0.5rem' }} />
-                        退出登录
-                    </button>
-                </div>
-            </aside>
-
-            {/* Main Content */}
-            <main style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                {/* Mobile Header */}
-                <header
-                    style={{
-                        height: '4rem',
-                        backgroundColor: 'var(--bg-primary)',
-                        borderBottom: '1px solid var(--border-color)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '0 1rem',
-                        justifyContent: 'space-between'
-                    }}
-                    className="md:hidden"
+    const renderNavLinks = (className, onNavigate) => (
+        <nav className={className}>
+            {visibleNavItems.map((item) => (
+                <Link
+                    key={item.name}
+                    to={item.path}
+                    className={`top-nav-link ${isPathActive(item.path) ? 'active' : ''}`}
+                    aria-current={isPathActive(item.path) ? 'page' : undefined}
+                    onClick={onNavigate}
                 >
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                        <img src="/logo.png" alt="Logo" style={{ height: '1.75rem', marginRight: '0.75rem' }} />
-                        <span style={{ fontWeight: '700', fontSize: '1rem' }}>NewAPI 网关</span>
+                    <span className='top-nav-icon'>
+                        <item.icon size={18} />
+                    </span>
+                    <span className='top-nav-label'>{item.name}</span>
+                </Link>
+            ))}
+        </nav>
+    );
+
+    return (
+        <div className='app-shell'>
+            <header className='top-nav-wrap'>
+                <div className='top-nav'>
+                    <Link to='/' className='top-nav-brand' onClick={() => setSidebarOpen(false)}>
+                        <img src='/logo.png' alt='Logo' style={{ height: '1.9rem' }} />
+                        <span className='top-nav-brand-text'>NewAPI 网关</span>
+                    </Link>
+
+                    <div className='hidden md:flex top-nav-links-wrap'>
+                        {renderNavLinks('top-nav-links')}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <button
-                            onClick={toggleTheme}
-                            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}
-                            aria-label='切换主题'
-                        >
+
+                    <div className='hidden md:flex top-nav-actions'>
+                        <div className='top-nav-user'>
+                            <span className='top-nav-user-avatar'>{userState.user?.username?.[0]?.toUpperCase() || 'U'}</span>
+                            <span className='top-nav-user-name'>{userState.user?.username}</span>
+                            <span className='top-nav-user-role'>{roleName}</span>
+                        </div>
+                        <button onClick={toggleTheme} className='top-nav-action-btn' type='button'>
+                            {themeState.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                            <span>{themeState.theme === 'dark' ? '浅色模式' : '深色模式'}</span>
+                        </button>
+                        <button onClick={handleLogout} className='top-nav-action-btn' type='button'>
+                            <LogOut size={16} />
+                            <span>退出登录</span>
+                        </button>
+                    </div>
+
+                    <div className='md:hidden mobile-nav-actions'>
+                        <button onClick={toggleTheme} className='mobile-icon-btn' type='button' aria-label='切换主题'>
                             {themeState.theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
                         </button>
-                        <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)' }}>
-                            <Menu size={24} />
+                        <button
+                            onClick={() => setSidebarOpen(!sidebarOpen)}
+                            className='mobile-icon-btn'
+                            type='button'
+                            aria-label='切换菜单'
+                            aria-expanded={sidebarOpen}
+                            aria-controls='mobile-top-menu'
+                        >
+                            {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
                         </button>
                     </div>
-                </header>
-
-                <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
-                    {children}
                 </div>
+            </header>
+
+            {sidebarOpen && <button className='mobile-nav-backdrop md:hidden' onClick={() => setSidebarOpen(false)} aria-label='关闭菜单' type='button' />}
+            <section id='mobile-top-menu' className={`mobile-nav-panel md:hidden ${sidebarOpen ? 'open' : ''}`}>
+                {renderNavLinks('mobile-nav-links', () => setSidebarOpen(false))}
+                <div className='mobile-nav-user-card'>
+                    <div className='top-nav-user'>
+                        <span className='top-nav-user-avatar'>{userState.user?.username?.[0]?.toUpperCase() || 'U'}</span>
+                        <span className='top-nav-user-name'>{userState.user?.username}</span>
+                        <span className='top-nav-user-role'>{roleName}</span>
+                    </div>
+                    <div className='mobile-nav-actions-list'>
+                        <button onClick={toggleTheme} className='top-nav-action-btn' type='button'>
+                            {themeState.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                            <span>{themeState.theme === 'dark' ? '浅色模式' : '深色模式'}</span>
+                        </button>
+                        <button onClick={handleLogout} className='top-nav-action-btn' type='button'>
+                            <LogOut size={16} />
+                            <span>退出登录</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <main className='app-main'>
+                <div className='app-content'>{children}</div>
             </main>
         </div>
     );

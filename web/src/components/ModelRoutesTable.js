@@ -6,7 +6,6 @@ import Button from './ui/Button';
 import Card from './ui/Card';
 import Badge from './ui/Badge';
 import Input from './ui/Input';
-import ProgressBar from './ui/ProgressBar';
 
 const selectStyle = {
     border: '1px solid var(--border-color)',
@@ -41,7 +40,7 @@ const cellMiddleStyle = {
 
 const statusSelectStyle = {
     ...selectStyle,
-    minWidth: '128px',
+    minWidth: '96px',
     width: '100%'
 };
 
@@ -49,6 +48,30 @@ const helperTextStyle = {
     fontSize: '0.75rem',
     color: 'var(--text-secondary)',
     lineHeight: 1.35
+};
+
+const stickyHeaderCellStyle = {
+    position: 'sticky',
+    top: 0,
+    zIndex: 4,
+    backgroundColor: 'var(--gray-50)',
+    boxShadow: 'inset 0 -1px 0 var(--border-color)'
+};
+
+const spinButtonStyle = {
+    border: '1px solid var(--border-color)',
+    background: 'var(--bg-primary)',
+    color: 'var(--text-secondary)',
+    borderRadius: '0.25rem',
+    width: '1.15rem',
+    height: '1.05rem',
+    padding: 0,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    lineHeight: 1,
+    fontSize: '0.66rem',
+    cursor: 'pointer'
 };
 
 const formatPrice = (value, digits = 4) => {
@@ -130,6 +153,7 @@ const ModelRoutesTable = () => {
     const [sortMode, setSortMode] = useState('name');
     const [changedOnly, setChangedOnly] = useState(false);
     const [detailChangedOnly, setDetailChangedOnly] = useState(false);
+    const [ultraCompact, setUltraCompact] = useState(true);
 
     const routeMap = useMemo(() => {
         const map = {};
@@ -299,6 +323,20 @@ const ModelRoutesTable = () => {
             .sort((a, b) => b.priority - a.priority);
     }, [detailChangedOnly, drafts, selectedEntry]);
 
+    const selectedOriginalShareMap = useMemo(() => {
+        if (!selectedEntry) return {};
+        const originalRows = selectedEntry.routes.map((route) => {
+            const original = routeMap[route.id];
+            return original ? { ...original } : { ...route };
+        });
+        const originalWithShare = computeShareByPriority(originalRows);
+        const map = {};
+        originalWithShare.forEach((row) => {
+            map[row.id] = Number(row.effective_share_percent);
+        });
+        return map;
+    }, [routeMap, selectedEntry]);
+
     const updateDraft = useCallback((routeId, patch) => {
         setDrafts((prev) => {
             const original = routeMap[routeId];
@@ -412,8 +450,8 @@ const ModelRoutesTable = () => {
     };
 
     return (
-        <Card padding="0">
-            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <Card padding="0" className={`routes-table-shell${ultraCompact ? ' routes-table-shell-compact' : ''}`}>
+            <div className="routes-topbar" style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <div>
                     <div style={{ fontWeight: '600' }}>模型路由总览</div>
                     <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
@@ -428,7 +466,7 @@ const ModelRoutesTable = () => {
                 </div>
             </div>
 
-            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div className="routes-filterbar" style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ minWidth: '240px', flex: '1 1 300px' }}>
                     <Input
                         placeholder="搜索模型 / 供应商 / 分组"
@@ -436,9 +474,10 @@ const ModelRoutesTable = () => {
                         onChange={(e) => setSearchKeyword(e.target.value)}
                         icon={Search}
                         style={{ margin: 0 }}
+                        inputStyle={ultraCompact ? { paddingTop: '0.45rem', paddingBottom: '0.45rem', fontSize: '0.8rem' } : undefined}
                     />
                 </div>
-                <select value={providerFilter} onChange={(e) => setProviderFilter(e.target.value)} style={selectStyle}>
+                <select className="routes-inline-select" value={providerFilter} onChange={(e) => setProviderFilter(e.target.value)} style={selectStyle}>
                     <option value="all">全部供应商</option>
                     {providerOptions.map((provider) => (
                         <option key={provider.id} value={provider.id}>
@@ -446,18 +485,18 @@ const ModelRoutesTable = () => {
                         </option>
                     ))}
                 </select>
-                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
+                <select className="routes-inline-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
                     <option value="all">全部状态</option>
                     <option value="enabled">仅启用路由</option>
                     <option value="disabled">仅禁用路由</option>
                 </select>
-                <select value={sortMode} onChange={(e) => setSortMode(e.target.value)} style={selectStyle}>
+                <select className="routes-inline-select" value={sortMode} onChange={(e) => setSortMode(e.target.value)} style={selectStyle}>
                     <option value="name">按模型名排序</option>
                     <option value="cheapest_prompt">按最低输入价</option>
                     <option value="cheapest_call">按最低按次价</option>
                     <option value="dirty_first">按改动优先</option>
                 </select>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                <label className="routes-switch" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
                     <input
                         type="checkbox"
                         checked={changedOnly}
@@ -465,21 +504,34 @@ const ModelRoutesTable = () => {
                     />
                     仅看已改模型
                 </label>
+                <label className="routes-switch" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                    <input
+                        type="checkbox"
+                        checked={ultraCompact}
+                        onChange={(e) => setUltraCompact(e.target.checked)}
+                    />
+                    超紧凑模式
+                </label>
             </div>
 
             {loading ? (
-                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>加载中...</div>
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    加载中...
+                </div>
             ) : modelEntries.length === 0 ? (
-                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>当前筛选条件下没有路由数据</div>
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    当前筛选条件下没有路由数据
+                </div>
             ) : (
-                <div style={{ padding: '1rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                    <div style={{ flex: '1 1 320px', minWidth: '280px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-                        <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}>模型列表</div>
-                        <div style={{ maxHeight: '680px', overflowY: 'auto' }}>
+                <div className="routes-workspace" style={{ flex: 1, minHeight: 0, padding: '0.85rem 1rem 1rem', display: 'flex', gap: '0.85rem', alignItems: 'stretch', overflow: 'hidden' }}>
+                    <div className="routes-model-panel" style={{ flex: '0 0 18%', minWidth: '160px', maxWidth: '210px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                        <div className="routes-model-panel-header" style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}>模型列表</div>
+                        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                             {modelEntries.map((entry) => {
                                 const isActive = entry.modelName === selectedModel;
                                 return (
                                     <button
+                                        className="routes-model-item"
                                         key={entry.modelName}
                                         type="button"
                                         onClick={() => setSelectedModel(entry.modelName)}
@@ -494,7 +546,7 @@ const ModelRoutesTable = () => {
                                         }}
                                     >
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                                            <code style={{ fontSize: '0.8rem', backgroundColor: 'var(--gray-100)', padding: '0.15rem 0.35rem', borderRadius: '0.25rem', color: 'var(--text-primary)' }}>
+                                            <code className="routes-model-code" style={{ fontSize: '0.8rem', backgroundColor: 'var(--gray-100)', padding: '0.15rem 0.35rem', borderRadius: '0.25rem', color: 'var(--text-primary)' }}>
                                                 {entry.modelName}
                                             </code>
                                             {entry.dirtyRows > 0 && <Badge color="yellow">待保存 {entry.dirtyRows}</Badge>}
@@ -514,17 +566,17 @@ const ModelRoutesTable = () => {
                         </div>
                     </div>
 
-                    <div style={{ flex: '2 1 720px', minWidth: '320px' }}>
+                    <div className="routes-detail-panel" style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                         {!selectedEntry ? (
-                            <div style={{ border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                            <div style={{ flex: 1, minHeight: 0, border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 请选择左侧模型查看路由详情
                             </div>
                         ) : (
-                            <>
-                                <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '0.75rem 1rem', marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                <div className="routes-detail-toolbar" style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}>
                                     <div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <code style={{ fontSize: '0.9rem', backgroundColor: 'var(--gray-100)', padding: '0.2rem 0.45rem', borderRadius: '0.25rem' }}>
+                                            <code className="routes-detail-code" style={{ fontSize: '0.9rem', backgroundColor: 'var(--gray-100)', padding: '0.2rem 0.45rem', borderRadius: '0.25rem' }}>
                                                 {selectedEntry.modelName}
                                             </code>
                                             <button
@@ -544,6 +596,7 @@ const ModelRoutesTable = () => {
                                     </div>
                                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                                         <input
+                                            className="routes-number-input"
                                             type="number"
                                             placeholder="批量优先级"
                                             value={batchPriority}
@@ -551,18 +604,19 @@ const ModelRoutesTable = () => {
                                             style={numberInputStyle}
                                         />
                                         <input
+                                            className="routes-number-input"
                                             type="number"
                                             placeholder="批量权重"
                                             value={batchWeight}
                                             onChange={(e) => setBatchWeight(e.target.value)}
                                             style={numberInputStyle}
                                         />
-                                        <select value={batchEnabled} onChange={(e) => setBatchEnabled(e.target.value)} style={selectStyle}>
+                                        <select className="routes-inline-select" value={batchEnabled} onChange={(e) => setBatchEnabled(e.target.value)} style={selectStyle}>
                                             <option value="keep">状态不变</option>
                                             <option value="enabled">全部启用</option>
                                             <option value="disabled">全部禁用</option>
                                         </select>
-                                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                        <label className="routes-switch" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                             <input
                                                 type="checkbox"
                                                 checked={detailChangedOnly}
@@ -574,40 +628,37 @@ const ModelRoutesTable = () => {
                                     </div>
                                 </div>
 
-                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth="1120px">
+                                <div className="routes-detail-scroller">
+                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '680px' : '740px'}>
                                     <colgroup>
                                         <col style={{ width: '24%' }} />
-                                        <col style={{ width: '11%' }} />
-                                        <col style={{ width: '15%' }} />
-                                        <col style={{ width: '9%' }} />
-                                        <col style={{ width: '9%' }} />
-                                        <col style={{ width: '9%' }} />
-                                        <col style={{ width: '12%' }} />
-                                        <col style={{ width: '11%' }} />
+                                        <col style={{ width: '28%' }} />
+                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '14%' }} />
+                                        <col style={{ width: '14%' }} />
                                     </colgroup>
                                     <Thead>
                                         <Tr>
-                                            <Th>供应商 / 令牌</Th>
-                                            <Th>计费方式</Th>
-                                            <Th>输入价 / 输出价</Th>
-                                            <Th>按次价</Th>
-                                            <Th>优先级</Th>
-                                            <Th>权重</Th>
-                                            <Th>同优先级占比</Th>
-                                            <Th>状态</Th>
+                                            <Th style={stickyHeaderCellStyle}>供应商 / 令牌</Th>
+                                            <Th style={stickyHeaderCellStyle}>费用</Th>
+                                            <Th style={stickyHeaderCellStyle}>优先级</Th>
+                                            <Th style={stickyHeaderCellStyle}>权重</Th>
+                                            <Th style={stickyHeaderCellStyle}>占比</Th>
+                                            <Th style={stickyHeaderCellStyle}>状态</Th>
                                         </Tr>
                                     </Thead>
                                     <Tbody>
                                         {selectedGroupedRoutes.length === 0 ? (
                                             <Tr>
-                                                <Td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
+                                                <Td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
                                                     当前模型没有符合条件的路由
                                                 </Td>
                                             </Tr>
                                         ) : selectedGroupedRoutes.map((group) => (
                                             <React.Fragment key={group.priority}>
                                                 <Tr style={{ backgroundColor: 'var(--gray-50)' }}>
-                                                    <Td colSpan={8} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
+                                                    <Td colSpan={6} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                             <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>优先级 {group.priority}</div>
                                                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -620,6 +671,10 @@ const ModelRoutesTable = () => {
                                                 {group.routes.map((route) => {
                                                     const isDirty = Boolean(drafts[route.id]);
                                                     const share = Number(route.effective_share_percent);
+                                                    const originalShare = Number(selectedOriginalShareMap[route.id]);
+                                                    const shareDelta = Number.isFinite(share) && Number.isFinite(originalShare)
+                                                        ? share - originalShare
+                                                        : null;
                                                     const health = getRouteHealth(route);
                                                     const tokenName = String(route.token_name || '').trim();
                                                     const tokenGroup = String(route.token_group_name || '').trim();
@@ -628,61 +683,94 @@ const ModelRoutesTable = () => {
                                                         <Tr key={route.id} style={isDirty ? { backgroundColor: 'rgba(245, 158, 11, 0.06)' } : undefined}>
                                                             <Td style={cellTopStyle}>
                                                                 <div style={{ fontWeight: '600', color: 'var(--text-primary)', lineHeight: 1.35 }}>{route.provider_name || '未知供应商'}</div>
-                                                                <div style={{ ...helperTextStyle, marginTop: '0.2rem' }}>
-                                                                    Token #{route.provider_token_id}
-                                                                    {displayTokenName ? ` · ${displayTokenName}` : ''}
-                                                                </div>
+                                                                {displayTokenName && (
+                                                                    <div style={{ ...helperTextStyle, marginTop: '0.2rem' }}>
+                                                                        {displayTokenName}
+                                                                    </div>
+                                                                )}
                                                                 <div style={{ marginTop: '0.35rem', display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                                                     {tokenGroup ? <Badge color="gray">组: {tokenGroup}</Badge> : <Badge color="gray">未分组</Badge>}
                                                                     <Badge color={health.color}>{health.label}</Badge>
                                                                     {isDirty && <Badge color="yellow">已修改</Badge>}
                                                                 </div>
-                                                                <div style={{ ...helperTextStyle, marginTop: '0.3rem' }}>
-                                                                    Provider #{route.provider_id} · Token状态 {route.token_status === 1 ? '启用' : '停用'}
-                                                                </div>
                                                             </Td>
                                                             <Td style={cellTopStyle}>
-                                                                {route.billing_type === 'per_call' ? <Badge color="yellow">按次计费</Badge> : <Badge color="blue">按 Token 计费</Badge>}
-                                                                <div style={{ ...helperTextStyle, marginTop: '0.25rem' }}>
-                                                                    倍率 x{Number(route.group_ratio || 1).toFixed(4).replace(/\.?0+$/, '')}
-                                                                </div>
-                                                            </Td>
-                                                            <Td style={cellTopStyle}>
-                                                                {route.billing_type === 'per_token' ? (
-                                                                    <div style={{ lineHeight: 1.45 }}>
-                                                                        <div>输入 {formatPrice(route.prompt_price_per_1m)} / 1M</div>
-                                                                        <div>输出 {formatPrice(route.completion_price_per_1m)} / 1M</div>
+                                                                {route.billing_type === 'per_call' ? (
+                                                                    <div style={{ lineHeight: 1.35 }}>
+                                                                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>按次 {formatPrice(route.per_call_price)} / 次</div>
+                                                                        <div style={{ ...helperTextStyle, marginTop: '0.2rem' }}>
+                                                                            分组倍率 x{Number(route.group_ratio || 1).toFixed(4).replace(/\.?0+$/, '')}
+                                                                        </div>
                                                                     </div>
                                                                 ) : (
-                                                                    <span style={{ color: 'var(--text-secondary)' }}>-</span>
+                                                                    <div style={{ lineHeight: 1.35 }}>
+                                                                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>输入 {formatPrice(route.prompt_price_per_1m)} / 1M</div>
+                                                                        <div style={{ color: 'var(--text-primary)', marginTop: '0.18rem' }}>输出 {formatPrice(route.completion_price_per_1m)} / 1M</div>
+                                                                        <div style={{ ...helperTextStyle, marginTop: '0.2rem' }}>
+                                                                            分组倍率 x{Number(route.group_ratio || 1).toFixed(4).replace(/\.?0+$/, '')}
+                                                                        </div>
+                                                                    </div>
                                                                 )}
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>
-                                                                {route.billing_type === 'per_call'
-                                                                    ? <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{formatPrice(route.per_call_price)}</span>
-                                                                    : <span style={{ color: 'var(--text-secondary)' }}>-</span>}
+                                                                <div className="routes-spinner">
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="优先级增加"
+                                                                        style={spinButtonStyle}
+                                                                        onClick={() => updateDraft(route.id, { priority: Number(route.priority || 0) + 1 })}
+                                                                    >
+                                                                        ▲
+                                                                    </button>
+                                                                    <div className="routes-spinner-value">{route.priority}</div>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="优先级减少"
+                                                                        style={spinButtonStyle}
+                                                                        onClick={() => updateDraft(route.id, { priority: Number(route.priority || 0) - 1 })}
+                                                                    >
+                                                                        ▼
+                                                                    </button>
+                                                                </div>
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>
-                                                                <input
-                                                                    type="number"
-                                                                    value={route.priority}
-                                                                    onChange={(e) => updateDraft(route.id, { priority: parseInteger(e.target.value, 0) })}
-                                                                    style={numberInputStyle}
-                                                                />
-                                                            </Td>
-                                                            <Td style={cellMiddleStyle}>
-                                                                <input
-                                                                    type="number"
-                                                                    value={route.weight}
-                                                                    onChange={(e) => updateDraft(route.id, { weight: parseInteger(e.target.value, 0) })}
-                                                                    style={numberInputStyle}
-                                                                />
+                                                                <div className="routes-spinner">
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="权重增加"
+                                                                        style={spinButtonStyle}
+                                                                        onClick={() => updateDraft(route.id, { weight: Number(route.weight || 0) + 1 })}
+                                                                    >
+                                                                        ▲
+                                                                    </button>
+                                                                    <div className="routes-spinner-value">{route.weight}</div>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="权重减少"
+                                                                        style={spinButtonStyle}
+                                                                        onClick={() => updateDraft(route.id, { weight: Number(route.weight || 0) - 1 })}
+                                                                    >
+                                                                        ▼
+                                                                    </button>
+                                                                </div>
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>
                                                                 {Number.isFinite(share) ? (
-                                                                    <div style={{ minWidth: '128px' }}>
-                                                                        <ProgressBar percent={Math.min(100, Math.max(0, share))} />
-                                                                        <div style={{ ...helperTextStyle, marginTop: '0.25rem' }}>{formatPercent(share)}</div>
+                                                                    <div className="routes-share-compact">
+                                                                        <div className="routes-share-track">
+                                                                            <div
+                                                                                className="routes-share-fill"
+                                                                                style={{ width: `${Math.min(100, Math.max(0, share))}%` }}
+                                                                            />
+                                                                        </div>
+                                                                        <div className="routes-share-meta">
+                                                                            <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{formatPercent(share)}</span>
+                                                                            {shareDelta !== null && Math.abs(shareDelta) >= 0.1 && (
+                                                                                <span style={{ color: shareDelta > 0 ? 'var(--success)' : 'var(--error)' }}>
+                                                                                    {shareDelta > 0 ? '+' : ''}{shareDelta.toFixed(1)}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
                                                                 ) : (
                                                                     <span style={{ color: 'var(--text-secondary)' }}>-</span>
@@ -690,6 +778,7 @@ const ModelRoutesTable = () => {
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>
                                                                 <select
+                                                                    className="routes-status-select"
                                                                     value={route.enabled ? 'enabled' : 'disabled'}
                                                                     onChange={(e) => updateDraft(route.id, { enabled: e.target.value === 'enabled' })}
                                                                     style={statusSelectStyle}
@@ -705,7 +794,8 @@ const ModelRoutesTable = () => {
                                         ))}
                                     </Tbody>
                                 </Table>
-                            </>
+                                </div>
+                            </div>
                         )}
                     </div>
                 </div>

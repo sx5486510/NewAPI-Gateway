@@ -2,10 +2,12 @@ import React from 'react';
 import ModelRoutesTable from '../../components/ModelRoutesTable';
 
 const Routes = () => (
-    <>
-        <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>模型路由</h2>
-        <ModelRoutesTable />
-    </>
+    <div className="routes-page">
+        <h2 className="routes-page-title">模型路由</h2>
+        <div className="routes-page-body">
+            <ModelRoutesTable />
+        </div>
+    </div>
 );
 
 export default Routes;

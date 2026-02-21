@@ -10,14 +10,14 @@ export const Table = ({ children, containerStyle, tableStyle, minWidth = '600px'
     );
 };
 
-export const Thead = ({ children }) => (
-    <thead style={{ backgroundColor: 'var(--gray-50)', borderBottom: '1px solid var(--border-color)' }}>
+export const Thead = ({ children, style, className }) => (
+    <thead className={className} style={{ backgroundColor: 'var(--gray-50)', borderBottom: '1px solid var(--border-color)', ...style }}>
         {children}
     </thead>
 );
 
-export const Tbody = ({ children }) => (
-    <tbody style={{ backgroundColor: 'var(--bg-primary)' }}>
+export const Tbody = ({ children, style, className }) => (
+    <tbody className={className} style={{ backgroundColor: 'var(--bg-primary)', ...style }}>
         {children}
     </tbody>
 );
@@ -28,8 +28,8 @@ export const Tr = ({ children, style, ...props }) => (
     </tr>
 );
 
-export const Th = ({ children }) => (
-    <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--gray-500)', fontWeight: '600' }}>
+export const Th = ({ children, style, className }) => (
+    <th className={className} style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--gray-500)', fontWeight: '600', ...style }}>
         {children}
     </th>
 );
