@@ -51,12 +51,12 @@ const Home = () => {
                 <p>
                   源码：
                   <a
-                    href='https://github.com/xxbbzy/API-Gateway-Aggregator'
+                    href='https://github.com/xxbbzy/NewAPI-Gateway'
                     target='_blank'
                     rel="noreferrer"
                     style={{ color: 'var(--primary-600)' }}
                   >
-                    https://github.com/xxbbzy/API-Gateway-Aggregator
+                    https://github.com/xxbbzy/NewAPI-Gateway
                   </a>
                 </p>
                 <p>启动时间：{getStartTimeString()}</p>

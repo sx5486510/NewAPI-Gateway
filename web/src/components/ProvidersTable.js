@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus,
@@ -10,13 +10,15 @@ import {
   Download,
   Upload
 } from 'lucide-react';
-import { API, showError, showSuccess } from '../helpers';
+import { API, showError, showSuccess, timestamp2string } from '../helpers';
+import { ITEMS_PER_PAGE } from '../constants';
 import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
 import Button from './ui/Button';
 import Card from './ui/Card';
 import Badge from './ui/Badge';
 import Modal from './ui/Modal';
 import Input from './ui/Input';
+import Pagination from './ui/Pagination';
 
 const ProvidersTable = () => {
   const navigate = useNavigate();
@@ -24,27 +26,76 @@ const ProvidersTable = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editProvider, setEditProvider] = useState(null);
+  const [activePage, setActivePage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const inFlightPagesRef = useRef(new Set());
+  const loadedPagesRef = useRef(new Set());
+  const fetchEpochRef = useRef(0);
 
-  const loadProviders = async () => {
+  const loadProviders = useCallback(async (startIdx = 0) => {
+    // Prevent concurrent duplicated fetch for the same page.
+    if (inFlightPagesRef.current.has(startIdx)) {
+      return 0;
+    }
+    // Skip already loaded page (page 0 is reserved for full refresh).
+    if (startIdx !== 0 && loadedPagesRef.current.has(startIdx)) {
+      return 0;
+    }
+
+    const requestEpoch = fetchEpochRef.current;
+    inFlightPagesRef.current.add(startIdx);
     setLoading(true);
     try {
-      const res = await API.get('/api/provider/');
+      const res = await API.get(`/api/provider/?p=${startIdx}`);
       const { success, data, message } = res.data;
+      // Ignore stale response from previous reload.
+      if (requestEpoch !== fetchEpochRef.current) {
+        return 0;
+      }
       if (success) {
-        setProviders(data || []);
+        const nextProviders = data || [];
+        setHasMore(nextProviders.length === ITEMS_PER_PAGE);
+        if (startIdx === 0) {
+          loadedPagesRef.current = new Set([0]);
+          setProviders(nextProviders);
+        } else {
+          loadedPagesRef.current.add(startIdx);
+          setProviders((prevProviders) => {
+            const seen = new Set(prevProviders.map((item) => item.id));
+            const merged = [...prevProviders];
+            nextProviders.forEach((item) => {
+              if (!seen.has(item.id)) {
+                seen.add(item.id);
+                merged.push(item);
+              }
+            });
+            return merged;
+          });
+        }
+        return nextProviders.length;
       } else {
         showError(message);
       }
     } catch (e) {
       showError('加载供应商失败');
     } finally {
+      inFlightPagesRef.current.delete(startIdx);
       setLoading(false);
     }
-  };
+    return 0;
+  }, []);
+
+  const reloadProviders = useCallback(async () => {
+    fetchEpochRef.current += 1;
+    inFlightPagesRef.current.clear();
+    loadedPagesRef.current.clear();
+    setActivePage(1);
+    await loadProviders(0);
+  }, [loadProviders]);
 
   useEffect(() => {
-    loadProviders();
-  }, []);
+    loadProviders(0);
+  }, [loadProviders]);
 
   const deleteProvider = async (id) => {
     if (!window.confirm('确定要删除此供应商吗？')) return;
@@ -52,7 +103,7 @@ const ProvidersTable = () => {
     const { success, message } = res.data;
     if (success) {
       showSuccess('删除成功');
-      loadProviders();
+      reloadProviders();
     } else {
       showError(message);
     }
@@ -73,7 +124,7 @@ const ProvidersTable = () => {
     const { success, message } = res.data;
     if (success) {
       showSuccess('签到成功');
-      loadProviders();
+      reloadProviders();
     } else {
       showError(message);
     }
@@ -105,7 +156,7 @@ const ProvidersTable = () => {
       if (success) {
         showSuccess('更新成功');
         setShowModal(false);
-        loadProviders();
+        reloadProviders();
       } else {
         showError(message);
       }
@@ -115,7 +166,7 @@ const ProvidersTable = () => {
       if (success) {
         showSuccess('创建成功');
         setShowModal(false);
-        loadProviders();
+        reloadProviders();
       } else {
         showError(message);
       }
@@ -162,7 +213,7 @@ const ProvidersTable = () => {
         const { success, message } = res.data;
         if (success) {
           showSuccess(message);
-          loadProviders();
+          reloadProviders();
         } else {
           showError(message);
         }
@@ -172,6 +223,28 @@ const ProvidersTable = () => {
     };
     input.click();
   };
+
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '无';
+    return timestamp2string(timestamp);
+  };
+
+  const onPaginationChange = async (e, { activePage: nextActivePage }) => {
+    if (nextActivePage < 1) return;
+    const loadedPages = Math.max(1, Math.ceil(providers.length / ITEMS_PER_PAGE));
+    if (nextActivePage > loadedPages) {
+      if (!hasMore) return;
+      const loadedCount = await loadProviders(nextActivePage - 1);
+      if (loadedCount === 0) return;
+    }
+    setActivePage(nextActivePage);
+  };
+
+  const displayedProviders = providers.slice(
+    (activePage - 1) * ITEMS_PER_PAGE,
+    activePage * ITEMS_PER_PAGE
+  );
+  const totalPages = Math.max(1, Math.ceil(providers.length / ITEMS_PER_PAGE) + (hasMore ? 1 : 0));
 
   return (
     <>
@@ -194,6 +267,7 @@ const ProvidersTable = () => {
                 <Th>编号</Th>
                 <Th>名称</Th>
                 <Th>地址</Th>
+                <Th>加入时间</Th>
                 <Th>状态</Th>
                 <Th>余额</Th>
                 <Th>权重</Th>
@@ -203,11 +277,12 @@ const ProvidersTable = () => {
               </Tr>
             </Thead>
             <Tbody>
-              {providers.map((p) => (
+              {displayedProviders.map((p, idx) => (
                 <Tr key={p.id}>
-                  <Td>{p.id}</Td>
+                  <Td>{(activePage - 1) * ITEMS_PER_PAGE + idx + 1}</Td>
                   <Td>{p.name}</Td>
                   <Td><div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.base_url}>{p.base_url}</div></Td>
+                  <Td>{formatTime(p.created_at)}</Td>
                   <Td>{renderStatus(p.status)}</Td>
                   <Td>{p.balance ? p.balance : '无'}</Td>
                   <Td>{p.weight}</Td>
@@ -232,8 +307,28 @@ const ProvidersTable = () => {
                   </Td>
                 </Tr>
               ))}
+              {displayedProviders.length === 0 && (
+                <Tr>
+                  <Td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                    暂无供应商数据
+                  </Td>
+                </Tr>
+              )}
             </Tbody>
           </Table>
+        )}
+
+        {!loading && (
+          <div style={{ padding: '1rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+              已加载 {providers.length} 条记录
+            </div>
+            <Pagination
+              activePage={activePage}
+              onPageChange={onPaginationChange}
+              totalPages={totalPages}
+            />
+          </div>
         )}
       </Card>
 

@@ -38,8 +38,8 @@ const About = () => {
             <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>关于</h2>
             <p>可在设置页面设置关于内容，支持 HTML 和 Markdown</p>
             <p>项目仓库地址：
-              <a href='https://github.com/xxbbzy/API-Gateway-Aggregator' style={{ color: 'var(--primary-600)', marginLeft: '0.5rem' }}>
-                https://github.com/xxbbzy/API-Gateway-Aggregator
+              <a href='https://github.com/xxbbzy/NewAPI-Gateway' style={{ color: 'var(--primary-600)', marginLeft: '0.5rem' }}>
+                https://github.com/xxbbzy/NewAPI-Gateway
               </a>
             </p>
           </>

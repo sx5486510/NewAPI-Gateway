@@ -1,119 +1,92 @@
-# 开发文档
+# 开发指南
 
-## 开发环境搭建
+> 返回文档入口：[README.md](./README.md)
 
-### 后端
+## 开发环境
 
-```bash
-# 安装依赖
-go mod download
+- Go >= 1.18
+- Node.js >= 16
+- 推荐使用 `make` 管理本地任务
 
-# 临时创建空前端 build 目录（开发模式）
-mkdir -p web/build && touch web/build/index.html
+## 快速启动开发模式
 
-# 运行（debug 模式）
-GIN_MODE=debug go run main.go --port 3000
-```
-
-### 前端
+### 安装依赖
 
 ```bash
-cd web
-npm install
-npm start  # 启动开发服务器（默认 :3001）
+make deps
 ```
 
-前端 `package.json` 中已配置 `"proxy": "http://localhost:3000"`，开发模式下前端请求自动代理到后端。
-
----
-
-## 添加新的 Relay 路由
-
-1. 在 `router/relay-router.go` 中添加路由：
-   ```go
-   relay.POST("/v1/new-endpoint", controller.Relay)
-   ```
-
-2. `controller/relay.go` 中的 `Relay` 函数会自动处理：提取模型 → 路由 → 代理。
-
-3. 如需特殊 Header 处理，在 `service/proxy.go` 的 `ProxyToUpstream` 中添加。
-
----
-
-## 添加新的供应商协议
-
-1. 在 `service/proxy.go` 中添加新的路径检测函数：
-   ```go
-   func isNewProtocol(path string) bool {
-       return strings.Contains(path, "/new-protocol/")
-   }
-   ```
-
-2. 在 `ProxyToUpstream` 的 Header 设置部分添加协议兼容代码。
-
-3. 在 `middleware/agg_token_auth.go` 的 `extractAggToken` 中添加新的认证头支持。
-
----
-
-## 数据同步流程
-
-```
-SyncProvider(provider)
-├── syncPricing(client, provider)
-│   └── GET /api/pricing → UpsertModelPricing
-├── syncTokens(client, provider)
-│   └── GET /api/token/ → UpsertProviderToken + 清理已删除 Token
-├── syncBalance(client, provider)
-│   └── GET /api/user/self → UpdateBalance
-└── RebuildProviderRoutes(providerId)
-    ├── 获取该供应商的 provider_tokens
-    ├── 获取该供应商的 model_pricing
-    ├── 构建 groupName → models 映射
-    ├── 遍历 tokens：token.group ∈ pricing.enable_groups
-    └── 批量写入 model_routes（先删后建，事务保护）
-```
-
----
-
-## 路由算法实现
-
-核心函数：`model/model_route.go` → `SelectProviderToken(modelName, retry)`
-
-```
-1. 查询: model_routes WHERE model_name=? AND enabled=true
-2. 提取 distinct priorities → 降序排列
-3. retry=0 取最高 priority, retry=1 取次高...
-4. 在同 priority 层内: weightSum = Σ(weight + 10)
-5. randN(weightSum) 落入哪个区间选哪个 token
-```
-
-**注意**：`weight + 10` 的 `+10` 保底是为了确保 0 权重的路由也有被选中的概率（与上游 `ability.go` 一致）。
-
----
-
-## 项目构建
-
-### 本地构建
+### 启动前后端
 
 ```bash
-cd web && npm install && npm run build && cd ..
-go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=v1.0.0'" -o gateway-aggregator
+make dev
 ```
 
-### Docker 构建
+默认端口：
+
+- 后端：`http://localhost:3000`
+- 前端：`http://localhost:3001`
+
+前端 `package.json` 已配置代理到后端。
+
+## 常用命令
 
 ```bash
-docker build -t gateway-aggregator .
+make dev-be   # 后端调试
+make dev-fe   # 前端调试
+make build    # 构建前后端
+make test     # 后端测试
+make clean    # 清理构建产物
 ```
 
-### 交叉编译
+## 后端调试建议
 
-```bash
-# Linux AMD64
-CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o gateway-aggregator-linux-amd64
+- 设置 `GIN_MODE=debug` 查看更详细日志。
+- 临时开启 `DEBUG_PROXY_AUTH=1` 可输出代理认证替换摘要（排障后关闭）。
+- 若未配置 Redis，限流与 Session 会回退为内存/Cookie 模式。
 
-# macOS ARM64
-CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o gateway-aggregator-darwin-arm64
-```
+## 核心开发入口
 
-> 注意：CGO_ENABLED=1 是因为 SQLite 驱动需要 CGO。如仅使用 MySQL / PostgreSQL，可尝试设为 0。
+- Relay 主流程：`controller/relay.go` -> `service/proxy.go`
+- 路由算法：`model/model_route.go`
+- 同步与重建：`service/sync.go`
+- 聚合 Token 鉴权：`middleware/agg_token_auth.go`
+- 管理路由：`router/api-router.go`
+
+## 常见开发任务
+
+### 1. 新增 Relay 端点
+
+1. 在 `router/relay-router.go` 注册新路径。
+2. 复用 `controller.Relay` 时确认请求体中 `model` 字段可被解析。
+3. 如需特殊协议 Header，在 `service/proxy.go` 增加路径判断与头处理。
+4. 更新 `docs/API_REFERENCE.md`。
+
+### 2. 调整路由策略
+
+1. 修改 `model/model_route.go` 的 `SelectProviderToken`。
+2. 补充对应单元测试（建议覆盖优先级和权重边界）。
+3. 更新 `docs/ARCHITECTURE.md` 的算法说明。
+
+### 3. 扩展供应商同步字段
+
+1. 更新 `service/upstream_client.go` 的上游结构映射。
+2. 更新 `service/sync.go` 写库逻辑。
+3. 如新增字段入库，更新 `model/*` 结构并确认迁移兼容性。
+4. 更新 `docs/DATABASE_SCHEMA.md`。
+
+## 提交前检查清单
+
+1. `go test ./...` 通过。
+2. 前端构建 `npm --prefix web run build` 通过。
+3. 关键流程手测：登录 -> 供应商同步 -> 创建聚合 token -> Relay 请求。
+4. 文档同步更新：
+   - 接口改动 -> `API_REFERENCE.md`
+   - 配置改动 -> `CONFIGURATION.md`
+   - 架构流程改动 -> `ARCHITECTURE.md`
+
+## 相关文档
+
+- 项目结构：[PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md)
+- API 参考：[API_REFERENCE.md](./API_REFERENCE.md)
+- 架构说明：[ARCHITECTURE.md](./ARCHITECTURE.md)

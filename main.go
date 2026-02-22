@@ -1,12 +1,12 @@
 package main
 
 import (
-	"embed"
 	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/middleware"
 	"NewAPI-Gateway/model"
 	"NewAPI-Gateway/router"
 	"NewAPI-Gateway/service"
+	"embed"
 	"log"
 	"os"
 	"strconv"
@@ -25,7 +25,7 @@ var indexPage []byte
 
 func main() {
 	common.SetupGinLog()
-	common.SysLog("API Gateway Aggregator " + common.Version + " started")
+	common.SysLog("NewAPI Gateway " + common.Version + " started")
 	if os.Getenv("GIN_MODE") != "debug" {
 		gin.SetMode(gin.ReleaseMode)
 	}

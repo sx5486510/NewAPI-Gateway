@@ -1,125 +1,44 @@
-# API 详细参考文档
+# API 参考文档
 
-## 认证方式
+> 返回文档入口：[README.md](./README.md)
 
-### Relay API（ag-Token）
+## 认证与会话
 
-使用聚合 Token 认证，支持以下三种格式：
+### 1. Relay API 认证（聚合 Token）
 
-```http
-# OpenAI 标准格式
-Authorization: Bearer ag-xxxxxxxxxxxx
-
-# Anthropic 格式
-x-api-key: ag-xxxxxxxxxxxx
-
-# Gemini 格式
-x-goog-api-key: ag-xxxxxxxxxxxx
-# 或 URL 参数
-?key=ag-xxxxxxxxxxxx
-```
-
-### 管理 API（Session/Token）
-
-通过 `/api/user/login` 登录获取 Session，或使用用户管理 Token：
+支持以下方式携带 `ag-` 令牌：
 
 ```http
-Authorization: Bearer <user-token>
+Authorization: Bearer ag-xxxxxxxx
+x-api-key: ag-xxxxxxxx
+x-goog-api-key: ag-xxxxxxxx
+GET /v1beta/models/xxx?key=ag-xxxxxxxx
 ```
 
----
+### 2. 管理 API 认证（Session 为主）
 
-## Relay API 详解
+- 先调用 `POST /api/user/login` 登录，使用 Cookie Session 访问管理接口。
+- 多数管理接口启用了 `NoTokenAuth`，不支持用户 Token。
+- 仅少数未加 `NoTokenAuth` 的接口可用 `Authorization: Bearer <user-token>`（例如 `GET /api/dashboard`）。
 
-### POST /v1/chat/completions
+## 响应格式
 
-Chat 对话补全，完全兼容 OpenAI 格式。
+### Relay 接口
 
-**请求示例：**
+- 成功响应：上游透传。
+- 失败响应：OpenAI 风格。
 
 ```json
 {
-  "model": "gpt-4o",
-  "messages": [
-    {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": "Hello!"}
-  ],
-  "stream": true,
-  "temperature": 0.7
+  "error": {
+    "message": "error detail",
+    "type": "authentication_error",
+    "code": "invalid_api_key"
+  }
 }
 ```
 
-**响应**：与上游 NewAPI 响应完全一致，网关零改动透传。
-
-**流式响应**：当 `stream: true` 时，响应为 SSE 格式：
-
-```
-data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk","choices":[...]}
-
-data: [DONE]
-```
-
-### POST /v1/embeddings
-
-向量化接口。
-
-```json
-{
-  "model": "text-embedding-3-small",
-  "input": "Hello world"
-}
-```
-
-### POST /v1/images/generations
-
-文生图接口。
-
-```json
-{
-  "model": "dall-e-3",
-  "prompt": "A cat sitting on a mat",
-  "n": 1,
-  "size": "1024x1024"
-}
-```
-
-### POST /v1/messages
-
-Anthropic Claude 兼容接口。需要额外添加：
-
-```http
-anthropic-version: 2023-06-01
-```
-
-### POST /v1beta/models/*
-
-Gemini 兼容接口，路径格式：
-
-```
-POST /v1beta/models/gemini-pro:generateContent
-```
-
-### GET /v1/models
-
-返回所有已接入供应商中**去重后**的可用模型列表。
-
-**响应：**
-
-```json
-{
-  "object": "list",
-  "data": [
-    {"id": "gpt-4o", "object": "model", "owned_by": "aggregated-gateway"},
-    {"id": "claude-3-5-sonnet-20240620", "object": "model", "owned_by": "aggregated-gateway"}
-  ]
-}
-```
-
----
-
-## 管理 API 详解
-
-所有管理 API 响应格式统一为：
+### 管理接口
 
 ```json
 {
@@ -129,140 +48,186 @@ POST /v1beta/models/gemini-pro:generateContent
 }
 ```
 
-### 供应商管理
+## Relay API（`/v1*`）
 
-#### POST /api/provider/ — 创建供应商
+| Method | Path | 说明 |
+| --- | --- | --- |
+| POST | `/v1/chat/completions` | Chat 补全 |
+| POST | `/v1/completions` | Text 补全 |
+| POST | `/v1/embeddings` | 向量生成 |
+| POST | `/v1/images/generations` | 图片生成 |
+| POST | `/v1/audio/speech` | 文本转语音 |
+| POST | `/v1/audio/transcriptions` | 语音转文本 |
+| POST | `/v1/moderations` | 内容审核 |
+| POST | `/v1/rerank` | 重排序 |
+| POST | `/v1/video/generations` | 视频生成 |
+| POST | `/v1/responses` | OpenAI Responses |
+| POST | `/v1/messages` | Anthropic 兼容 |
+| POST | `/v1beta/models/*path` | Gemini 兼容 |
+| GET | `/v1/models` | 获取可用模型 |
+| GET | `/v1/models/:model` | 获取模型详情 |
+| GET | `/dashboard/billing/subscription` | 兼容返回（模拟） |
+| GET | `/dashboard/billing/usage` | 兼容返回（模拟） |
 
-```json
-{
-  "name": "Provider A",
-  "base_url": "https://api.provider-a.com",
-  "access_token": "your-access-token",
-  "user_id": 1,
-  "weight": 10,
-  "priority": 0,
-  "checkin_enabled": true,
-  "remark": "主力供应商"
-}
+## 公共与登录相关 API（`/api`）
+
+| Method | Path | 认证 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/status` | 无 | 系统状态 |
+| GET | `/api/notice` | 无 | 公告 |
+| GET | `/api/about` | 无 | 关于 |
+| GET | `/api/verification` | 无 | 发送邮箱验证码（限流 + Turnstile） |
+| GET | `/api/reset_password` | 无 | 发送密码重置邮件 |
+| POST | `/api/user/reset` | 无 | 使用邮箱 token 重置密码 |
+| POST | `/api/user/register` | 无 | 注册 |
+| POST | `/api/user/login` | 无 | 登录并建立 Session |
+| GET | `/api/user/logout` | 无 | 登出 |
+| GET | `/api/oauth/github` | 无 | GitHub OAuth 回调 |
+| GET | `/api/oauth/wechat` | 无 | 微信登录 |
+| GET | `/api/oauth/wechat/bind` | UserAuth | 微信绑定 |
+| GET | `/api/oauth/email/bind` | UserAuth | 邮箱绑定 |
+
+## 用户与管理员 API
+
+### 用户自助（Session，`UserAuth + NoTokenAuth`）
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| GET | `/api/user/self` | 获取当前用户 |
+| PUT | `/api/user/self` | 更新当前用户 |
+| DELETE | `/api/user/self` | 删除当前用户 |
+| GET | `/api/user/token` | 生成用户 Token |
+
+### 管理员用户管理（Session，`AdminAuth + NoTokenAuth`）
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| GET | `/api/user/` | 用户列表 |
+| GET | `/api/user/search` | 用户搜索 |
+| GET | `/api/user/:id` | 用户详情 |
+| POST | `/api/user/` | 创建用户 |
+| POST | `/api/user/manage` | 用户状态/角色管理 |
+| PUT | `/api/user/` | 更新用户 |
+| DELETE | `/api/user/:id` | 删除用户 |
+
+### 系统选项（Session，`RootAuth + NoTokenAuth`）
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| GET | `/api/option/` | 读取系统选项（隐藏 Secret/Token 字段） |
+| PUT | `/api/option/` | 更新系统选项 |
+
+## Provider 相关 API（Session，`AdminAuth + NoTokenAuth`）
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| GET | `/api/provider/` | 供应商列表 |
+| GET | `/api/provider/export` | 导出供应商 |
+| POST | `/api/provider/import` | 导入供应商 |
+| GET | `/api/provider/:id` | 供应商详情 |
+| POST | `/api/provider/` | 创建供应商 |
+| PUT | `/api/provider/` | 更新供应商 |
+| DELETE | `/api/provider/:id` | 删除供应商 |
+| POST | `/api/provider/:id/sync` | 触发单供应商同步 |
+| POST | `/api/provider/:id/checkin` | 手动签到 |
+| GET | `/api/provider/:id/tokens` | 获取供应商 token 列表 |
+| GET | `/api/provider/:id/pricing` | 获取供应商 pricing 缓存 |
+| POST | `/api/provider/:id/tokens` | 在上游创建 token 并回同步 |
+| PUT | `/api/provider/token/:token_id` | 更新本地 token 字段 |
+| DELETE | `/api/provider/token/:token_id` | 删除 token（先删上游再删本地） |
+
+## 聚合 Token API（Session，`UserAuth + NoTokenAuth`）
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| GET | `/api/agg-token/` | 当前用户聚合 token 列表 |
+| POST | `/api/agg-token/` | 创建聚合 token |
+| PUT | `/api/agg-token/` | 更新聚合 token |
+| DELETE | `/api/agg-token/:id` | 删除聚合 token |
+
+`POST /api/agg-token/` 成功后 `data` 直接返回完整令牌字符串（形如 `ag-xxxx`）。
+
+## 路由管理 API（Session，`AdminAuth + NoTokenAuth`）
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| GET | `/api/route/` | 路由列表（支持 `?model=`） |
+| GET | `/api/route/overview` | 路由总览（支持 `model/provider_id/enabled_only`） |
+| GET | `/api/route/models` | 已接入模型列表 |
+| PUT | `/api/route/:id` | 更新单条路由（priority/weight/enabled） |
+| POST | `/api/route/batch-update` | 批量更新路由 |
+| POST | `/api/route/rebuild` | 触发全量路由重建 |
+
+## 日志与统计 API
+
+### 日志查询（Session）
+
+| Method | Path | 认证 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/log/self` | UserAuth + NoTokenAuth | 当前用户日志 |
+| GET | `/api/log/` | AdminAuth + NoTokenAuth | 全部日志 |
+
+日志查询支持参数：
+
+- `p`：页码（从 0 起）
+- `page_size`：每页条数
+- `keyword`：关键词（匹配模型/供应商/request_id/error/client_ip）
+- `provider`：供应商名称精确筛选
+- `status`：`all` / `success` / `error`
+- `view`：`all` / `error`
+
+### 仪表盘
+
+| Method | Path | 认证 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/dashboard` | AdminAuth | 聚合统计（请求量/成功率/模型排行/趋势） |
+
+## 常见请求示例
+
+### 1. 登录
+
+```bash
+curl -X POST http://localhost:3000/api/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"root","password":"123456"}'
 ```
 
-#### POST /api/provider/:id/sync — 同步数据
+### 2. 创建聚合 Token（需带登录 Cookie）
 
-异步触发该供应商的数据同步任务。同步内容：
-
-1. 模型定价（调用上游 `GET /api/pricing`）
-2. Token 列表（调用上游 `GET /api/token/?p=1&page_size=100`）
-3. 用户余额（调用上游 `GET /api/user/self`）
-4. 自动重建该供应商的模型路由
-
-#### POST /api/provider/:id/checkin — 手动签到
-
-调用上游 `POST /api/user/checkin` 完成签到。
-
-### 聚合 Token 管理
-
-#### POST /api/agg-token/ — 创建 Token
-
-```json
-{
-  "name": "my-token",
-  "expired_time": -1,
-  "model_limits_enabled": true,
-  "model_limits": "gpt-4o,claude-3-5-sonnet-20240620",
-  "allow_ips": "192.168.1.1\n10.0.0.1"
-}
+```bash
+curl -X POST http://localhost:3000/api/agg-token/ \
+  -H "Content-Type: application/json" \
+  -b 'session=<your-session-cookie>' \
+  -d '{"name":"demo","expired_time":-1}'
 ```
 
-**响应 data**：返回完整 Token `"ag-xxxxxxxxxxxx"`
+### 3. 触发供应商同步（需管理员 Session）
 
-| 字段                   | 说明                             |
-| ---------------------- | -------------------------------- |
-| `name`                 | Token 名称                       |
-| `expired_time`         | 过期时间戳，`-1` 表示永不过期    |
-| `model_limits_enabled` | 是否启用模型白名单               |
-| `model_limits`         | 逗号分隔的模型名列表             |
-| `allow_ips`            | 换行分隔的 IP 白名单，留空不限制 |
-
-### 模型路由
-
-#### GET /api/route/?model=gpt-4o — 查看路由
-
-支持按模型名称过滤。每条路由包含：
-
-| 字段                | 说明                  |
-| ------------------- | --------------------- |
-| `model_name`        | 模型名                |
-| `provider_token_id` | 对应的供应商 Token ID |
-| `provider_id`       | 供应商 ID             |
-| `enabled`           | 是否启用              |
-| `priority`          | 优先级                |
-| `weight`            | 权重                  |
-
-#### POST /api/route/rebuild — 重建路由
-
-重建所有供应商的模型路由表。逻辑：
-
-```
-对每个启用的供应商:
-  获取其 provider_tokens 和 model_pricing
-  对每个 token:
-    token.group_name → pricing.enable_groups 包含此 group 的所有模型
-    → 生成 (model, token_id, provider_id, weight, priority) 路由条目
+```bash
+curl -X POST http://localhost:3000/api/provider/1/sync \
+  -b 'session=<your-session-cookie>'
 ```
 
-### Dashboard 统计
+### 4. Relay 调用
 
-#### GET /api/dashboard
-
-返回聚合统计数据：
-
-```json
-{
-  "total_requests": 1234,
-  "success_requests": 1200,
-  "failed_requests": 34,
-  "total_providers": 3,
-  "total_models": 42,
-  "total_routes": 156,
-  "by_provider": [
-    {"provider_name": "Provider A", "request_count": 800}
-  ],
-  "by_model": [
-    {"model_name": "gpt-4o", "request_count": 500}
-  ]
-}
+```bash
+curl http://localhost:3000/v1/chat/completions \
+  -H "Authorization: Bearer ag-your-token" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}'
 ```
 
----
+## Relay 常见错误码
 
-## 错误码
+| HTTP | type | code | 说明 |
+| --- | --- | --- | --- |
+| 401 | `authentication_error` | `invalid_api_key` | 聚合 token 缺失/无效/过期 |
+| 403 | `permission_error` | `ip_not_allowed` | IP 不在白名单 |
+| 403 | `permission_error` | `model_not_allowed` | 模型不在白名单 |
+| 503 | `server_error` | `service_unavailable` | 无可用路由或上游不可用 |
+| 502 | `server_error` | - | 上游请求失败 |
 
-Relay API 返回 OpenAI 兼容格式的错误：
+## 相关文档
 
-```json
-{
-  "error": {
-    "message": "错误描述",
-    "type": "error_type",
-    "code": "error_code"
-  }
-}
-```
-
-| HTTP Code | type                   | code                  | 说明                   |
-| --------- | ---------------------- | --------------------- | ---------------------- |
-| 401       | `authentication_error` | `invalid_api_key`     | Token 无效/过期/已禁用 |
-| 403       | `permission_error`     | `ip_not_allowed`      | IP 不在白名单          |
-| 403       | `permission_error`     | `model_not_allowed`   | 模型不在白名单         |
-| 503       | `server_error`         | `service_unavailable` | 所有供应商不可用       |
-| 502       | `server_error`         | -                     | 上游请求失败           |
-
----
-
-## 定时任务
-
-| 任务     | 频率       | 说明                                        |
-| -------- | ---------- | ------------------------------------------- |
-| 数据同步 | 每 5 分钟  | 同步所有启用供应商的 pricing/tokens/balance |
-| 路由重建 | 同步后自动 | 根据最新数据重建 model_routes               |
-| 签到     | 每 24 小时 | 为启用签到的供应商执行签到                  |
+- 架构说明：[ARCHITECTURE.md](./ARCHITECTURE.md)
+- 开发指南：[DEVELOPMENT.md](./DEVELOPMENT.md)

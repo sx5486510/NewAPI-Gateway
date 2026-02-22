@@ -4,7 +4,7 @@
 
 <div align="center">
 
-# API Gateway Aggregator
+# NewAPI Gateway
 
 _✨ 多供应商 NewAPI 聚合网关 — 统一接入、透明代理、使用统计 ✨_
 
@@ -12,7 +12,17 @@ _✨ 多供应商 NewAPI 聚合网关 — 统一接入、透明代理、使用�
 
 ## 项目简介
 
-API Gateway Aggregator 是一个聚合多个 [NewAPI](https://github.com/QuantumNous/new-api) 供应商的透明网关。用户使用单一聚合 Token（`ag-xxx`）即可调用所有已接入供应商的 AI 模型服务，系统自动进行**权重轮询和优先级路由**，上游供应商无法感知网关的存在。
+NewAPI Gateway 是一个聚合多个 [NewAPI](https://github.com/QuantumNous/new-api) 供应商的透明网关。用户使用单一聚合 Token（`ag-xxx`）即可调用所有已接入供应商的 AI 模型服务，系统自动进行**权重轮询和优先级路由**，上游供应商无法感知网关的存在。
+
+## 文档中心
+
+- 文档总览：[`docs/README.md`](./docs/README.md)
+- 快速开始：[`docs/QUICK_START.md`](./docs/QUICK_START.md)
+- 架构说明：[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+- 配置说明：[`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md)
+- 部署指南：[`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)
+- API 参考：[`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
+- 开发指南：[`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)
 
 ### 核心特性
 
@@ -37,7 +47,7 @@ API Gateway Aggregator 是一个聚合多个 [NewAPI](https://github.com/Quantum
   │ Authorization: Bearer ag-xxx
   ▼
 ┌─────────────────────────┐
-│    API Gateway Aggregator │
+│    NewAPI Gateway │
 │  ┌─────┐  ┌──────┐      │
 │  │ Auth │→│Router│      │
 │  └─────┘  └──┬───┘      │
@@ -67,7 +77,7 @@ API Gateway Aggregator 是一个聚合多个 [NewAPI](https://github.com/Quantum
 ```bash
 # 1. 克隆项目
 git clone <repo-url>
-cd API-Gateway-Aggregator-main
+cd NewAPI-Gateway-main
 
 # 2. 构建前端
 cd web
@@ -154,6 +164,8 @@ curl https://your-gateway.com/v1/chat/completions \
 
 ## API 文档
 
+完整接口与认证细节见：[`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
+
 ### Relay API（OpenAI 兼容，使用 ag-Token 认证）
 
 | Method | Path                              | 说明                  |
@@ -225,14 +237,14 @@ curl https://your-gateway.com/v1/chat/completions \
 
 ### 环境变量
 
-| 变量                | 说明                             | 示例                                   |
-| ------------------- | -------------------------------- | -------------------------------------- |
-| `PORT`              | 监听端口                         | `3000`                                 |
-| `SQL_DRIVER`        | SQL 驱动（可选）                 | `sqlite` / `mysql` / `postgres`        |
+| 变量                | 说明                                  | 示例                                   |
+| ------------------- | ------------------------------------- | -------------------------------------- |
+| `PORT`              | 监听端口                              | `3000`                                 |
+| `SQL_DRIVER`        | SQL 驱动（可选）                      | `sqlite` / `mysql` / `postgres`        |
 | `SQL_DSN`           | 数据库连接串（MySQL/PostgreSQL 必填） | `root:pwd@tcp(localhost:3306)/gateway` |
-| `REDIS_CONN_STRING` | Redis 连接（用于限流和 Session） | `redis://default:pw@localhost:6379`    |
-| `SESSION_SECRET`    | 固定 Session 密钥                | `random_string`                        |
-| `GIN_MODE`          | 运行模式                         | `release` / `debug`                    |
+| `REDIS_CONN_STRING` | Redis 连接（用于限流和 Session）      | `redis://default:pw@localhost:6379`    |
+| `SESSION_SECRET`    | 固定 Session 密钥                     | `random_string`                        |
+| `GIN_MODE`          | 运行模式                              | `release` / `debug`                    |
 
 未设置 `SQL_DRIVER` 时，程序会保持兼容旧行为：
 - 未设置 `SQL_DSN`：使用 SQLite（`SQLITE_PATH`，默认 `gateway-aggregator.db`）
@@ -290,46 +302,29 @@ curl https://your-gateway.com/v1/chat/completions \
 
 ## 项目结构
 
+```text
+NewAPI-Gateway/
+|- .github/workflows/              # CI/CD 与发布流程
+|- docs/                           # 项目文档（架构/配置/API/运维）
+|- web/                            # React 管理前端
+|  |- src/components/              # 页面组件与业务组件
+|  |- src/pages/                   # 页面入口
+|  |- src/helpers/                 # 前端请求与工具函数
+|  `- src/constants/               # 前端常量
+|- common/                         # 全局常量、配置、日志、工具、Redis
+|- controller/                     # 控制器层（参数处理 + 响应）
+|- middleware/                     # 鉴权、限流、CORS、缓存
+|- model/                          # 数据模型与查询逻辑
+|- router/                         # 路由注册（api / relay / web）
+|- service/                        # 业务服务（代理/同步/签到/上游客户端）
+|- main.go                         # 程序入口（初始化 DB、Redis、定时任务、路由）
+|- go.mod / go.sum                 # Go 依赖
+|- Dockerfile                      # Docker 构建
+|- Makefile                        # 本地开发命令
+`- README.md / README.en.md        # 仓库级说明
 ```
-API-Gateway-Aggregator-main/
-├── main.go                        # 入口
-├── common/                        # 公共常量、工具
-├── model/
-│   ├── user.go                    # 用户
-│   ├── option.go                  # 配置 KV
-│   ├── provider.go                # 供应商
-│   ├── provider_token.go          # 供应商 Token
-│   ├── aggregated_token.go        # 聚合 Token
-│   ├── model_route.go             # 路由引擎
-│   ├── model_pricing.go           # 定价缓存
-│   └── usage_log.go               # 使用日志
-├── service/
-│   ├── upstream_client.go         # 上游 API 客户端
-│   ├── sync.go                    # 数据同步 + 路由重建
-│   ├── checkin.go                 # 签到
-│   ├── proxy.go                   # 透传代理（SSE）
-│   └── cron.go                    # 定时任务
-├── middleware/
-│   ├── auth.go                    # 管理后台认证
-│   ├── agg_token_auth.go          # Relay Token 认证
-│   ├── cors.go                    # CORS
-│   └── rate-limit.go              # 限流
-├── controller/
-│   ├── relay.go                   # 核心代理
-│   ├── provider.go                # 供应商管理
-│   ├── aggregated_token.go        # Token 管理
-│   ├── route.go                   # 路由管理
-│   ├── log.go                     # 日志/统计
-│   └── user.go                    # 用户管理
-├── router/
-│   ├── relay-router.go            # /v1/* 透传路由
-│   ├── api-router.go              # /api/* 管理路由
-│   └── web-router.go              # React SPA 路由
-└── web/                           # React 前端
-    └── src/
-        ├── components/            # UI 组件
-        └── pages/                 # 页面
-```
+
+更细粒度的目录与模块说明见：[`docs/PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md)
 
 ---
 

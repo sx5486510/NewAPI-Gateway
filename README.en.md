@@ -4,7 +4,7 @@
 
 <div align="center">
 
-# API Gateway Aggregator
+# NewAPI Gateway
 
 _✨ Multi-provider NewAPI aggregation gateway — unified access, transparent proxy, usage analytics ✨_
 
@@ -12,7 +12,17 @@ _✨ Multi-provider NewAPI aggregation gateway — unified access, transparent p
 
 ## Overview
 
-API Gateway Aggregator is a transparent gateway that aggregates multiple [NewAPI](https://github.com/QuantumNous/new-api) providers. Users access all connected AI model services through a single aggregated token (`ag-xxx`). The system automatically performs **weighted round-robin with priority-based routing**, and upstream providers cannot detect the gateway's presence.
+NewAPI Gateway is a transparent gateway that aggregates multiple [NewAPI](https://github.com/QuantumNous/new-api) providers. Users access all connected AI model services through a single aggregated token (`ag-xxx`). The system automatically performs **weighted round-robin with priority-based routing**, and upstream providers cannot detect the gateway's presence.
+
+## Documentation Hub
+
+- Docs index: [`docs/README.md`](./docs/README.md)
+- Quick start: [`docs/QUICK_START.md`](./docs/QUICK_START.md)
+- Architecture: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+- Configuration: [`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md)
+- Deployment: [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)
+- API reference: [`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
+- Development guide: [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)
 
 ### Key Features
 
@@ -43,7 +53,7 @@ API Gateway Aggregator is a transparent gateway that aggregates multiple [NewAPI
 ```bash
 # 1. Clone
 git clone <repo-url>
-cd API-Gateway-Aggregator-main
+cd NewAPI-Gateway-main
 
 # 2. Build frontend
 cd web && npm install && npm run build && cd ..
@@ -110,6 +120,8 @@ curl https://your-gateway.com/v1/chat/completions \
 
 ## API Reference
 
+For complete endpoint and auth details, see [`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md).
+
 ### Relay API (OpenAI-compatible, ag-Token auth)
 
 | Method | Path                       | Description               |
@@ -145,14 +157,14 @@ curl https://your-gateway.com/v1/chat/completions \
 
 ### Environment Variables
 
-| Variable            | Description                      | Example                                |
-| ------------------- | -------------------------------- | -------------------------------------- |
-| `PORT`              | Listening port                   | `3000`                                 |
-| `SQL_DRIVER`        | SQL driver (optional)            | `sqlite` / `mysql` / `postgres`        |
+| Variable            | Description                                  | Example                                |
+| ------------------- | -------------------------------------------- | -------------------------------------- |
+| `PORT`              | Listening port                               | `3000`                                 |
+| `SQL_DRIVER`        | SQL driver (optional)                        | `sqlite` / `mysql` / `postgres`        |
 | `SQL_DSN`           | Database DSN (required for MySQL/PostgreSQL) | `root:pwd@tcp(localhost:3306)/gateway` |
-| `REDIS_CONN_STRING` | Redis (for rate-limit & session) | `redis://default:pw@localhost:6379`    |
-| `SESSION_SECRET`    | Fixed session secret             | `random_string`                        |
-| `GIN_MODE`          | Run mode                         | `release` / `debug`                    |
+| `REDIS_CONN_STRING` | Redis (for rate-limit & session)             | `redis://default:pw@localhost:6379`    |
+| `SESSION_SECRET`    | Fixed session secret                         | `random_string`                        |
+| `GIN_MODE`          | Run mode                                     | `release` / `debug`                    |
 
 If `SQL_DRIVER` is not set, backward-compatible behavior is used:
 - `SQL_DSN` not set: uses SQLite (`SQLITE_PATH`, default `gateway-aggregator.db`)

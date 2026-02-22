@@ -86,12 +86,12 @@ const OtherSetting = () => {
 
   const openGitHubRelease = () => {
     window.location =
-      'https://github.com/xxbbzy/API-Gateway-Aggregator/releases/latest';
+      'https://github.com/xxbbzy/NewAPI-Gateway/releases/latest';
   };
 
   const checkUpdate = async () => {
     const res = await API.get(
-      'https://api.github.com/repos/xxbbzy/API-Gateway-Aggregator/releases/latest'
+      'https://api.github.com/repos/xxbbzy/NewAPI-Gateway/releases/latest'
     );
     const { tag_name, body } = res.data;
     if (tag_name === process.env.REACT_APP_VERSION) {
