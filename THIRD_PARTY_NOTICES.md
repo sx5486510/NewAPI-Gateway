@@ -1,6 +1,17 @@
+# Third-Party Notices
+
+This project includes code derived from:
+
+- Project: gin-template
+- Repository: https://github.com/songquanpeng/gin-template
+- License: MIT
+- Source reference: repository source used during project initialization
+
+The following license notice applies to the derived portions:
+
 MIT License
 
-Copyright (c) 2026 BrentXu
+Copyright (c) 2022 JustSong
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

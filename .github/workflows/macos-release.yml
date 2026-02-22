@@ -34,11 +34,16 @@ jobs:
         run: |
           go mod download
           go build -ldflags "-X 'newapi-gateway/common.Version=$(git describe --tags)'" -o newapi-gateway-macos
+      - name: Package release assets
+        run: |
+          mkdir -p dist/macos-amd64
+          cp newapi-gateway-macos LICENSE THIRD_PARTY_NOTICES.md dist/macos-amd64/
+          tar -C dist/macos-amd64 -czf newapi-gateway-macos-amd64.tar.gz .
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: newapi-gateway-macos
+          files: newapi-gateway-macos-amd64.tar.gz
           draft: false
           generate_release_notes: true
         env:

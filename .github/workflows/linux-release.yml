@@ -41,13 +41,21 @@ jobs:
           sudo apt-get install gcc-aarch64-linux-gnu
           CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X 'newapi-gateway/common.Version=$(git describe --tags)' -extldflags '-static'" -o newapi-gateway-arm64
 
+      - name: Package release assets
+        run: |
+          mkdir -p dist/linux-amd64 dist/linux-arm64
+          cp newapi-gateway LICENSE THIRD_PARTY_NOTICES.md dist/linux-amd64/
+          cp newapi-gateway-arm64 LICENSE THIRD_PARTY_NOTICES.md dist/linux-arm64/
+          tar -C dist/linux-amd64 -czf newapi-gateway-linux-amd64.tar.gz .
+          tar -C dist/linux-arm64 -czf newapi-gateway-linux-arm64.tar.gz .
+
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            newapi-gateway
-            newapi-gateway-arm64
+            newapi-gateway-linux-amd64.tar.gz
+            newapi-gateway-linux-arm64.tar.gz
           draft: false
           generate_release_notes: true
         env:

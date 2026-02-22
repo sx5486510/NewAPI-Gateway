@@ -37,11 +37,16 @@ jobs:
         run: |
           go mod download
           go build -ldflags "-s -w -X 'newapi-gateway/common.Version=$(git describe --tags)'" -o newapi-gateway.exe
+      - name: Package release assets
+        run: |
+          mkdir -p dist/windows-amd64
+          cp newapi-gateway.exe LICENSE THIRD_PARTY_NOTICES.md dist/windows-amd64/
+          powershell -Command "Compress-Archive -Path dist/windows-amd64/* -DestinationPath newapi-gateway-windows-amd64.zip -Force"
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: newapi-gateway.exe
+          files: newapi-gateway-windows-amd64.zip
           draft: false
           generate_release_notes: true
         env:

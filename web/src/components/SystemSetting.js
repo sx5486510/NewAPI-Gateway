@@ -342,9 +342,7 @@ const SystemSetting = () => {
       <Card padding="1.5rem">
         <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>配置微信服务</h3>
         <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          用以支持通过微信进行登录注册，
-          <a href='https://github.com/songquanpeng/wechat-server' target='_blank' rel="noreferrer" style={{ color: 'var(--primary-600)' }}> 点击此处 </a>
-          了解微信服务
+          用以支持通过微信进行登录注册，请先部署并配置你的微信服务。
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
           <Input

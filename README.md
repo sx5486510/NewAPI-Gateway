@@ -333,11 +333,8 @@ API-Gateway-Aggregator-main/
 
 ---
 
-## 致谢
-
-- 框架基础：[NewAPI-Gateway](https://github.com/songquanpeng/NewAPI-Gateway) by songquanpeng
-- 上游协议兼容：[new-api](https://github.com/QuantumNous/new-api) API 规范
-
 ## License
 
 MIT License
+
+本项目包含第三方 MIT 许可代码，详见 `THIRD_PARTY_NOTICES.md`。

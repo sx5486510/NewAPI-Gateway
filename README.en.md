@@ -182,11 +182,8 @@ The gateway ensures upstream providers **cannot detect its presence**:
 
 ---
 
-## Credits
-
-- Framework: [NewAPI-Gateway](https://github.com/songquanpeng/NewAPI-Gateway) by songquanpeng
-- Upstream protocol: [new-api](https://github.com/QuantumNous/new-api)
-
 ## License
 
 MIT License
+
+This project includes third-party code under the MIT License. See `THIRD_PARTY_NOTICES.md` for details.
