@@ -48,6 +48,12 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		return
 	}
 
+	resolvedModel := strings.TrimSpace(c.GetString("request_model_resolved"))
+	if resolvedModel == "" {
+		resolvedModel = strings.TrimSpace(c.GetString("request_model"))
+	}
+	bodyBytes = rewriteRequestModel(bodyBytes, resolvedModel)
+
 	// 2. Construct upstream URL
 	upstreamURL := strings.TrimRight(provider.BaseURL, "/") + c.Request.URL.Path
 	if c.Request.URL.RawQuery != "" {
@@ -245,6 +251,30 @@ type usageMetrics struct {
 	CacheCreation5mTokens int
 	CacheCreation1hTokens int
 	CostUSD               float64
+}
+
+func rewriteRequestModel(body []byte, targetModel string) []byte {
+	targetModel = strings.TrimSpace(targetModel)
+	if targetModel == "" || len(body) == 0 {
+		return body
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body
+	}
+
+	currentModel, ok := payload["model"].(string)
+	if !ok || strings.TrimSpace(currentModel) == "" || currentModel == targetModel {
+		return body
+	}
+
+	payload["model"] = targetModel
+	updatedBody, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return updatedBody
 }
 
 func logUsage(aggToken *model.AggregatedToken, provider *model.Provider, token *model.ProviderToken,

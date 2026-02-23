@@ -1,9 +1,9 @@
 package controller
 
 import (
-	"encoding/json"
 	"NewAPI-Gateway/model"
 	"NewAPI-Gateway/service"
+	"encoding/json"
 	"io"
 	"net/http"
 
@@ -19,6 +19,7 @@ func Relay(c *gin.Context) {
 	if modelName == "" {
 		modelName = "unknown"
 	}
+	c.Set("request_model_original", modelName)
 	c.Set("request_model", modelName)
 
 	// 2. Check model whitelist
@@ -36,7 +37,7 @@ func Relay(c *gin.Context) {
 	// 3. Route to provider with retry
 	maxRetry := 3
 	for retry := 0; retry < maxRetry; retry++ {
-		providerToken, provider, err := model.SelectProviderToken(modelName, retry)
+		providerToken, provider, resolvedModel, err := model.SelectProviderToken(modelName, retry)
 		if err != nil {
 			if retry == maxRetry-1 {
 				c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -49,6 +50,11 @@ func Relay(c *gin.Context) {
 				return
 			}
 			continue
+		}
+
+		if resolvedModel != "" {
+			c.Set("request_model_resolved", resolvedModel)
+			c.Set("request_model", resolvedModel)
 		}
 
 		// 4. Proxy to upstream

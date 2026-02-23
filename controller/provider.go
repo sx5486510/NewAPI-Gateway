@@ -44,6 +44,58 @@ func GetProviderDetail(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": provider})
 }
 
+func GetProviderModelAliasMapping(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的 ID"})
+		return
+	}
+	provider, err := model.GetProviderById(id)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "供应商不存在"})
+		return
+	}
+	mapping := model.ParseProviderAliasMapping(provider.ModelAliasMapping)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    mapping,
+	})
+}
+
+func UpdateProviderModelAliasMapping(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的 ID"})
+		return
+	}
+	provider, err := model.GetProviderById(id)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "供应商不存在"})
+		return
+	}
+
+	var req struct {
+		ModelAliasMapping map[string]string `json:"model_alias_mapping"`
+	}
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+
+	payload, err := model.MarshalProviderAliasMapping(req.ModelAliasMapping)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "模型映射 JSON 无效"})
+		return
+	}
+	provider.UpdateModelAliasMapping(payload)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    model.ParseProviderAliasMapping(payload),
+	})
+}
+
 func ExportProviders(c *gin.Context) {
 	providers, err := model.GetAllProviders(0, 1000)
 	if err != nil {
@@ -52,28 +104,30 @@ func ExportProviders(c *gin.Context) {
 	}
 	// Export format: include access_token for re-import
 	type ExportItem struct {
-		Name           string `json:"name"`
-		BaseURL        string `json:"base_url"`
-		AccessToken    string `json:"access_token"`
-		UserID         int    `json:"user_id,omitempty"`
-		Status         int    `json:"status,omitempty"`
-		Priority       int    `json:"priority,omitempty"`
-		Weight         int    `json:"weight,omitempty"`
-		CheckinEnabled bool   `json:"checkin_enabled,omitempty"`
-		Remark         string `json:"remark,omitempty"`
+		Name              string `json:"name"`
+		BaseURL           string `json:"base_url"`
+		AccessToken       string `json:"access_token"`
+		UserID            int    `json:"user_id,omitempty"`
+		Status            int    `json:"status,omitempty"`
+		Priority          int    `json:"priority,omitempty"`
+		Weight            int    `json:"weight,omitempty"`
+		CheckinEnabled    bool   `json:"checkin_enabled,omitempty"`
+		ModelAliasMapping string `json:"model_alias_mapping,omitempty"`
+		Remark            string `json:"remark,omitempty"`
 	}
 	var items []ExportItem
 	for _, p := range providers {
 		items = append(items, ExportItem{
-			Name:           p.Name,
-			BaseURL:        p.BaseURL,
-			AccessToken:    p.AccessToken,
-			UserID:         p.UserID,
-			Status:         p.Status,
-			Priority:       p.Priority,
-			Weight:         p.Weight,
-			CheckinEnabled: p.CheckinEnabled,
-			Remark:         p.Remark,
+			Name:              p.Name,
+			BaseURL:           p.BaseURL,
+			AccessToken:       p.AccessToken,
+			UserID:            p.UserID,
+			Status:            p.Status,
+			Priority:          p.Priority,
+			Weight:            p.Weight,
+			CheckinEnabled:    p.CheckinEnabled,
+			ModelAliasMapping: p.ModelAliasMapping,
+			Remark:            p.Remark,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": items})
@@ -82,15 +136,16 @@ func ExportProviders(c *gin.Context) {
 func ImportProviders(c *gin.Context) {
 	// Use a flexible import struct to accept user_id as string or int
 	type ImportItem struct {
-		Name           string      `json:"name"`
-		BaseURL        string      `json:"base_url"`
-		AccessToken    string      `json:"access_token"`
-		UserID         json.Number `json:"user_id"`
-		Status         int         `json:"status"`
-		Priority       int         `json:"priority"`
-		Weight         int         `json:"weight"`
-		CheckinEnabled bool        `json:"checkin_enabled"`
-		Remark         string      `json:"remark"`
+		Name              string            `json:"name"`
+		BaseURL           string            `json:"base_url"`
+		AccessToken       string            `json:"access_token"`
+		UserID            json.Number       `json:"user_id"`
+		Status            int               `json:"status"`
+		Priority          int               `json:"priority"`
+		Weight            int               `json:"weight"`
+		CheckinEnabled    bool              `json:"checkin_enabled"`
+		ModelAliasMapping map[string]string `json:"model_alias_mapping"`
+		Remark            string            `json:"remark"`
 	}
 	var items []ImportItem
 	if err := json.NewDecoder(c.Request.Body).Decode(&items); err != nil {
@@ -115,6 +170,9 @@ func ImportProviders(c *gin.Context) {
 			Weight:         item.Weight,
 			CheckinEnabled: item.CheckinEnabled,
 			Remark:         item.Remark,
+		}
+		if payload, err := model.MarshalProviderAliasMapping(item.ModelAliasMapping); err == nil {
+			p.ModelAliasMapping = payload
 		}
 		if p.Status == 0 {
 			p.Status = 1

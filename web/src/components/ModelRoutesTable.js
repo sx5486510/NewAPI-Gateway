@@ -103,6 +103,31 @@ const parseInteger = (value, fallback = 0) => {
     return parsed;
 };
 
+const normalizeModelName = (value) => {
+    const text = String(value || '').trim().toLowerCase();
+    if (!text) return '';
+    let normalized = text.replace(/^bigmodel\//, '');
+    const slashIndex = normalized.lastIndexOf('/');
+    if (slashIndex >= 0 && slashIndex < normalized.length - 1) {
+        normalized = normalized.slice(slashIndex + 1);
+    }
+    for (let i = 0; i < 6; i += 1) {
+        const next = normalized.replace(/^(?:\[[^\]]+\]|【[^】]+】|\([^)]+\)|（[^）]+）|\{[^}]+\}|<[^>]+>)\s*/u, '');
+        if (next === normalized) break;
+        normalized = next.trim();
+        if (!normalized) break;
+    }
+    const colonIndex = normalized.indexOf(':');
+    if (colonIndex >= 0) {
+        normalized = normalized.slice(0, colonIndex);
+    }
+    normalized = normalized
+        .replace(/[-_](20\d{6}|\d{8})$/i, '')
+        .replace(/-20\d{2}-\d{2}-\d{2}$/i, '')
+        .replace(/-latest$/i, '');
+    return normalized.trim();
+};
+
 const getRouteHealth = (route) => {
     const providerUp = Number(route.provider_status) === 1;
     const tokenUp = Number(route.token_status) === 1;
@@ -215,9 +240,11 @@ const ModelRoutesTable = () => {
                 return true;
             }
             const model = String(route.model_name || '').toLowerCase();
+            const displayModel = String(route.display_model_name || '').toLowerCase();
+            const canonical = normalizeModelName(route.model_name);
             const provider = String(route.provider_name || '').toLowerCase();
             const group = String(route.token_group_name || '').toLowerCase();
-            return model.includes(keyword) || provider.includes(keyword) || group.includes(keyword);
+            return model.includes(keyword) || displayModel.includes(keyword) || canonical.includes(keyword) || provider.includes(keyword) || group.includes(keyword);
         });
     }, [providerFilter, routes, searchKeyword, statusFilter]);
 
@@ -226,14 +253,25 @@ const ModelRoutesTable = () => {
         filteredRoutes.forEach((route) => {
             const draft = drafts[route.id];
             const merged = draft ? { ...route, ...draft } : { ...route };
-            if (!grouped[merged.model_name]) {
-                grouped[merged.model_name] = [];
+            const displayModelName = String(merged.display_model_name || '').trim();
+            const rawModelName = String(merged.model_name || '').trim();
+            const canonicalModelName = displayModelName || normalizeModelName(rawModelName) || rawModelName || 'unknown';
+            if (!grouped[canonicalModelName]) {
+                grouped[canonicalModelName] = {
+                    routes: [],
+                    aliases: new Set()
+                };
             }
-            grouped[merged.model_name].push(merged);
+            grouped[canonicalModelName].routes.push(merged);
+            if (rawModelName) {
+                grouped[canonicalModelName].aliases.add(rawModelName);
+            }
         });
 
         const entries = Object.entries(grouped)
-            .map(([modelName, modelRoutes]) => {
+            .map(([modelName, bucket]) => {
+                const modelRoutes = bucket.routes;
+                const aliases = [...bucket.aliases].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
                 const withShare = computeShareByPriority(modelRoutes).sort((a, b) => {
                     if (b.priority !== a.priority) return b.priority - a.priority;
                     if (a.provider_name !== b.provider_name) return String(a.provider_name).localeCompare(String(b.provider_name), 'zh-Hans-CN');
@@ -259,6 +297,8 @@ const ModelRoutesTable = () => {
 
                 return {
                     modelName,
+                    aliases,
+                    aliasCount: aliases.length,
                     routes: withShare,
                     routeCount: withShare.length,
                     providerCount,
@@ -549,13 +589,21 @@ const ModelRoutesTable = () => {
                                             <code className="routes-model-code" style={{ fontSize: '0.8rem', backgroundColor: 'var(--gray-100)', padding: '0.15rem 0.35rem', borderRadius: '0.25rem', color: 'var(--text-primary)' }}>
                                                 {entry.modelName}
                                             </code>
-                                            {entry.dirtyRows > 0 && <Badge color="yellow">待保存 {entry.dirtyRows}</Badge>}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                                {entry.aliasCount > 1 && <Badge color="yellow">别名 {entry.aliasCount}</Badge>}
+                                                {entry.dirtyRows > 0 && <Badge color="yellow">待保存 {entry.dirtyRows}</Badge>}
+                                            </div>
                                         </div>
                                         <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                             <Badge color="blue">路由 {entry.routeCount}</Badge>
                                             <Badge color="green">启用 {entry.enabledCount}</Badge>
                                             <Badge color="gray">供应商 {entry.providerCount}</Badge>
                                         </div>
+                                        {entry.aliasCount > 1 && (
+                                            <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.35 }} title={entry.aliases.join(' / ')}>
+                                                别名: {entry.aliases.slice(0, 2).join(' / ')}{entry.aliasCount > 2 ? ' ...' : ''}
+                                            </div>
+                                        )}
                                         <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                                             <div>最低输入价: {entry.minPromptPrice === null ? '-' : `${formatPrice(entry.minPromptPrice)} / 1M`}</div>
                                             <div>最低按次价: {entry.minPerCallPrice === null ? '-' : formatPrice(entry.minPerCallPrice)}</div>
@@ -587,6 +635,11 @@ const ModelRoutesTable = () => {
                                                 复制模型名
                                             </button>
                                         </div>
+                                        {selectedEntry.aliasCount > 1 && (
+                                            <div style={{ marginTop: '0.35rem', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.4 }} title={selectedEntry.aliases.join(' / ')}>
+                                                别名: {selectedEntry.aliases.join(' / ')}
+                                            </div>
+                                        )}
                                         <div style={{ marginTop: '0.4rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                             <Badge color="blue">路由 {selectedEntry.routeCount}</Badge>
                                             <Badge color="green">启用 {selectedEntry.enabledCount}</Badge>

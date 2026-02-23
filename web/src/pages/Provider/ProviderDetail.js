@@ -31,6 +31,10 @@ const ProviderDetail = () => {
     const [showTokenModal, setShowTokenModal] = useState(false);
     const [editToken, setEditToken] = useState(null);
     const [selectedPricing, setSelectedPricing] = useState(null);
+    const [aliasMapping, setAliasMapping] = useState({});
+    const [aliasMappingInput, setAliasMappingInput] = useState('{}');
+    const [aliasLoading, setAliasLoading] = useState(false);
+    const [aliasSaving, setAliasSaving] = useState(false);
 
     const loadProvider = useCallback(async () => {
         try {
@@ -63,11 +67,30 @@ const ProviderDetail = () => {
         } catch (e) { showError('加载定价失败'); }
     }, [id]);
 
+    const loadAliasMapping = useCallback(async () => {
+        setAliasLoading(true);
+        try {
+            const res = await API.get(`/api/provider/${id}/model-alias-mapping`);
+            const { success, data, message } = res.data;
+            if (!success) {
+                showError(message || '加载模型别名映射失败');
+                return;
+            }
+            const mapping = (data && typeof data === 'object' && !Array.isArray(data)) ? data : {};
+            setAliasMapping(mapping);
+            setAliasMappingInput(JSON.stringify(mapping, null, 2));
+        } catch (e) {
+            showError('加载模型别名映射失败');
+        } finally {
+            setAliasLoading(false);
+        }
+    }, [id]);
+
     const loadAll = useCallback(async () => {
         setLoading(true);
-        await Promise.all([loadProvider(), loadTokens(), loadPricing()]);
+        await Promise.all([loadProvider(), loadTokens(), loadPricing(), loadAliasMapping()]);
         setLoading(false);
-    }, [loadPricing, loadProvider, loadTokens]);
+    }, [loadAliasMapping, loadPricing, loadProvider, loadTokens]);
 
     useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -270,6 +293,79 @@ const ProviderDetail = () => {
         }
         return [...groups];
     }, [tokens]);
+
+    const aliasEntries = useMemo(() => {
+        return Object.entries(aliasMapping || {})
+            .map(([source, target]) => ({
+                source: String(source || '').trim(),
+                target: String(target || '').trim()
+            }))
+            .filter((item) => item.source && item.target)
+            .sort((a, b) => a.source.localeCompare(b.source, 'zh-Hans-CN'));
+    }, [aliasMapping]);
+
+    const pricingModelNames = useMemo(() => {
+        const names = new Set();
+        for (const p of pricing) {
+            const name = String(p.model_name || '').trim();
+            if (name) names.add(name);
+        }
+        return [...names].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+    }, [pricing]);
+
+    const saveAliasMapping = async () => {
+        let parsed;
+        try {
+            parsed = JSON.parse(aliasMappingInput || '{}');
+        } catch (err) {
+            showError('模型别名映射不是合法 JSON');
+            return;
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            showError('模型别名映射必须是 JSON 对象');
+            return;
+        }
+        const payload = {};
+        Object.entries(parsed).forEach(([source, target]) => {
+            const sourceKey = String(source || '').trim();
+            const targetValue = String(target || '').trim();
+            if (!sourceKey || !targetValue) return;
+            payload[sourceKey] = targetValue;
+        });
+
+        setAliasSaving(true);
+        try {
+            const res = await API.put(`/api/provider/${id}/model-alias-mapping`, {
+                model_alias_mapping: payload
+            });
+            const { success, data, message } = res.data;
+            if (!success) {
+                showError(message || '保存模型别名映射失败');
+                return;
+            }
+            const nextMapping = (data && typeof data === 'object' && !Array.isArray(data)) ? data : payload;
+            setAliasMapping(nextMapping);
+            setAliasMappingInput(JSON.stringify(nextMapping, null, 2));
+            showSuccess('模型别名映射已保存');
+        } catch (e) {
+            showError('保存模型别名映射失败');
+        } finally {
+            setAliasSaving(false);
+        }
+    };
+
+    const formatAliasMapping = () => {
+        try {
+            const parsed = JSON.parse(aliasMappingInput || '{}');
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                showError('模型别名映射必须是 JSON 对象');
+                return;
+            }
+            setAliasMappingInput(JSON.stringify(parsed, null, 2));
+        } catch (err) {
+            showError('模型别名映射不是合法 JSON');
+        }
+    };
 
     if (loading) {
         return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>加载中...</div>;
@@ -492,6 +588,87 @@ const ProviderDetail = () => {
         </div>
     );
 
+    // ==============================================================
+    //  Tab 4: Provider Model Alias Mapping
+    // ==============================================================
+    const aliasTab = (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <Card>
+                <div style={{ fontWeight: '600' }}>模型别名映射（当前供应商）</div>
+                <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.35rem', lineHeight: 1.5 }}>
+                    用于把下游保留模型名映射到该供应商真实模型名。保存后，路由页会按保留模型名聚合展示，并在组内管理各路由权重。
+                </div>
+                <div style={{ marginTop: '0.75rem', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    JSON 格式（非常重要）：{`{"保留模型名":"上游真实模型名"}`}，例如 {`{"aaa":"bbbxxxcccddd"}`}
+                </div>
+                <textarea
+                    rows={12}
+                    value={aliasMappingInput}
+                    onChange={(e) => setAliasMappingInput(e.target.value)}
+                    placeholder='{"aaa":"provider-x/aaa-latest"}'
+                    style={{
+                        marginTop: '0.75rem',
+                        width: '100%',
+                        padding: '0.75rem',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                        resize: 'vertical'
+                    }}
+                />
+                <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <Button variant="secondary" onClick={formatAliasMapping}>格式化 JSON</Button>
+                    <Button variant="secondary" onClick={loadAliasMapping} icon={RefreshCw} disabled={aliasLoading}>刷新</Button>
+                    <Button variant="primary" onClick={saveAliasMapping} loading={aliasSaving} disabled={aliasLoading}>保存映射</Button>
+                </div>
+                {pricingModelNames.length > 0 && (
+                    <div style={{ marginTop: '0.85rem', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                        当前供应商可用目标模型（前 12 个）：{pricingModelNames.slice(0, 12).join('，')}{pricingModelNames.length > 12 ? ' ...' : ''}
+                    </div>
+                )}
+            </Card>
+
+            <Card padding="0">
+                <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: '600' }}>已生效映射</div>
+                    <Badge color="blue">{aliasEntries.length} 条</Badge>
+                </div>
+                {aliasEntries.length === 0 ? (
+                    <div style={{ padding: '1.25rem 1rem', color: 'var(--text-secondary)' }}>
+                        暂无映射，当前仅使用自动归一化匹配。
+                    </div>
+                ) : (
+                    <Table>
+                        <Thead>
+                            <Tr>
+                                        <Th>保留模型名（对外）</Th>
+                                        <Th>上游真实模型名（供应商）</Th>
+                            </Tr>
+                        </Thead>
+                        <Tbody>
+                            {aliasEntries.map((item) => (
+                                <Tr key={`${item.source}=>${item.target}`}>
+                                    <Td>
+                                        <code style={{ fontSize: '0.8rem', backgroundColor: 'var(--gray-100)', padding: '0.15rem 0.4rem', borderRadius: '0.25rem' }}>
+                                            {item.source}
+                                        </code>
+                                    </Td>
+                                    <Td>
+                                        <code style={{ fontSize: '0.8rem', backgroundColor: 'var(--gray-100)', padding: '0.15rem 0.4rem', borderRadius: '0.25rem' }}>
+                                            {item.target}
+                                        </code>
+                                    </Td>
+                                </Tr>
+                            ))}
+                        </Tbody>
+                    </Table>
+                )}
+            </Card>
+        </div>
+    );
+
     return (
         <>
             {/* Header */}
@@ -550,6 +727,7 @@ const ProviderDetail = () => {
                 { label: `令牌管理 (${tokens.length})`, content: tokenTab },
                 { label: `模型与定价 (${pricing.length})`, content: pricingTab },
                 { label: `分组映射 (${Object.keys(groupModelMap).length})`, content: groupTab },
+                { label: `模型别名映射 (${aliasEntries.length})`, content: aliasTab },
             ]} />
 
             <Modal

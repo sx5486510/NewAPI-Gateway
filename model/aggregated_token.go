@@ -1,8 +1,8 @@
 package model
 
 import (
-	"errors"
 	"NewAPI-Gateway/common"
+	"errors"
 	"math/rand"
 	"strings"
 	"time"
@@ -95,9 +95,38 @@ func (t *AggregatedToken) IsModelAllowed(model string) bool {
 	if !t.ModelLimitsEnabled || t.ModelLimits == "" {
 		return true
 	}
+
+	requested := strings.TrimSpace(model)
+	if requested == "" {
+		return false
+	}
+
+	exactCandidates := make(map[string]bool)
+	normalizedCandidates := make(map[string]bool)
+	appendCandidate := func(candidate string) {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			return
+		}
+		exactCandidates[strings.ToLower(candidate)] = true
+		if normalized := common.NormalizeModelName(candidate); normalized != "" {
+			normalizedCandidates[normalized] = true
+		}
+	}
+
+	appendCandidate(requested)
+
 	limits := strings.Split(t.ModelLimits, ",")
 	for _, m := range limits {
-		if strings.TrimSpace(m) == model {
+		limit := strings.TrimSpace(m)
+		if limit == "" {
+			continue
+		}
+		if exactCandidates[strings.ToLower(limit)] {
+			return true
+		}
+		limitNormalized := common.NormalizeModelName(limit)
+		if limitNormalized != "" && normalizedCandidates[limitNormalized] {
 			return true
 		}
 	}

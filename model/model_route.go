@@ -1,6 +1,7 @@
 package model
 
 import (
+	"NewAPI-Gateway/common"
 	"encoding/json"
 	"errors"
 	"math/rand"
@@ -42,6 +43,7 @@ func (p *ModelRoutePatch) ToUpdates() map[string]interface{} {
 
 type ModelRouteOverviewItem struct {
 	Id                    int      `json:"id"`
+	DisplayModelName      string   `json:"display_model_name"`
 	ModelName             string   `json:"model_name"`
 	ProviderId            int      `json:"provider_id"`
 	ProviderName          string   `json:"provider_name"`
@@ -83,15 +85,116 @@ type modelRouteOverviewRow struct {
 
 // SelectProviderToken selects a provider token for the given model using priority + weight algorithm
 // retry is used to fall back to lower priority levels
-func SelectProviderToken(modelName string, retry int) (*ProviderToken, *Provider, error) {
-	var routes []ModelRoute
-	err := DB.Where("model_name = ? AND enabled = ?", modelName, true).
-		Order("priority DESC").Find(&routes).Error
-	if err != nil {
-		return nil, nil, err
+func SelectProviderToken(modelName string, retry int) (*ProviderToken, *Provider, string, error) {
+	requestedModel := strings.TrimSpace(modelName)
+	if requestedModel == "" {
+		return nil, nil, "", errors.New("无效的模型名称")
 	}
+
+	candidateRoutes, err := getCandidateRoutesByModel(requestedModel)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if len(candidateRoutes) == 0 {
+		return nil, nil, "", errors.New("无可用的模型路由: " + requestedModel)
+	}
+
+	token, provider, selectedRoute, err := pickProviderByRoutes(candidateRoutes, retry)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return token, provider, selectedRoute.ModelName, nil
+}
+
+func getCandidateRoutesByModel(requestedModel string) ([]ModelRoute, error) {
+	var allRoutes []ModelRoute
+	if err := DB.Where("enabled = ?", true).
+		Order("priority DESC, id ASC").Find(&allRoutes).Error; err != nil {
+		return nil, err
+	}
+	if len(allRoutes) == 0 {
+		return nil, nil
+	}
+
+	providerAliasLookupMap, err := loadProviderAliasLookups(allRoutes)
+	if err != nil {
+		return nil, err
+	}
+
+	requestedNormalized := common.NormalizeModelName(requestedModel)
+	requestedVersionKey := common.ToVersionAgnosticKey(requestedNormalized)
+
+	candidates := make([]ModelRoute, 0, len(allRoutes))
+	for _, route := range allRoutes {
+		lookup := providerAliasLookupMap[route.ProviderId]
+		if routeMatchesRequestedModel(route.ModelName, requestedModel, requestedNormalized, requestedVersionKey, lookup) {
+			candidates = append(candidates, route)
+		}
+	}
+	return candidates, nil
+}
+
+func loadProviderAliasLookups(routes []ModelRoute) (map[int]providerModelAliasLookup, error) {
+	providerIds := make([]int, 0)
+	providerSet := make(map[int]bool)
+	for _, route := range routes {
+		if providerSet[route.ProviderId] {
+			continue
+		}
+		providerSet[route.ProviderId] = true
+		providerIds = append(providerIds, route.ProviderId)
+	}
+
+	lookups := make(map[int]providerModelAliasLookup)
+	if len(providerIds) == 0 {
+		return lookups, nil
+	}
+
+	var providers []Provider
+	if err := DB.Select("id", "model_alias_mapping").Where("id IN ?", providerIds).Find(&providers).Error; err != nil {
+		return nil, err
+	}
+	for _, p := range providers {
+		mapping := ParseProviderAliasMapping(p.ModelAliasMapping)
+		lookups[p.Id] = buildProviderModelAliasLookup(mapping)
+	}
+	return lookups, nil
+}
+
+func routeMatchesRequestedModel(routeModelName string, requestedModel string, requestedNormalized string,
+	requestedVersionKey string, lookup providerModelAliasLookup) bool {
+	routeName := strings.TrimSpace(routeModelName)
+	if routeName == "" {
+		return false
+	}
+
+	if strings.EqualFold(routeName, requestedModel) {
+		return true
+	}
+
+	routeNormalized := common.NormalizeModelName(routeName)
+	if requestedNormalized != "" && routeNormalized != "" && routeNormalized == requestedNormalized {
+		return true
+	}
+	if requestedVersionKey != "" && routeNormalized != "" && common.ToVersionAgnosticKey(routeNormalized) == requestedVersionKey {
+		return true
+	}
+
+	if mappedModel, ok := lookup.Resolve(requestedModel); ok {
+		if strings.EqualFold(routeName, mappedModel) {
+			return true
+		}
+		mappedNormalized := common.NormalizeModelName(mappedModel)
+		if mappedNormalized != "" && routeNormalized != "" && mappedNormalized == routeNormalized {
+			return true
+		}
+	}
+	return false
+}
+
+func pickProviderByRoutes(routes []ModelRoute, retry int) (*ProviderToken, *Provider, ModelRoute, error) {
 	if len(routes) == 0 {
-		return nil, nil, errors.New("无可用的模型路由: " + modelName)
+		return nil, nil, ModelRoute{}, errors.New("路由选择失败")
 	}
 
 	// Get distinct priorities (descending)
@@ -119,29 +222,53 @@ func SelectProviderToken(modelName string, retry int) (*ProviderToken, *Provider
 			candidates = append(candidates, r)
 		}
 	}
+	if len(candidates) == 0 {
+		return nil, nil, ModelRoute{}, errors.New("路由选择失败")
+	}
 
 	// Weighted random selection (same algorithm as upstream ability.go)
 	weightSum := 0
 	for _, r := range candidates {
-		weightSum += r.Weight + 10
+		weight := r.Weight + 10
+		if weight < 0 {
+			weight = 0
+		}
+		weightSum += weight
 	}
-	pick := rand.Intn(weightSum)
-	for _, r := range candidates {
-		pick -= r.Weight + 10
-		if pick <= 0 {
-			token, err := GetProviderTokenById(r.ProviderTokenId)
-			if err != nil {
-				return nil, nil, err
+
+	if weightSum > 0 {
+		pick := rand.Intn(weightSum)
+		for _, r := range candidates {
+			weight := r.Weight + 10
+			if weight < 0 {
+				weight = 0
 			}
-			provider, err := GetProviderById(r.ProviderId)
-			if err != nil {
-				return nil, nil, err
+			pick -= weight
+			if pick <= 0 {
+				token, err := GetProviderTokenById(r.ProviderTokenId)
+				if err != nil {
+					return nil, nil, ModelRoute{}, err
+				}
+				provider, err := GetProviderById(r.ProviderId)
+				if err != nil {
+					return nil, nil, ModelRoute{}, err
+				}
+				return token, provider, r, nil
 			}
-			return token, provider, nil
 		}
 	}
 
-	return nil, nil, errors.New("路由选择失败")
+	// Fallback when all candidate weights are non-positive.
+	chosen := candidates[rand.Intn(len(candidates))]
+	token, err := GetProviderTokenById(chosen.ProviderTokenId)
+	if err != nil {
+		return nil, nil, ModelRoute{}, err
+	}
+	provider, err := GetProviderById(chosen.ProviderId)
+	if err != nil {
+		return nil, nil, ModelRoute{}, err
+	}
+	return token, provider, chosen, nil
 }
 
 // GetAllModelRoutes returns all routes with optional model name filter
@@ -242,6 +369,27 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 	}
 
 	ratioCache := make(map[int]map[string]float64)
+	aliasDisplayLookupCache := make(map[int]providerModelAliasReverseLookup)
+
+	providerIds := make([]int, 0)
+	providerSeen := make(map[int]bool)
+	for _, row := range rows {
+		if providerSeen[row.ProviderId] {
+			continue
+		}
+		providerSeen[row.ProviderId] = true
+		providerIds = append(providerIds, row.ProviderId)
+	}
+	if len(providerIds) > 0 {
+		var providers []Provider
+		if err := DB.Select("id", "model_alias_mapping").Where("id IN ?", providerIds).Find(&providers).Error; err != nil {
+			return nil, err
+		}
+		for _, p := range providers {
+			aliasDisplayLookupCache[p.Id] = buildProviderModelAliasReverseLookup(ParseProviderAliasMapping(p.ModelAliasMapping))
+		}
+	}
+
 	items := make([]*ModelRouteOverviewItem, 0, len(rows))
 	for _, row := range rows {
 		groupRatioMap, ok := ratioCache[row.ProviderId]
@@ -251,19 +399,25 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 		}
 		groupRatio := getGroupRatio(row.TokenGroupName, groupRatioMap)
 		item := &ModelRouteOverviewItem{
-			Id:              row.Id,
-			ModelName:       row.ModelName,
-			ProviderId:      row.ProviderId,
-			ProviderName:    row.ProviderName,
-			ProviderStatus:  row.ProviderStatus,
-			ProviderTokenId: row.ProviderTokenId,
-			TokenName:       row.TokenName,
-			TokenGroupName:  row.TokenGroupName,
-			TokenStatus:     row.TokenStatus,
-			Enabled:         row.Enabled,
-			Priority:        row.Priority,
-			Weight:          row.Weight,
-			GroupRatio:      groupRatio,
+			Id:               row.Id,
+			DisplayModelName: "",
+			ModelName:        row.ModelName,
+			ProviderId:       row.ProviderId,
+			ProviderName:     row.ProviderName,
+			ProviderStatus:   row.ProviderStatus,
+			ProviderTokenId:  row.ProviderTokenId,
+			TokenName:        row.TokenName,
+			TokenGroupName:   row.TokenGroupName,
+			TokenStatus:      row.TokenStatus,
+			Enabled:          row.Enabled,
+			Priority:         row.Priority,
+			Weight:           row.Weight,
+			GroupRatio:       groupRatio,
+		}
+		if reverseLookup, ok := aliasDisplayLookupCache[row.ProviderId]; ok {
+			if sourceModelName, matched := reverseLookup.ResolveByTarget(row.ModelName); matched {
+				item.DisplayModelName = sourceModelName
+			}
 		}
 
 		isPerCallBilling := row.ModelPrice > 0 || row.QuotaType == 1

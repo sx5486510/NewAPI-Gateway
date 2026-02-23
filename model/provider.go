@@ -21,6 +21,7 @@ type Provider struct {
 	BalanceUpdated           int64  `json:"balance_updated"`
 	PricingGroupRatio        string `json:"pricing_group_ratio" gorm:"type:text"`
 	PricingSupportedEndpoint string `json:"pricing_supported_endpoint" gorm:"type:text"`
+	ModelAliasMapping        string `json:"model_alias_mapping" gorm:"type:text"`
 	Remark                   string `json:"remark" gorm:"type:text"`
 	CreatedAt                int64  `json:"created_at"`
 }
@@ -85,6 +86,10 @@ func (p *Provider) UpdatePricingGroupRatio(groupRatio string) {
 
 func (p *Provider) UpdatePricingSupportedEndpoint(supportedEndpoint string) {
 	DB.Model(p).Update("pricing_supported_endpoint", supportedEndpoint)
+}
+
+func (p *Provider) UpdateModelAliasMapping(modelAliasMapping string) {
+	DB.Model(p).Update("model_alias_mapping", modelAliasMapping)
 }
 
 func (p *Provider) UpdateCheckinTime() {

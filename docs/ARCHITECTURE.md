@@ -29,11 +29,11 @@
   -> controller.Relay
       - 提取请求 model
       - 校验聚合 token 的模型白名单
-      - SelectProviderToken(model, retry)
+      - SelectProviderToken(model, retry)（支持别名归一化与手动映射）
   -> service.ProxyToUpstream
       - 替换认证为上游 sk-token
       - 清理代理特征 Header
-      - 透传请求体与关键 Header
+      - 按命中路由改写请求体 model 后转发
       - 流式/非流式响应转发
       - 记录 usage_logs
 ```
@@ -68,11 +68,14 @@
 
 实现位置：`model/model_route.go` 的 `SelectProviderToken`。
 
-1. 查询启用路由：`model_name = ? AND enabled = true`。
-2. 对优先级去重并降序。
+1. 汇总候选路由（同一候选池）：
+   - 精确模型名匹配；
+   - 供应商级手动映射（`providers.model_alias_mapping`）；
+   - 模型归一化与版本无关键匹配。
+2. 对候选路由按优先级去重并降序。
 3. 根据 `retry` 选择目标优先级层。
-4. 在该层执行加权随机：`weightSum = Σ(weight + 10)`。
-5. 命中后返回 `provider_token` 与 `provider`。
+4. 在该层执行加权随机：`weightSum = Σ(max(weight + 10, 0))`。
+5. 命中后返回 `provider_token`、`provider` 与实际模型名。
 
 `+10` 用于保证低权重或 0 权重路由仍有基础概率。
 
@@ -80,7 +83,7 @@
 
 - 认证替换：客户端 `ag-` -> 上游 `sk-`。
 - Header 清理：删除 `X-Forwarded-*`、`Via`、`Forwarded`、`X-Real-IP`。
-- 请求体透传：不改写业务 body。
+- 请求体改写：当命中别名路由时改写 `model` 字段为上游实际模型名。
 - 支持 SSE：实时转发流式响应并记录首 token 延迟。
 
 ## 关键数据表
