@@ -11,12 +11,10 @@ import Card from './ui/Card';
 const PersonalSetting = () => {
   const [themeState] = useContext(ThemeContext);
   const [inputs, setInputs] = useState({
-    wechat_verification_code: '',
     email_verification_code: '',
     email: '',
   });
   const [status, setStatus] = useState({});
-  const [showWeChatBindModal, setShowWeChatBindModal] = useState(false);
   const [showEmailBindModal, setShowEmailBindModal] = useState(false);
   const [turnstileEnabled, setTurnstileEnabled] = useState(false);
   const [turnstileSiteKey, setTurnstileSiteKey] = useState('');
@@ -46,20 +44,6 @@ const PersonalSetting = () => {
     if (success) {
       await copy(data);
       showSuccess(`令牌已重置并已复制到剪贴板：${data}`);
-    } else {
-      showError(message);
-    }
-  };
-
-  const bindWeChat = async () => {
-    if (inputs.wechat_verification_code === '') return;
-    const res = await API.get(
-      `/api/oauth/wechat/bind?code=${inputs.wechat_verification_code}`
-    );
-    const { success, message } = res.data;
-    if (success) {
-      showSuccess('微信账户绑定成功！');
-      setShowWeChatBindModal(false);
     } else {
       showError(message);
     }
@@ -124,17 +108,9 @@ const PersonalSetting = () => {
       <Card padding="1.5rem">
         <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>账号绑定</h3>
         <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          可选绑定微信、GitHub 与邮箱，便于登录和找回能力。
+          可选绑定 GitHub 与邮箱，便于登录和找回能力。
         </p>
         <div className='settings-action-grid'>
-          {status.wechat_login && (
-            <Button
-              variant="secondary"
-              onClick={() => setShowWeChatBindModal(true)}
-            >
-              绑定微信账号
-            </Button>
-          )}
           {status.github_oauth && (
             <Button variant="secondary" onClick={openGitHubOAuth}>绑定 GitHub 账户</Button>
           )}
@@ -146,33 +122,6 @@ const PersonalSetting = () => {
           </Button>
         </div>
       </Card>
-
-      <Modal
-        title="绑定微信账号"
-        isOpen={showWeChatBindModal}
-        onClose={() => setShowWeChatBindModal(false)}
-      >
-        <div style={{ textAlign: 'center' }}>
-          {status.wechat_qrcode && (
-            <img src={status.wechat_qrcode} alt="微信二维码" style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)', marginBottom: '1rem' }} />
-          )}
-          <p style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>
-            微信扫码关注公众号，输入「验证码」获取验证码（三分钟内有效）
-          </p>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <Input
-              placeholder='验证码'
-              name='wechat_verification_code'
-              value={inputs.wechat_verification_code}
-              onChange={handleInputChange}
-              style={{ marginBottom: 0 }}
-            />
-            <Button variant="primary" onClick={bindWeChat}>
-              绑定
-            </Button>
-          </div>
-        </div>
-      </Modal>
 
       <Modal
         title="绑定邮箱地址"

@@ -75,12 +75,66 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "RoutingHealthAdjustmentEnabled":
+		normalized := strings.TrimSpace(strings.ToLower(option.Value))
+		if normalized != "true" && normalized != "false" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "健康调节开关必须是 true 或 false",
+			})
+			return
+		}
 	case "RoutingBaseWeightFactor", "RoutingValueScoreFactor":
 		value, err := strconv.ParseFloat(strings.TrimSpace(option.Value), 64)
 		if err != nil || value < 0 || value > 10 {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
 				"message": "路由系数必须是 0 到 10 之间的数字",
+			})
+			return
+		}
+	case "RoutingHealthWindowHours":
+		value, err := strconv.Atoi(strings.TrimSpace(option.Value))
+		if err != nil || value < 1 || value > 24*30 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "健康统计窗口必须是 1 到 720 小时的整数",
+			})
+			return
+		}
+	case "RoutingFailurePenaltyAlpha":
+		value, err := strconv.ParseFloat(strings.TrimSpace(option.Value), 64)
+		if err != nil || value < 0 || value > 20 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "故障惩罚系数必须是 0 到 20 之间的数字",
+			})
+			return
+		}
+	case "RoutingHealthRewardBeta":
+		value, err := strconv.ParseFloat(strings.TrimSpace(option.Value), 64)
+		if err != nil || value < 0 || value > 2 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "健康奖励系数必须是 0 到 2 之间的数字",
+			})
+			return
+		}
+	case "RoutingHealthMinMultiplier", "RoutingHealthMaxMultiplier":
+		value, err := strconv.ParseFloat(strings.TrimSpace(option.Value), 64)
+		if err != nil || value < 0 || value > 10 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "健康倍率阈值必须是 0 到 10 之间的数字",
+			})
+			return
+		}
+	case "RoutingHealthMinSamples":
+		value, err := strconv.Atoi(strings.TrimSpace(option.Value))
+		if err != nil || value < 1 || value > 1000 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "健康最小样本数必须是 1 到 1000 的整数",
 			})
 			return
 		}

@@ -17,10 +17,24 @@ const (
 	defaultRoutingUsageWindowHours = 24
 	defaultRoutingBaseWeightFactor = 0.2
 	defaultRoutingValueScoreFactor = 0.8
+	defaultRoutingHealthEnabled    = false
+	defaultRoutingHealthWindowHour = 6
+	defaultRoutingFailurePenaltyA  = 4.0
+	defaultRoutingHealthRewardBeta = 0.08
+	defaultRoutingHealthMinMult    = 0.05
+	defaultRoutingHealthMaxMult    = 1.12
+	defaultRoutingHealthMinSamples = 5
 
-	routingUsageWindowHoursOptionKey = "RoutingUsageWindowHours"
-	routingBaseWeightFactorOptionKey = "RoutingBaseWeightFactor"
-	routingValueScoreFactorOptionKey = "RoutingValueScoreFactor"
+	routingUsageWindowHoursOptionKey    = "RoutingUsageWindowHours"
+	routingBaseWeightFactorOptionKey    = "RoutingBaseWeightFactor"
+	routingValueScoreFactorOptionKey    = "RoutingValueScoreFactor"
+	routingHealthEnabledOptionKey       = "RoutingHealthAdjustmentEnabled"
+	routingHealthWindowHoursOptionKey   = "RoutingHealthWindowHours"
+	routingFailurePenaltyAlphaOptionKey = "RoutingFailurePenaltyAlpha"
+	routingHealthRewardBetaOptionKey    = "RoutingHealthRewardBeta"
+	routingHealthMinMultiplierOptionKey = "RoutingHealthMinMultiplier"
+	routingHealthMaxMultiplierOptionKey = "RoutingHealthMaxMultiplier"
+	routingHealthMinSamplesOptionKey    = "RoutingHealthMinSamples"
 )
 
 var balanceNumberPattern = regexp.MustCompile(`[-+]?\d*\.?\d+`)
@@ -57,31 +71,43 @@ func (p *ModelRoutePatch) ToUpdates() map[string]interface{} {
 }
 
 type ModelRouteOverviewItem struct {
-	Id                    int      `json:"id"`
-	DisplayModelName      string   `json:"display_model_name"`
-	ModelName             string   `json:"model_name"`
-	ProviderId            int      `json:"provider_id"`
-	ProviderName          string   `json:"provider_name"`
-	ProviderBalance       string   `json:"provider_balance"`
-	ProviderStatus        int      `json:"provider_status"`
-	ProviderTokenId       int      `json:"provider_token_id"`
-	TokenName             string   `json:"token_name"`
-	TokenGroupName        string   `json:"token_group_name"`
-	TokenStatus           int      `json:"token_status"`
-	Enabled               bool     `json:"enabled"`
-	Priority              int      `json:"priority"`
-	Weight                int      `json:"weight"`
-	BillingType           string   `json:"billing_type"`
-	GroupRatio            float64  `json:"group_ratio"`
-	PromptPricePer1M      *float64 `json:"prompt_price_per_1m"`
-	CompletionPricePer1M  *float64 `json:"completion_price_per_1m"`
-	PerCallPrice          *float64 `json:"per_call_price"`
-	RecentUsageCostUSD    float64  `json:"recent_usage_cost_usd"`
-	ValueScore            *float64 `json:"value_score"`
-	UsageWindowHours      int      `json:"usage_window_hours"`
-	BaseWeightFactor      float64  `json:"base_weight_factor"`
-	ValueScoreFactor      float64  `json:"value_score_factor"`
-	EffectiveSharePercent *float64 `json:"effective_share_percent"`
+	Id                      int      `json:"id"`
+	DisplayModelName        string   `json:"display_model_name"`
+	ModelName               string   `json:"model_name"`
+	ProviderId              int      `json:"provider_id"`
+	ProviderName            string   `json:"provider_name"`
+	ProviderBalance         string   `json:"provider_balance"`
+	ProviderStatus          int      `json:"provider_status"`
+	ProviderTokenId         int      `json:"provider_token_id"`
+	TokenName               string   `json:"token_name"`
+	TokenGroupName          string   `json:"token_group_name"`
+	TokenStatus             int      `json:"token_status"`
+	Enabled                 bool     `json:"enabled"`
+	Priority                int      `json:"priority"`
+	Weight                  int      `json:"weight"`
+	BillingType             string   `json:"billing_type"`
+	GroupRatio              float64  `json:"group_ratio"`
+	PromptPricePer1M        *float64 `json:"prompt_price_per_1m"`
+	CompletionPricePer1M    *float64 `json:"completion_price_per_1m"`
+	PerCallPrice            *float64 `json:"per_call_price"`
+	RecentUsageCostUSD      float64  `json:"recent_usage_cost_usd"`
+	ValueScore              *float64 `json:"value_score"`
+	UsageWindowHours        int      `json:"usage_window_hours"`
+	BaseWeightFactor        float64  `json:"base_weight_factor"`
+	ValueScoreFactor        float64  `json:"value_score_factor"`
+	HealthAdjustmentEnabled bool     `json:"health_adjustment_enabled"`
+	HealthWindowHours       int      `json:"health_window_hours"`
+	FailurePenaltyAlpha     float64  `json:"failure_penalty_alpha"`
+	HealthRewardBeta        float64  `json:"health_reward_beta"`
+	HealthMinMultiplier     float64  `json:"health_min_multiplier"`
+	HealthMaxMultiplier     float64  `json:"health_max_multiplier"`
+	HealthMinSamples        int      `json:"health_min_samples"`
+	HealthMultiplier        float64  `json:"health_multiplier"`
+	HealthSampleCount       int64    `json:"health_sample_count"`
+	HealthSuccessRate       *float64 `json:"health_success_rate"`
+	HealthFailRate          *float64 `json:"health_fail_rate"`
+	HealthAvgLatencyMs      *float64 `json:"health_avg_latency_ms"`
+	EffectiveSharePercent   *float64 `json:"effective_share_percent"`
 }
 
 type modelRouteOverviewRow struct {
@@ -120,12 +146,35 @@ type routeRuntimeMetrics struct {
 	ProviderBalanceUSD float64
 	RecentUsageCostUSD float64
 	ValueScore         float64
+	HealthMultiplier   float64
+	HealthSampleCount  int64
+	HealthSuccessRate  float64
+	HealthFailRate     float64
+	HealthAvgLatencyMs float64
 }
 
 type routingTuningConfig struct {
-	UsageWindowHours int
-	BaseWeightFactor float64
-	ValueScoreFactor float64
+	UsageWindowHours    int
+	BaseWeightFactor    float64
+	ValueScoreFactor    float64
+	HealthEnabled       bool
+	HealthWindowHours   int
+	FailurePenaltyAlpha float64
+	HealthRewardBeta    float64
+	HealthMinMultiplier float64
+	HealthMaxMultiplier float64
+	HealthMinSamples    int
+}
+
+type routeHealthStats struct {
+	SuccessCount int64
+	ErrorCount   int64
+	SampleCount  int64
+	AvgLatencyMs float64
+	SuccessRate  float64
+	FailRate     float64
+	HealthScore  float64
+	Multiplier   float64
 }
 
 // SelectProviderToken selects a provider token for a specific priority-retry index.
@@ -205,7 +254,7 @@ func BuildRouteAttemptsByPriority(modelName string) ([][]RouteAttempt, error) {
 		return nil, err
 	}
 
-	metricLookup, err := buildRouteRuntimeMetrics(candidateRoutes, providerLookup, tokenLookup, modelNames, config.UsageWindowHours)
+	metricLookup, err := buildRouteRuntimeMetrics(candidateRoutes, providerLookup, tokenLookup, modelNames, config)
 	if err != nil {
 		return nil, err
 	}
@@ -253,13 +302,21 @@ func BuildRouteAttemptsByPriority(modelName string) ([][]RouteAttempt, error) {
 			continue
 		}
 		for i := range attempts {
-			attempts[i].Contribution = computeRouteContribution(
+			baseContribution := computeRouteContribution(
 				attempts[i].Route.Weight,
 				attempts[i].ValueScore,
 				maxScore,
 				config.BaseWeightFactor,
 				config.ValueScoreFactor,
 			)
+			healthMultiplier := 1.0
+			if metric, ok := metricLookup[attempts[i].Route.Id]; ok {
+				healthMultiplier = metric.HealthMultiplier
+			}
+			if healthMultiplier <= 0 {
+				healthMultiplier = 0.0001
+			}
+			attempts[i].Contribution = baseContribution * healthMultiplier
 		}
 		plan = append(plan, weightedShuffleAttempts(attempts))
 	}
@@ -388,7 +445,7 @@ func loadProviderTokensByIDs(tokenIds []int) (map[int]*ProviderToken, error) {
 	return lookup, nil
 }
 
-func buildRouteRuntimeMetrics(routes []ModelRoute, providers map[int]*Provider, tokens map[int]*ProviderToken, modelNames []string, usageWindowHours int) (map[int]routeRuntimeMetrics, error) {
+func buildRouteRuntimeMetrics(routes []ModelRoute, providers map[int]*Provider, tokens map[int]*ProviderToken, modelNames []string, config routingTuningConfig) (map[int]routeRuntimeMetrics, error) {
 	metrics := make(map[int]routeRuntimeMetrics)
 	if len(routes) == 0 {
 		return metrics, nil
@@ -422,7 +479,12 @@ func buildRouteRuntimeMetrics(routes []ModelRoute, providers map[int]*Provider, 
 		}
 	}
 
-	usageLookup, err := loadRecentUsageCostByTokenModel(tokenIds, modelNames, usageWindowHours)
+	usageLookup, err := loadRecentUsageCostByTokenModel(tokenIds, modelNames, config.UsageWindowHours)
+	if err != nil {
+		return nil, err
+	}
+
+	healthLookup, err := loadRouteHealthStatsByTokenModel(tokenIds, modelNames, config.HealthWindowHours)
 	if err != nil {
 		return nil, err
 	}
@@ -437,11 +499,20 @@ func buildRouteRuntimeMetrics(routes []ModelRoute, providers map[int]*Provider, 
 		unitCostUSD := calcRouteUnitCostUSD(route.ProviderId, route.ModelName, tokenGroup, groupRatioLookup, pricingLookup)
 		recentUsageUSD := usageLookup[routeUsageKey(route.ProviderTokenId, route.ModelName)]
 		valueScore := computeRouteValueScore(unitCostUSD, balanceUSD, recentUsageUSD)
+		healthStats := finalizeRouteHealthStat(
+			healthLookup[routeUsageKey(route.ProviderTokenId, route.ModelName)],
+			config,
+		)
 		metrics[route.Id] = routeRuntimeMetrics{
 			UnitCostUSD:        unitCostUSD,
 			ProviderBalanceUSD: balanceUSD,
 			RecentUsageCostUSD: recentUsageUSD,
 			ValueScore:         valueScore,
+			HealthMultiplier:   healthStats.Multiplier,
+			HealthSampleCount:  healthStats.SampleCount,
+			HealthSuccessRate:  healthStats.SuccessRate,
+			HealthFailRate:     healthStats.FailRate,
+			HealthAvgLatencyMs: healthStats.AvgLatencyMs,
 		}
 	}
 
@@ -551,9 +622,16 @@ func computeRouteValueScore(unitCostUSD float64, balanceUSD float64, recentUsage
 
 func loadRoutingTuningConfig() routingTuningConfig {
 	config := routingTuningConfig{
-		UsageWindowHours: defaultRoutingUsageWindowHours,
-		BaseWeightFactor: defaultRoutingBaseWeightFactor,
-		ValueScoreFactor: defaultRoutingValueScoreFactor,
+		UsageWindowHours:    defaultRoutingUsageWindowHours,
+		BaseWeightFactor:    defaultRoutingBaseWeightFactor,
+		ValueScoreFactor:    defaultRoutingValueScoreFactor,
+		HealthEnabled:       defaultRoutingHealthEnabled,
+		HealthWindowHours:   defaultRoutingHealthWindowHour,
+		FailurePenaltyAlpha: defaultRoutingFailurePenaltyA,
+		HealthRewardBeta:    defaultRoutingHealthRewardBeta,
+		HealthMinMultiplier: defaultRoutingHealthMinMult,
+		HealthMaxMultiplier: defaultRoutingHealthMaxMult,
+		HealthMinSamples:    defaultRoutingHealthMinSamples,
 	}
 
 	common.OptionMapRWMutex.RLock()
@@ -577,11 +655,69 @@ func loadRoutingTuningConfig() routingTuningConfig {
 		0,
 		10,
 	)
+	config.HealthEnabled = parseOptionBool(
+		common.OptionMap[routingHealthEnabledOptionKey],
+		defaultRoutingHealthEnabled,
+	)
+	config.HealthWindowHours = parseOptionIntInRange(
+		common.OptionMap[routingHealthWindowHoursOptionKey],
+		defaultRoutingHealthWindowHour,
+		1,
+		24*30,
+	)
+	config.FailurePenaltyAlpha = parseOptionFloatInRange(
+		common.OptionMap[routingFailurePenaltyAlphaOptionKey],
+		defaultRoutingFailurePenaltyA,
+		0,
+		20,
+	)
+	config.HealthRewardBeta = parseOptionFloatInRange(
+		common.OptionMap[routingHealthRewardBetaOptionKey],
+		defaultRoutingHealthRewardBeta,
+		0,
+		2,
+	)
+	config.HealthMinMultiplier = parseOptionFloatInRange(
+		common.OptionMap[routingHealthMinMultiplierOptionKey],
+		defaultRoutingHealthMinMult,
+		0,
+		10,
+	)
+	config.HealthMaxMultiplier = parseOptionFloatInRange(
+		common.OptionMap[routingHealthMaxMultiplierOptionKey],
+		defaultRoutingHealthMaxMult,
+		0,
+		10,
+	)
+	config.HealthMinSamples = parseOptionIntInRange(
+		common.OptionMap[routingHealthMinSamplesOptionKey],
+		defaultRoutingHealthMinSamples,
+		1,
+		1000,
+	)
 	if config.BaseWeightFactor == 0 && config.ValueScoreFactor == 0 {
 		config.BaseWeightFactor = defaultRoutingBaseWeightFactor
 		config.ValueScoreFactor = defaultRoutingValueScoreFactor
 	}
+	if config.HealthMaxMultiplier < config.HealthMinMultiplier {
+		config.HealthMaxMultiplier = config.HealthMinMultiplier
+	}
 	return config
+}
+
+func parseOptionBool(raw string, fallback bool) bool {
+	text := strings.TrimSpace(strings.ToLower(raw))
+	if text == "" {
+		return fallback
+	}
+	switch text {
+	case "true", "1", "yes", "on":
+		return true
+	case "false", "0", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func parseOptionIntInRange(raw string, fallback int, min int, max int) int {
@@ -689,6 +825,126 @@ func loadRecentUsageCostByTokenModel(tokenIds []int, modelNames []string, usageW
 		usageLookup[routeUsageKey(row.ProviderTokenId, row.ModelName)] = row.TotalCost
 	}
 	return usageLookup, nil
+}
+
+func loadRouteHealthStatsByTokenModel(tokenIds []int, modelNames []string, windowHours int) (map[string]routeHealthStats, error) {
+	statsLookup := make(map[string]routeHealthStats)
+	if len(tokenIds) == 0 || len(modelNames) == 0 {
+		return statsLookup, nil
+	}
+	if windowHours <= 0 {
+		windowHours = defaultRoutingHealthWindowHour
+	}
+
+	type healthRow struct {
+		ProviderTokenId int     `gorm:"column:provider_token_id"`
+		ModelName       string  `gorm:"column:model_name"`
+		SuccessCount    int64   `gorm:"column:success_count"`
+		ErrorCount      int64   `gorm:"column:error_count"`
+		SampleCount     int64   `gorm:"column:sample_count"`
+		AvgLatencyMs    float64 `gorm:"column:avg_latency_ms"`
+	}
+
+	const successCondition = "(status = 1 AND (error_message IS NULL OR TRIM(error_message) = ''))"
+	const errorCondition = "(status <> 1 OR (error_message IS NOT NULL AND TRIM(error_message) <> ''))"
+
+	var rows []healthRow
+	since := time.Now().Add(-time.Duration(windowHours) * time.Hour).Unix()
+	if err := DB.Table("usage_logs").
+		Select(
+			"provider_token_id",
+			"model_name",
+			"SUM(CASE WHEN "+successCondition+" THEN 1 ELSE 0 END) AS success_count",
+			"SUM(CASE WHEN "+errorCondition+" THEN 1 ELSE 0 END) AS error_count",
+			"COUNT(*) AS sample_count",
+			"COALESCE(AVG(response_time_ms), 0) AS avg_latency_ms",
+		).
+		Where("created_at >= ? AND provider_token_id IN ? AND model_name IN ?", since, tokenIds, modelNames).
+		Group("provider_token_id, model_name").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	for _, row := range rows {
+		successRate := 0.0
+		failRate := 0.0
+		if row.SampleCount > 0 {
+			successRate = float64(row.SuccessCount) / float64(row.SampleCount)
+			failRate = float64(row.ErrorCount) / float64(row.SampleCount)
+		}
+		statsLookup[routeUsageKey(row.ProviderTokenId, row.ModelName)] = routeHealthStats{
+			SuccessCount: row.SuccessCount,
+			ErrorCount:   row.ErrorCount,
+			SampleCount:  row.SampleCount,
+			AvgLatencyMs: row.AvgLatencyMs,
+			SuccessRate:  successRate,
+			FailRate:     failRate,
+		}
+	}
+	return statsLookup, nil
+}
+
+func finalizeRouteHealthStat(stat routeHealthStats, config routingTuningConfig) routeHealthStats {
+	stat.Multiplier = 1
+	if !config.HealthEnabled {
+		return stat
+	}
+	if stat.SampleCount < int64(config.HealthMinSamples) {
+		return stat
+	}
+
+	failRate := stat.FailRate
+	if failRate < 0 {
+		failRate = 0
+	}
+	if failRate > 1 {
+		failRate = 1
+	}
+	successRate := stat.SuccessRate
+	if successRate < 0 {
+		successRate = 0
+	}
+	if successRate > 1 {
+		successRate = 1
+	}
+
+	latencyScore := 1.0
+	if stat.AvgLatencyMs > 0 {
+		const lowMs = 1500.0
+		const highMs = 10000.0
+		if stat.AvgLatencyMs <= lowMs {
+			latencyScore = 1
+		} else if stat.AvgLatencyMs >= highMs {
+			latencyScore = 0
+		} else {
+			latencyScore = 1 - (stat.AvgLatencyMs-lowMs)/(highMs-lowMs)
+		}
+	}
+	if latencyScore < 0 {
+		latencyScore = 0
+	}
+	if latencyScore > 1 {
+		latencyScore = 1
+	}
+
+	confidence := math.Min(1, float64(stat.SampleCount)/50.0)
+	healthScore := successRate*0.75 + latencyScore*0.25
+	penalty := math.Exp(-config.FailurePenaltyAlpha * failRate)
+	reward := 1 + config.HealthRewardBeta*healthScore*confidence
+	multiplier := penalty * reward
+
+	if multiplier < config.HealthMinMultiplier {
+		multiplier = config.HealthMinMultiplier
+	}
+	if multiplier > config.HealthMaxMultiplier {
+		multiplier = config.HealthMaxMultiplier
+	}
+
+	stat.HealthScore = healthScore
+	stat.SuccessRate = successRate
+	stat.FailRate = failRate
+	stat.Multiplier = multiplier
+	return stat
 }
 
 // GetAllModelRoutes returns all routes with optional model name filter
@@ -822,24 +1078,32 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 		}
 		groupRatio := getGroupRatio(row.TokenGroupName, groupRatioMap)
 		item := &ModelRouteOverviewItem{
-			Id:               row.Id,
-			DisplayModelName: "",
-			ModelName:        row.ModelName,
-			ProviderId:       row.ProviderId,
-			ProviderName:     row.ProviderName,
-			ProviderBalance:  row.ProviderBalance,
-			ProviderStatus:   row.ProviderStatus,
-			ProviderTokenId:  row.ProviderTokenId,
-			TokenName:        row.TokenName,
-			TokenGroupName:   row.TokenGroupName,
-			TokenStatus:      row.TokenStatus,
-			Enabled:          row.Enabled,
-			Priority:         row.Priority,
-			Weight:           row.Weight,
-			GroupRatio:       groupRatio,
-			UsageWindowHours: config.UsageWindowHours,
-			BaseWeightFactor: config.BaseWeightFactor,
-			ValueScoreFactor: config.ValueScoreFactor,
+			Id:                      row.Id,
+			DisplayModelName:        "",
+			ModelName:               row.ModelName,
+			ProviderId:              row.ProviderId,
+			ProviderName:            row.ProviderName,
+			ProviderBalance:         row.ProviderBalance,
+			ProviderStatus:          row.ProviderStatus,
+			ProviderTokenId:         row.ProviderTokenId,
+			TokenName:               row.TokenName,
+			TokenGroupName:          row.TokenGroupName,
+			TokenStatus:             row.TokenStatus,
+			Enabled:                 row.Enabled,
+			Priority:                row.Priority,
+			Weight:                  row.Weight,
+			GroupRatio:              groupRatio,
+			UsageWindowHours:        config.UsageWindowHours,
+			BaseWeightFactor:        config.BaseWeightFactor,
+			ValueScoreFactor:        config.ValueScoreFactor,
+			HealthAdjustmentEnabled: config.HealthEnabled,
+			HealthWindowHours:       config.HealthWindowHours,
+			FailurePenaltyAlpha:     config.FailurePenaltyAlpha,
+			HealthRewardBeta:        config.HealthRewardBeta,
+			HealthMinMultiplier:     config.HealthMinMultiplier,
+			HealthMaxMultiplier:     config.HealthMaxMultiplier,
+			HealthMinSamples:        config.HealthMinSamples,
+			HealthMultiplier:        1,
 		}
 		if reverseLookup, ok := aliasDisplayLookupCache[row.ProviderId]; ok {
 			if sourceModelName, matched := reverseLookup.ResolveByTarget(row.ModelName); matched {
@@ -885,6 +1149,10 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 	if err != nil {
 		return nil, err
 	}
+	healthLookup, err := loadRouteHealthStatsByTokenModel(tokenIds, modelNames, config.HealthWindowHours)
+	if err != nil {
+		return nil, err
+	}
 
 	groupMaxScore := make(map[string]float64)
 	routeContribution := make(map[int]float64)
@@ -909,6 +1177,21 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 		if score > groupMaxScore[key] {
 			groupMaxScore[key] = score
 		}
+
+		healthStat := finalizeRouteHealthStat(
+			healthLookup[routeUsageKey(item.ProviderTokenId, item.ModelName)],
+			config,
+		)
+		item.HealthMultiplier = healthStat.Multiplier
+		item.HealthSampleCount = healthStat.SampleCount
+		if healthStat.SampleCount > 0 {
+			successRate := healthStat.SuccessRate
+			failRate := healthStat.FailRate
+			avgLatencyMs := healthStat.AvgLatencyMs
+			item.HealthSuccessRate = &successRate
+			item.HealthFailRate = &failRate
+			item.HealthAvgLatencyMs = &avgLatencyMs
+		}
 	}
 
 	shareSum := make(map[string]float64)
@@ -928,6 +1211,9 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			config.BaseWeightFactor,
 			config.ValueScoreFactor,
 		)
+		if item.HealthMultiplier > 0 {
+			contribution *= item.HealthMultiplier
+		}
 		routeContribution[item.Id] = contribution
 		shareSum[key] += contribution
 	}

@@ -164,6 +164,21 @@ const computeShareByPriority = (rows) => {
         const configuredValueFactor = Number(row.value_score_factor);
         const baseFactor = Number.isFinite(configuredBaseFactor) && configuredBaseFactor >= 0 ? configuredBaseFactor : 0.2;
         const valueFactor = Number.isFinite(configuredValueFactor) && configuredValueFactor >= 0 ? configuredValueFactor : 0.8;
+        const configuredHealthMultiplier = Number(row.health_multiplier);
+        const healthAdjustmentEnabled = row.health_adjustment_enabled === true;
+        const healthSampleCount = Number(row.health_sample_count);
+        const healthMinSamples = Number(row.health_min_samples);
+        const hasEnoughHealthSamples = Number.isFinite(healthSampleCount) &&
+            Number.isFinite(healthMinSamples) &&
+            healthMinSamples > 0
+            ? healthSampleCount >= healthMinSamples
+            : true;
+        const healthMultiplier = healthAdjustmentEnabled &&
+            hasEnoughHealthSamples &&
+            Number.isFinite(configuredHealthMultiplier) &&
+            configuredHealthMultiplier > 0
+            ? configuredHealthMultiplier
+            : 1;
         const key = String(row.priority);
         const maxScore = maxScoreByPriority[key] || 0;
         let contribution = base;
@@ -171,6 +186,7 @@ const computeShareByPriority = (rows) => {
             const normalized = Math.max(0, Math.min(1, safeScore / maxScore));
             contribution = base * (baseFactor + normalized * valueFactor);
         }
+        contribution *= healthMultiplier;
         contributionById[row.id] = contribution;
         sumByPriority[row.priority] = (sumByPriority[row.priority] || 0) + contribution;
     });
@@ -774,6 +790,21 @@ const ModelRoutesTable = () => {
                                                     const providerBalance = String(route.provider_balance || '').trim();
                                                     const recentUsageCost = Number(route.recent_usage_cost_usd);
                                                     const usageWindowHours = Number(route.usage_window_hours);
+                                                    const healthMultiplier = Number(route.health_multiplier);
+                                                    const healthSampleCount = Number(route.health_sample_count);
+                                                    const healthFailRate = Number(route.health_fail_rate);
+                                                    const healthSuccessRate = Number(route.health_success_rate);
+                                                    const healthMinSamples = Number(route.health_min_samples);
+                                                    const healthEnabled = route.health_adjustment_enabled === true;
+                                                    const hasHealthSampleThreshold = Number.isFinite(healthMinSamples) && healthMinSamples > 0;
+                                                    const hasEnoughHealthSamples = hasHealthSampleThreshold && Number.isFinite(healthSampleCount)
+                                                        ? healthSampleCount >= healthMinSamples
+                                                        : !hasHealthSampleThreshold;
+                                                    const showHealthEffect = healthEnabled &&
+                                                        hasEnoughHealthSamples &&
+                                                        Number.isFinite(healthMultiplier) &&
+                                                        healthSampleCount > 0 &&
+                                                        Math.abs(healthMultiplier - 1) >= 0.0005;
                                                     return (
                                                         <Tr key={route.id} style={isDirty ? { backgroundColor: 'rgba(245, 158, 11, 0.06)' } : undefined}>
                                                             <Td style={cellTopStyle}>
@@ -876,8 +907,34 @@ const ModelRoutesTable = () => {
                                                                             )}
                                                                         </div>
                                                                         <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
-                                                                            评分 {Number.isFinite(valueScore) ? valueScore.toFixed(4) : '-'}
+                                                                            性价比（金额） | 评分 {Number.isFinite(valueScore) ? valueScore.toFixed(4) : '-'}
+                                                                            {' '}| {Number.isFinite(usageWindowHours) && usageWindowHours > 0 ? `${usageWindowHours}h` : '24h'}使用 {Number.isFinite(recentUsageCost) ? formatPrice(recentUsageCost, 4) : '-'}
                                                                         </div>
+                                                                        {healthEnabled && (
+                                                                            <div style={{ ...helperTextStyle, marginTop: '0.18rem', paddingTop: '0.18rem', borderTop: '1px dashed var(--border-color)' }}>
+                                                                                故障健康(Beta) | 健康倍率 {Number.isFinite(healthMultiplier) ? `x${healthMultiplier.toFixed(3)}` : '-'}
+                                                                                {hasHealthSampleThreshold && (
+                                                                                    <span>
+                                                                                        {' '}| 仅当样本 &gt;= {healthMinSamples} 生效
+                                                                                    </span>
+                                                                                )}
+                                                                                {Number.isFinite(healthFailRate) && Number.isFinite(healthSuccessRate) && healthSampleCount > 0 && (
+                                                                                    <span>
+                                                                                        {' '}| 成功率 {(healthSuccessRate * 100).toFixed(1)}% | 失败率 {(healthFailRate * 100).toFixed(1)}% | 样本 {healthSampleCount}
+                                                                                    </span>
+                                                                                )}
+                                                                                {hasHealthSampleThreshold && Number.isFinite(healthSampleCount) && healthSampleCount < healthMinSamples && (
+                                                                                    <span style={{ color: 'var(--warning)' }}>
+                                                                                        {' '}| 样本不足阈值，当前按 x1.000
+                                                                                    </span>
+                                                                                )}
+                                                                                {showHealthEffect && (
+                                                                                    <span style={{ color: healthMultiplier < 1 ? 'var(--error)' : 'var(--success)' }}>
+                                                                                        {' '}| {healthMultiplier < 1 ? '故障惩罚' : '健康奖励'} {healthMultiplier < 1 ? `${((1 - healthMultiplier) * 100).toFixed(1)}%` : `+${((healthMultiplier - 1) * 100).toFixed(1)}%`}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 ) : (
                                                                     <span style={{ color: 'var(--text-secondary)' }}>-</span>

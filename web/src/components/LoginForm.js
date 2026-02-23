@@ -4,35 +4,15 @@ import { UserContext } from '../context/User';
 import { ThemeContext } from '../context/Theme';
 import { API, showError, showInfo, showSuccess } from '../helpers';
 import Turnstile from 'react-turnstile';
-import { User, Lock, Github, CheckCircle, Sun, Moon } from 'lucide-react';
+import { User, Lock, Github, Sun, Moon } from 'lucide-react';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Card from './ui/Card';
-import Modal from './ui/Modal';
-
-// Mock Wechat Icon since it's not in Lucide
-const WechatIcon = ({ size = 20, ...props }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...props}
-  >
-    <path d="M19 10c0-3.31-3.13-6-7-6S5 6.69 5 10c0 1.25.46 2.4 1.23 3.34L6 16l3.34-1.23c.84.4 1.8.63 2.66.63 3.87 0 7-2.69 7-6z" />
-    <path d="M16 19c0-2.21-2.24-4-5-4s-5 1.79-5 4c0 .84.3 1.6.86 2.23L6.5 23l2.23-.86c.63.56 1.39.86 2.23.86 2.76 0 5-1.79 5-4z" />
-  </svg>
-);
 
 const LoginForm = () => {
   const [inputs, setInputs] = useState({
     username: '',
     password: '',
-    wechat_verification_code: '',
   });
   const [searchParams] = useSearchParams();
   // eslint-disable-next-line
@@ -63,8 +43,6 @@ const LoginForm = () => {
     }
   }, [searchParams]);
 
-  const [showWeChatLoginModal, setShowWeChatLoginModal] = useState(false);
-
   const toggleTheme = () => {
     themeDispatch({ type: 'toggle' });
   };
@@ -73,26 +51,6 @@ const LoginForm = () => {
     window.open(
       `https://github.com/login/oauth/authorize?client_id=${status.github_client_id}&scope=user:email`
     );
-  };
-
-  const onWeChatLoginClicked = () => {
-    setShowWeChatLoginModal(true);
-  };
-
-  const onSubmitWeChatVerificationCode = async () => {
-    const res = await API.get(
-      `/api/oauth/wechat?code=${inputs.wechat_verification_code}`
-    );
-    const { success, message, data } = res.data;
-    if (success) {
-      userDispatch({ type: 'login', payload: data });
-      localStorage.setItem('user', JSON.stringify(data));
-      navigate('/');
-      showSuccess('登录成功！');
-      setShowWeChatLoginModal(false);
-    } else {
-      showError(message);
-    }
   };
 
   function handleChange(e) {
@@ -206,7 +164,7 @@ const LoginForm = () => {
             </div>
           </div>
 
-          {(status.github_oauth || status.wechat_login) && (
+          {status.github_oauth && (
             <>
               <div style={{ position: 'relative', margin: '1.5rem 0' }}>
                 <div style={{ position: 'absolute', inset: '0', display: 'flex', alignItems: 'center' }}>
@@ -227,16 +185,6 @@ const LoginForm = () => {
                     style={{ borderRadius: '50%', padding: '0.75rem', width: 'auto' }}
                   />
                 )}
-                {status.wechat_login && (
-                  <Button
-                    variant="secondary"
-                    onClick={onWeChatLoginClicked}
-                    icon={WechatIcon}
-                    className="text-green-600"
-                    aria-label="微信登录"
-                    style={{ borderRadius: '50%', padding: '0.75rem', width: 'auto', color: '#16a34a' }}
-                  />
-                )}
               </div>
             </>
           )}
@@ -250,36 +198,6 @@ const LoginForm = () => {
           />
         )}
       </div>
-
-      <Modal
-        title="微信登录"
-        isOpen={showWeChatLoginModal}
-        onClose={() => setShowWeChatLoginModal(false)}
-      >
-        <div className="text-center" style={{ textAlign: 'center' }}>
-          {status.wechat_qrcode && (
-            <img src={status.wechat_qrcode} alt="微信二维码" style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)', marginBottom: '1rem' }} />
-          )}
-          <p style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>
-            微信扫码关注公众号，输入「验证码」获取验证码（三分钟内有效）
-          </p>
-          <Input
-            placeholder="请输入验证码"
-            name="wechat_verification_code"
-            value={inputs.wechat_verification_code}
-            onChange={handleChange}
-            icon={CheckCircle}
-          />
-          <Button
-            variant="primary"
-            className="w-full mt-4"
-            style={{ width: '100%', marginTop: '1rem' }}
-            onClick={onSubmitWeChatVerificationCode}
-          >
-            验证并登录
-          </Button>
-        </div>
-      </Modal>
     </div>
   );
 };

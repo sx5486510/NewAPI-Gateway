@@ -15,10 +15,9 @@ const EditUser = () => {
     display_name: '',
     password: '',
     github_id: '',
-    wechat_id: '',
     email: '',
   });
-  const { username, display_name, password, github_id, wechat_id, email } = inputs;
+  const { username, display_name, password, github_id, email } = inputs;
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -108,14 +107,6 @@ const EditUser = () => {
             label='已绑定的 GitHub 账户'
             name='github_id'
             value={github_id}
-            autoComplete='new-password'
-            placeholder='此项只读'
-            disabled
-          />
-          <Input
-            label='已绑定的微信账户'
-            name='wechat_id'
-            value={wechat_id}
             autoComplete='new-password'
             placeholder='此项只读'
             disabled
