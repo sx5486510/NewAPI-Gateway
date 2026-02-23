@@ -66,18 +66,26 @@
 
 ## 路由算法
 
-实现位置：`model/model_route.go` 的 `SelectProviderToken`。
+实现位置：`model/model_route.go`（`BuildRouteAttemptsByPriority` / `GetModelRouteOverview`）。
 
 1. 汇总候选路由（同一候选池）：
    - 精确模型名匹配；
    - 供应商级手动映射（`providers.model_alias_mapping`）；
    - 模型归一化与版本无关键匹配。
-2. 对候选路由按优先级去重并降序。
-3. 根据 `retry` 选择目标优先级层。
-4. 在该层执行加权随机：`weightSum = Σ(max(weight + 10, 0))`。
-5. 命中后返回 `provider_token`、`provider` 与实际模型名。
+2. 按优先级分层（降序），先尝试最高优先级层。
+3. 对每条候选计算性价比评分 `value_score`：
+   - 价格侧：基于模型价格计算 `unit_cost_usd`；
+   - 预算侧：基于供应商余额与最近窗口内使用金额计算；
+   - `recent_usage_cost_usd` 的窗口由 `RoutingUsageWindowHours`（默认 24）控制。
+4. 将人工权重与评分融合为贡献值：
+   - `contribution = max(weight + 10, 0) * (RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor)`。
+   - 默认 `RoutingBaseWeightFactor=0.2`、`RoutingValueScoreFactor=0.8`。
+5. 同层按贡献值执行“加权随机不放回”生成重试顺序，层内全部失败后再降级到下一优先级层。
 
-`+10` 用于保证低权重或 0 权重路由仍有基础概率。
+说明：
+
+- `weight + 10` 仍用于保留低权重路由的基础概率。
+- 三个参数（窗口小时、基础系数、评分系数）均可在系统设置中实时调整。
 
 ## 透明代理策略
 

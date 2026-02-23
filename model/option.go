@@ -49,6 +49,9 @@ func InitOptionMap() {
 	common.OptionMap["WeChatAccountQRCodeImageURL"] = ""
 	common.OptionMap["TurnstileSiteKey"] = ""
 	common.OptionMap["TurnstileSecretKey"] = ""
+	common.OptionMap["RoutingUsageWindowHours"] = strconv.Itoa(24)
+	common.OptionMap["RoutingBaseWeightFactor"] = "0.2"
+	common.OptionMap["RoutingValueScoreFactor"] = "0.8"
 	common.OptionMapRWMutex.Unlock()
 	options, _ := AllOption()
 	for _, option := range options {

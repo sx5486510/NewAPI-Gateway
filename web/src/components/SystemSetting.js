@@ -27,6 +27,9 @@ const SystemSetting = () => {
     TurnstileSiteKey: '',
     TurnstileSecretKey: '',
     RegisterEnabled: '',
+    RoutingUsageWindowHours: '24',
+    RoutingBaseWeightFactor: '0.2',
+    RoutingValueScoreFactor: '0.8',
   });
   const [originInputs, setOriginInputs] = useState({});
   let [loading, setLoading] = useState(false);
@@ -78,6 +81,7 @@ const SystemSetting = () => {
     const { success, message } = res.data;
     if (success) {
       setInputs((inputs) => ({ ...inputs, [key]: value }));
+      setOriginInputs((inputs) => ({ ...inputs, [key]: value }));
     } else {
       showError(message);
     }
@@ -96,7 +100,10 @@ const SystemSetting = () => {
       name === 'WeChatServerToken' ||
       name === 'WeChatAccountQRCodeImageURL' ||
       name === 'TurnstileSiteKey' ||
-      name === 'TurnstileSecretKey'
+      name === 'TurnstileSecretKey' ||
+      name === 'RoutingUsageWindowHours' ||
+      name === 'RoutingBaseWeightFactor' ||
+      name === 'RoutingValueScoreFactor'
     ) {
       setInputs((inputs) => ({ ...inputs, [name]: value }));
     } else {
@@ -187,6 +194,39 @@ const SystemSetting = () => {
     }
   };
 
+  const submitRoutingTuning = async () => {
+    const rawWindow = Number.parseInt(String(inputs.RoutingUsageWindowHours || '').trim(), 10);
+    const rawBaseFactor = Number.parseFloat(String(inputs.RoutingBaseWeightFactor || '').trim());
+    const rawValueFactor = Number.parseFloat(String(inputs.RoutingValueScoreFactor || '').trim());
+
+    if (!Number.isInteger(rawWindow) || rawWindow < 1 || rawWindow > 720) {
+      showError('统计窗口必须是 1 到 720 小时');
+      return;
+    }
+    if (!Number.isFinite(rawBaseFactor) || rawBaseFactor < 0 || rawBaseFactor > 10) {
+      showError('基础权重系数必须在 0 到 10 之间');
+      return;
+    }
+    if (!Number.isFinite(rawValueFactor) || rawValueFactor < 0 || rawValueFactor > 10) {
+      showError('性价比系数必须在 0 到 10 之间');
+      return;
+    }
+
+    const nextWindow = String(rawWindow);
+    const nextBaseFactor = String(rawBaseFactor);
+    const nextValueFactor = String(rawValueFactor);
+
+    if (originInputs['RoutingUsageWindowHours'] !== nextWindow) {
+      await updateOption('RoutingUsageWindowHours', nextWindow);
+    }
+    if (originInputs['RoutingBaseWeightFactor'] !== nextBaseFactor) {
+      await updateOption('RoutingBaseWeightFactor', nextBaseFactor);
+    }
+    if (originInputs['RoutingValueScoreFactor'] !== nextValueFactor) {
+      await updateOption('RoutingValueScoreFactor', nextValueFactor);
+    }
+  };
+
   const Checkbox = ({ label, name, checked, onChange }) => (
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.75rem' }}>
       <input
@@ -262,6 +302,49 @@ const SystemSetting = () => {
             onChange={handleCheckboxChange}
           />
         </div>
+      </Card>
+
+      <Card padding="1.5rem">
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>路由策略调优</h3>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+          调整路由占比计算参数。占比贡献公式为：<code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>max(weight+10,0) * (基础系数 + 性价比系数 * 归一化评分)</code>
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+          <Input
+            label='统计窗口（小时）'
+            type='number'
+            name='RoutingUsageWindowHours'
+            onChange={handleInputChange}
+            value={inputs.RoutingUsageWindowHours}
+            min='1'
+            max='720'
+            step='1'
+            placeholder='默认 24'
+          />
+          <Input
+            label='基础权重系数'
+            type='number'
+            name='RoutingBaseWeightFactor'
+            onChange={handleInputChange}
+            value={inputs.RoutingBaseWeightFactor}
+            min='0'
+            max='10'
+            step='0.1'
+            placeholder='默认 0.2'
+          />
+          <Input
+            label='性价比系数'
+            type='number'
+            name='RoutingValueScoreFactor'
+            onChange={handleInputChange}
+            value={inputs.RoutingValueScoreFactor}
+            min='0'
+            max='10'
+            step='0.1'
+            placeholder='默认 0.8'
+          />
+        </div>
+        <Button onClick={submitRoutingTuning} variant="secondary" disabled={loading}>保存路由策略参数</Button>
       </Card>
 
       <Card padding="1.5rem">

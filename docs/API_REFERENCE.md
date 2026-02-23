@@ -117,6 +117,18 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | GET | `/api/option/` | 读取系统选项（隐藏 Secret/Token 字段） |
 | PUT | `/api/option/` | 更新系统选项 |
 
+路由策略相关系统选项（通过 `PUT /api/option/` 更新）：
+
+| Key | 类型 | 默认值 | 取值范围 | 说明 |
+| --- | --- | --- | --- | --- |
+| `RoutingUsageWindowHours` | int | `24` | `1 ~ 720` | 计算 `recent_usage_cost_usd` 的统计窗口（小时） |
+| `RoutingBaseWeightFactor` | float | `0.2` | `0 ~ 10` | 占比贡献中的基础系数 |
+| `RoutingValueScoreFactor` | float | `0.8` | `0 ~ 10` | 占比贡献中的性价比系数 |
+
+占比贡献公式：
+
+`contribution = max(weight + 10, 0) * (RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor)`
+
 ## Provider 相关 API（Session，`AdminAuth + NoTokenAuth`）
 
 | Method | Path | 说明 |

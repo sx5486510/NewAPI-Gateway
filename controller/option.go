@@ -1,11 +1,12 @@
 package controller
 
 import (
-	"encoding/json"
 	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/model"
+	"encoding/json"
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -62,6 +63,24 @@ func UpdateOption(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
 				"message": "无法启用 Turnstile 校验，请先填入 Turnstile 校验相关配置信息！",
+			})
+			return
+		}
+	case "RoutingUsageWindowHours":
+		value, err := strconv.Atoi(strings.TrimSpace(option.Value))
+		if err != nil || value < 1 || value > 24*30 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "路由统计窗口必须是 1 到 720 小时的整数",
+			})
+			return
+		}
+	case "RoutingBaseWeightFactor", "RoutingValueScoreFactor":
+		value, err := strconv.ParseFloat(strings.TrimSpace(option.Value), 64)
+		if err != nil || value < 0 || value > 10 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "路由系数必须是 0 到 10 之间的数字",
 			})
 			return
 		}

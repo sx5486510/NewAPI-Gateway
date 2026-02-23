@@ -144,17 +144,42 @@ const getRouteHealth = (route) => {
 };
 
 const computeShareByPriority = (rows) => {
+    const maxScoreByPriority = {};
+    rows.forEach((row) => {
+        if (!row.enabled) return;
+        const score = Number(row.value_score);
+        const safeScore = Number.isFinite(score) && score > 0 ? score : 0;
+        const key = String(row.priority);
+        maxScoreByPriority[key] = Math.max(maxScoreByPriority[key] || 0, safeScore);
+    });
+
+    const contributionById = {};
     const sumByPriority = {};
     rows.forEach((row) => {
         if (!row.enabled) return;
-        const contribution = Math.max(0, Number(row.weight || 0) + 10);
+        const base = Math.max(0, Number(row.weight || 0) + 10);
+        const score = Number(row.value_score);
+        const safeScore = Number.isFinite(score) && score > 0 ? score : 0;
+        const configuredBaseFactor = Number(row.base_weight_factor);
+        const configuredValueFactor = Number(row.value_score_factor);
+        const baseFactor = Number.isFinite(configuredBaseFactor) && configuredBaseFactor >= 0 ? configuredBaseFactor : 0.2;
+        const valueFactor = Number.isFinite(configuredValueFactor) && configuredValueFactor >= 0 ? configuredValueFactor : 0.8;
+        const key = String(row.priority);
+        const maxScore = maxScoreByPriority[key] || 0;
+        let contribution = base;
+        if (base > 0 && maxScore > 0) {
+            const normalized = Math.max(0, Math.min(1, safeScore / maxScore));
+            contribution = base * (baseFactor + normalized * valueFactor);
+        }
+        contributionById[row.id] = contribution;
         sumByPriority[row.priority] = (sumByPriority[row.priority] || 0) + contribution;
     });
+
     return rows.map((row) => {
         if (!row.enabled) {
             return { ...row, effective_share_percent: null };
         }
-        const contribution = Math.max(0, Number(row.weight || 0) + 10);
+        const contribution = contributionById[row.id] || 0;
         const total = sumByPriority[row.priority] || 0;
         if (contribution <= 0 || total <= 0) {
             return { ...row, effective_share_percent: null };
@@ -358,6 +383,12 @@ const ModelRoutesTable = () => {
                 priority: Number(priority),
                 total: items.length,
                 enabled: items.filter((item) => item.enabled).length,
+                bestValueScore: items.reduce((max, item) => {
+                    if (!item.enabled) return max;
+                    const score = Number(item.value_score);
+                    if (!Number.isFinite(score) || score <= 0) return max;
+                    return Math.max(max, score);
+                }, 0),
                 routes: items
             }))
             .sort((a, b) => b.priority - a.priority);
@@ -728,10 +759,21 @@ const ModelRoutesTable = () => {
                                                     const shareDelta = Number.isFinite(share) && Number.isFinite(originalShare)
                                                         ? share - originalShare
                                                         : null;
+                                                    const valueScore = Number(route.value_score);
+                                                    const bestValueScore = Number(group.bestValueScore);
+                                                    const isBestValue = route.enabled &&
+                                                        Number.isFinite(valueScore) &&
+                                                        valueScore > 0 &&
+                                                        Number.isFinite(bestValueScore) &&
+                                                        bestValueScore > 0 &&
+                                                        Math.abs(valueScore - bestValueScore) < 1e-9;
                                                     const health = getRouteHealth(route);
                                                     const tokenName = String(route.token_name || '').trim();
                                                     const tokenGroup = String(route.token_group_name || '').trim();
                                                     const displayTokenName = tokenName && tokenName !== tokenGroup ? tokenName : '';
+                                                    const providerBalance = String(route.provider_balance || '').trim();
+                                                    const recentUsageCost = Number(route.recent_usage_cost_usd);
+                                                    const usageWindowHours = Number(route.usage_window_hours);
                                                     return (
                                                         <Tr key={route.id} style={isDirty ? { backgroundColor: 'rgba(245, 158, 11, 0.06)' } : undefined}>
                                                             <Td style={cellTopStyle}>
@@ -741,6 +783,12 @@ const ModelRoutesTable = () => {
                                                                         {displayTokenName}
                                                                     </div>
                                                                 )}
+                                                                <div style={{ ...helperTextStyle, marginTop: '0.2rem' }}>
+                                                                    余额: {providerBalance || '-'}
+                                                                </div>
+                                                                <div style={{ ...helperTextStyle, marginTop: '0.16rem' }}>
+                                                                    {Number.isFinite(usageWindowHours) && usageWindowHours > 0 ? `${usageWindowHours}h` : '24h'}使用: {Number.isFinite(recentUsageCost) ? formatPrice(recentUsageCost, 4) : '-'}
+                                                                </div>
                                                                 <div style={{ marginTop: '0.35rem', display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                                                     {tokenGroup ? <Badge color="gray">组: {tokenGroup}</Badge> : <Badge color="gray">未分组</Badge>}
                                                                     <Badge color={health.color}>{health.label}</Badge>
@@ -823,6 +871,12 @@ const ModelRoutesTable = () => {
                                                                                     {shareDelta > 0 ? '+' : ''}{shareDelta.toFixed(1)}
                                                                                 </span>
                                                                             )}
+                                                                            {isBestValue && (
+                                                                                <span style={{ color: 'var(--success)' }}>性价比最优</span>
+                                                                            )}
+                                                                        </div>
+                                                                        <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
+                                                                            评分 {Number.isFinite(valueScore) ? valueScore.toFixed(4) : '-'}
                                                                         </div>
                                                                     </div>
                                                                 ) : (

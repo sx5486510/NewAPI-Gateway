@@ -28,8 +28,21 @@ var proxyHTTPClient = &http.Client{
 	},
 }
 
-// ProxyToUpstream forwards the client request to the selected upstream provider
-func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model.Provider) {
+type ProxyAttemptError struct {
+	StatusCode int
+	Message    string
+	Retryable  bool
+}
+
+func (e *ProxyAttemptError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.Message
+}
+
+// ProxyToUpstream forwards the request once. It writes to client only on success.
+func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model.Provider) *ProxyAttemptError {
 	startTime := time.Now()
 	requestId := uuid.New().String()[:8]
 
@@ -37,15 +50,13 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 	aggToken := c.MustGet("agg_token").(*model.AggregatedToken)
 
 	// 1. Read original request body
-	bodyBytes, err := io.ReadAll(c.Request.Body)
+	bodyBytes, err := getRequestBodyBytes(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{
-				"message": "failed to read request body",
-				"type":    "invalid_request_error",
-			},
-		})
-		return
+		return &ProxyAttemptError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "failed to read request body",
+			Retryable:  false,
+		}
 	}
 
 	resolvedModel := strings.TrimSpace(c.GetString("request_model_resolved"))
@@ -63,13 +74,11 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 	// 3. Create upstream request
 	req, err := http.NewRequest(c.Request.Method, upstreamURL, bytes.NewReader(bodyBytes))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{
-				"message": "failed to create upstream request",
-				"type":    "server_error",
-			},
-		})
-		return
+		return &ProxyAttemptError{
+			StatusCode: http.StatusInternalServerError,
+			Message:    "failed to create upstream request",
+			Retryable:  false,
+		}
 	}
 
 	// 4. Carefully set headers — transparency is KEY
@@ -125,19 +134,37 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			0,
 			errorMsg,
 		)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error": gin.H{
-				"message": "upstream request failed: " + err.Error(),
-				"type":    "server_error",
-			},
-		})
-		return
+		return &ProxyAttemptError{
+			StatusCode: http.StatusBadGateway,
+			Message:    "upstream request failed: " + err.Error(),
+			Retryable:  true,
+		}
 	}
 	defer resp.Body.Close()
 
 	// 10. Detect if streaming
 	contentType := resp.Header.Get("Content-Type")
 	isStream := strings.Contains(contentType, "text/event-stream")
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		usage := extractUsageAndModelFromJSON(respBody)
+		if usage.ModelName == "" {
+			usage.ModelName = c.GetString("request_model")
+		}
+		errorMsg := buildErrorMessage(fmt.Sprintf("upstream status %d: %s", resp.StatusCode, string(respBody)), c, bodyBytes)
+		logProxyErrorTrace(c, requestId, provider, token, errorMsg)
+		elapsed := time.Since(startTime).Milliseconds()
+		logUsage(
+			aggToken, provider, token, c, requestId,
+			usage, isStream, 0, int(elapsed), errorMsg,
+		)
+		return &ProxyAttemptError{
+			StatusCode: resp.StatusCode,
+			Message:    errorMsg,
+			Retryable:  true,
+		}
+	}
 
 	// 11. Copy response headers
 	for key, values := range resp.Header {
@@ -159,16 +186,11 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		flusher, ok := c.Writer.(http.Flusher)
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		var streamErrLines []string
 		streamUsage := usageMetrics{}
 		firstTokenMs := 0
-		errorStatus := resp.StatusCode >= 400
 		for scanner.Scan() {
 			line := scanner.Text()
 			fmt.Fprintf(c.Writer, "%s\n", line)
-			if errorStatus && len(streamErrLines) < 5 {
-				streamErrLines = append(streamErrLines, line)
-			}
 			currentUsage, hasData := extractUsageAndModelFromSSELine(line)
 			if hasData && firstTokenMs == 0 {
 				firstTokenMs = int(time.Since(startTime).Milliseconds())
@@ -193,13 +215,6 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			}
 		}
 		errorMsg := ""
-		if errorStatus {
-			parts := []string{fmt.Sprintf("upstream status %d", resp.StatusCode)}
-			if len(streamErrLines) > 0 {
-				parts = append(parts, strings.Join(streamErrLines, "\n"))
-			}
-			errorMsg = strings.Join(parts, ": ")
-		}
 		if scanErr := scanner.Err(); scanErr != nil {
 			if errorMsg != "" {
 				errorMsg += "; scanner error: " + scanErr.Error()
@@ -240,6 +255,7 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			usage, false, 0, int(elapsed), errorMsg,
 		)
 	}
+	return nil
 }
 
 type usageMetrics struct {
@@ -275,6 +291,21 @@ func rewriteRequestModel(body []byte, targetModel string) []byte {
 		return body
 	}
 	return updatedBody
+}
+
+func getRequestBodyBytes(c *gin.Context) ([]byte, error) {
+	if cached, ok := c.Get("proxy_request_body"); ok {
+		if bodyBytes, ok := cached.([]byte); ok {
+			return bodyBytes, nil
+		}
+	}
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		return nil, err
+	}
+	c.Set("proxy_request_body", bodyBytes)
+	c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	return bodyBytes, nil
 }
 
 func logUsage(aggToken *model.AggregatedToken, provider *model.Provider, token *model.ProviderToken,

@@ -34,33 +34,60 @@ func Relay(c *gin.Context) {
 		return
 	}
 
-	// 3. Route to provider with retry
-	maxRetry := 3
-	for retry := 0; retry < maxRetry; retry++ {
-		providerToken, provider, resolvedModel, err := model.SelectProviderToken(modelName, retry)
-		if err != nil {
-			if retry == maxRetry-1 {
-				c.JSON(http.StatusServiceUnavailable, gin.H{
-					"error": gin.H{
-						"message": "no available provider for model: " + modelName,
-						"type":    "server_error",
-						"code":    "service_unavailable",
-					},
-				})
-				return
-			}
-			continue
-		}
-
-		if resolvedModel != "" {
-			c.Set("request_model_resolved", resolvedModel)
-			c.Set("request_model", resolvedModel)
-		}
-
-		// 4. Proxy to upstream
-		service.ProxyToUpstream(c, providerToken, provider)
+	// 3. Build retry plan: retry all routes within one priority first, then downgrade.
+	plan, err := model.BuildRouteAttemptsByPriority(modelName)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": gin.H{
+				"message": "no available provider for model: " + modelName,
+				"type":    "server_error",
+				"code":    "service_unavailable",
+			},
+		})
 		return
 	}
+
+	var lastErr *service.ProxyAttemptError
+	for _, priorityGroup := range plan {
+		for _, attempt := range priorityGroup {
+			if attempt.Route.ModelName != "" {
+				c.Set("request_model_resolved", attempt.Route.ModelName)
+				c.Set("request_model", attempt.Route.ModelName)
+			}
+
+			if proxyErr := service.ProxyToUpstream(c, attempt.Token, attempt.Provider); proxyErr == nil {
+				return
+			} else {
+				lastErr = proxyErr
+				if !proxyErr.Retryable {
+					statusCode := proxyErr.StatusCode
+					if statusCode <= 0 {
+						statusCode = http.StatusBadGateway
+					}
+					c.JSON(statusCode, gin.H{
+						"error": gin.H{
+							"message": proxyErr.Message,
+							"type":    "server_error",
+							"code":    "upstream_request_failed",
+						},
+					})
+					return
+				}
+			}
+		}
+	}
+
+	message := "no available provider for model: " + modelName
+	if lastErr != nil && lastErr.Message != "" {
+		message = "all providers failed for model: " + modelName
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"error": gin.H{
+			"message": message,
+			"type":    "server_error",
+			"code":    "service_unavailable",
+		},
+	})
 }
 
 // ListModels returns all available models across all providers
