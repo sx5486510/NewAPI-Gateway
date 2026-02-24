@@ -39,7 +39,7 @@ docker pull xxbbzy/newapi-gateway:latest
 docker run -d --name newapi-gateway \
   --restart always \
   -p 3000:3000 \
-  -v /data/newapi-gateway:/data \
+  -v ./data:/data \
   xxbbzy/newapi-gateway:latest
 ```
 
