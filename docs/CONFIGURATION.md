@@ -2,6 +2,12 @@
 
 > 返回文档入口：[README.md](./README.md)
 
+## 文档导航
+
+- 上一篇：[API_REFERENCE.md](./API_REFERENCE.md)
+- 下一篇：[DEPLOYMENT.md](./DEPLOYMENT.md)
+- 快速入口：[QUICK_START.md](./QUICK_START.md)
+
 ## 配置优先级
 
 1. 命令行参数（如 `--port`）
@@ -79,5 +85,6 @@ SQL_DSN='postgres://user:pass@127.0.0.1:5432/gateway?sslmode=disable'
 
 ## 相关文档
 
+- 快速开始：[QUICK_START.md](./QUICK_START.md)
 - 部署方案：[DEPLOYMENT.md](./DEPLOYMENT.md)
 - 架构说明：[ARCHITECTURE.md](./ARCHITECTURE.md)

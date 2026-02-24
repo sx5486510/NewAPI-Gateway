@@ -1,21 +1,37 @@
-# React Template
+# Web 管理前端（React）
 
-## Basic Usages
+## 目录位置
 
-```shell
-# Runs the app in the development mode
-npm start
+- 前端源码目录：`web/`
+- 页面入口：`web/src/pages`
+- 组件目录：`web/src/components`
+- 构建产物：`web/build`（由后端静态托管）
 
-# Builds the app for production to the `build` folder
-npm run build
+## 本地开发
+
+```bash
+# 在仓库根目录执行
+npm --prefix web install
+npm --prefix web start
 ```
 
-If you want to change the default server, please set `REACT_APP_SERVER` environment variables before build,
-for example: `REACT_APP_SERVER=http://your.domain.com`.
+默认开发端口是 `3001`，并通过 `package.json` 代理到后端 `3000`。
 
-Before you start editing, make sure your `Actions on Save` options have `Optimize imports` & `Run Prettier` enabled.
+## 构建
 
-## Reference
+```bash
+# 在仓库根目录执行
+npm --prefix web run build
+```
 
-1. https://github.com/OIerDb-ng/OIerDb
-2. https://github.com/cornflourblue/react-hooks-redux-registration-login-example
+如需指定 API 服务地址，请在构建前设置：
+
+```bash
+REACT_APP_SERVER=http://your.domain.com npm --prefix web run build
+```
+
+## 关联文档
+
+- 开发指南：[../docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md)
+- 项目结构：[../docs/PROJECT_STRUCTURE.md](../docs/PROJECT_STRUCTURE.md)
+- 文档中心：[../docs/README.md](../docs/README.md)

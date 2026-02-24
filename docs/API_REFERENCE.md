@@ -2,6 +2,12 @@
 
 > 返回文档入口：[README.md](./README.md)
 
+## 文档导航
+
+- 上一篇：[ARCHITECTURE.md](./ARCHITECTURE.md)
+- 下一篇：[CONFIGURATION.md](./CONFIGURATION.md)
+- 入口索引：[README.md](./README.md)
+
 ## 认证与会话
 
 ### 1. Relay API 认证（聚合 Token）
@@ -124,10 +130,20 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | `RoutingUsageWindowHours` | int | `24` | `1 ~ 720` | 计算 `recent_usage_cost_usd` 的统计窗口（小时） |
 | `RoutingBaseWeightFactor` | float | `0.2` | `0 ~ 10` | 占比贡献中的基础系数 |
 | `RoutingValueScoreFactor` | float | `0.8` | `0 ~ 10` | 占比贡献中的性价比系数 |
+| `RoutingHealthAdjustmentEnabled` | bool | `false` | `true/false` | 是否启用健康调节倍率 |
+| `RoutingHealthWindowHours` | int | `6` | `1 ~ 720` | 健康统计窗口（小时） |
+| `RoutingFailurePenaltyAlpha` | float | `4.0` | `0 ~ 20` | 失败率惩罚系数（越大惩罚越强） |
+| `RoutingHealthRewardBeta` | float | `0.08` | `0 ~ 2` | 健康奖励系数（越大奖励越强） |
+| `RoutingHealthMinMultiplier` | float | `0.05` | `0 ~ 10` | 健康倍率下限 |
+| `RoutingHealthMaxMultiplier` | float | `1.12` | `0 ~ 10` | 健康倍率上限 |
+| `RoutingHealthMinSamples` | int | `5` | `1 ~ 1000` | 启用健康调节所需最小样本数 |
 
 占比贡献公式：
 
-`contribution = max(weight + 10, 0) * (RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor)`
+- 基础贡献：`contribution_base = max(weight + 10, 0) * (RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor)`
+- 若同层无有效 `value_score`，回退为 `contribution_base = max(weight + 10, 0)`
+- 最终贡献：`contribution = contribution_base * health_multiplier`
+- 健康调节关闭或样本不足时，`health_multiplier = 1`
 
 ## Provider 相关 API（Session，`AdminAuth + NoTokenAuth`）
 
@@ -144,6 +160,8 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | POST | `/api/provider/:id/checkin` | 手动签到 |
 | GET | `/api/provider/:id/tokens` | 获取供应商 token 列表 |
 | GET | `/api/provider/:id/pricing` | 获取供应商 pricing 缓存 |
+| GET | `/api/provider/:id/model-alias-mapping` | 获取模型别名手动映射 |
+| PUT | `/api/provider/:id/model-alias-mapping` | 更新模型别名手动映射 |
 | POST | `/api/provider/:id/tokens` | 在上游创建 token 并回同步 |
 | PUT | `/api/provider/token/:token_id` | 更新本地 token 字段 |
 | DELETE | `/api/provider/token/:token_id` | 删除 token（先删上游再删本地） |
@@ -243,3 +261,5 @@ curl http://localhost:3000/v1/chat/completions \
 
 - 架构说明：[ARCHITECTURE.md](./ARCHITECTURE.md)
 - 开发指南：[DEVELOPMENT.md](./DEVELOPMENT.md)
+- 配置说明：[CONFIGURATION.md](./CONFIGURATION.md)
+- 模型别名专题：[model-alias-manual-mapping.md](./model-alias-manual-mapping.md)

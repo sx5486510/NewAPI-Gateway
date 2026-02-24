@@ -12,23 +12,29 @@ _✨ Multi-provider NewAPI aggregation gateway — unified access, transparent p
 
 ## Overview
 
-NewAPI Gateway is a transparent gateway that aggregates multiple [NewAPI](https://github.com/QuantumNous/new-api) providers. Users access all connected AI model services through a single aggregated token (`ag-xxx`). The system automatically performs **weighted round-robin with priority-based routing**, and upstream providers cannot detect the gateway's presence.
+NewAPI Gateway is a transparent gateway that aggregates multiple [NewAPI](https://github.com/QuantumNous/new-api) providers. Users access all connected AI model services through a single aggregated token (`ag-xxx`). The system uses **priority-tiered routing with value-aware weighting and optional health adjustment**, and upstream providers cannot detect the gateway's presence.
 
 ## Documentation Hub
 
 - Docs index: [`docs/README.md`](./docs/README.md)
+- Docs architecture: [`docs/DOCS_ARCHITECTURE.md`](./docs/DOCS_ARCHITECTURE.md)
 - Quick start: [`docs/QUICK_START.md`](./docs/QUICK_START.md)
 - Architecture: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+- API reference: [`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
 - Configuration: [`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md)
 - Deployment: [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)
-- API reference: [`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
+- Operations: [`docs/OPERATIONS.md`](./docs/OPERATIONS.md)
+- Project structure: [`docs/PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md)
 - Development guide: [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)
+- Database schema: [`docs/DATABASE_SCHEMA.md`](./docs/DATABASE_SCHEMA.md)
+- Model alias mapping: [`docs/model-alias-manual-mapping.md`](./docs/model-alias-manual-mapping.md)
+- FAQ: [`docs/FAQ.md`](./docs/FAQ.md)
 
 ### Key Features
 
 - ✅ **Transparent Proxy**: Header sanitization, zero body modification, User-Agent passthrough
 - ✅ **Multi-Provider Management**: Unified management of tokens, pricing, and balance across NewAPI instances
-- ✅ **Smart Routing**: Priority-layered + weight-based random selection (same algorithm as upstream `ability.go`)
+- ✅ **Smart Routing**: Candidate normalization + priority tiers + value-aware weighted retry + optional health adjustment
 - ✅ **Auto Sync**: Syncs pricing/tokens/balance from upstream every 5 minutes, auto-rebuilds route table
 - ✅ **Check-in Service**: Automatic daily check-in for enabled providers
 - ✅ **SSE Streaming**: Full Server-Sent Events streaming proxy support
@@ -42,13 +48,30 @@ NewAPI Gateway is a transparent gateway that aggregates multiple [NewAPI](https:
 
 ## Quick Start
 
-### Requirements
+### Option 1: DockerHub prebuilt image (recommended)
 
-- Go 1.18+
-- Node.js 16+
-- SQLite (default) / MySQL / PostgreSQL
+```bash
+docker pull xxbbzy/newapi-gateway:latest
+docker run -d --name newapi-gateway \
+  --restart always \
+  -p 3000:3000 \
+  -v /data/newapi-gateway:/data \
+  xxbbzy/newapi-gateway:latest
+```
 
-### Manual Deployment
+### Option 2: Start from prebuilt binary
+
+1. Download the binary for your OS/arch from [Releases](https://github.com/xxbbzy/NewAPI-Gateway/releases).
+2. Grant execution permission and run:
+
+```bash
+chmod +x ./gateway-aggregator
+./gateway-aggregator --port 3000 --log-dir ./logs
+```
+
+### Option 3: Build from source (kept)
+
+> Best for customization. Requires Go 1.18+, Node.js 16+, and SQLite (default) / MySQL / PostgreSQL.
 
 ```bash
 # 1. Clone
@@ -58,19 +81,10 @@ cd NewAPI-Gateway-main
 # 2. Build frontend
 cd web && npm install && npm run build && cd ..
 
-# 3. Build backend
+# 3. Build backend and run
 go mod download
 go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)'" -o gateway-aggregator
-
-# 4. Run
 ./gateway-aggregator --port 3000 --log-dir ./logs
-```
-
-### Docker Deployment
-
-```bash
-docker build -t gateway-aggregator .
-docker run -d --restart always -p 3000:3000 -v /data/gateway:/data gateway-aggregator
 ```
 
 ### First Login

@@ -2,6 +2,12 @@
 
 > 返回文档入口：[README.md](./README.md)
 
+## 文档导航
+
+- 上一篇：[QUICK_START.md](./QUICK_START.md)
+- 下一篇：[API_REFERENCE.md](./API_REFERENCE.md)
+- 研发支线：[PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md)
+
 ## 架构目标
 
 - 对客户端提供单一入口与单一令牌（`ag-`）。
@@ -29,7 +35,8 @@
   -> controller.Relay
       - 提取请求 model
       - 校验聚合 token 的模型白名单
-      - SelectProviderToken(model, retry)（支持别名归一化与手动映射）
+      - BuildRouteAttemptsByPriority(model) 生成分层重试计划
+      - 同优先级层按贡献值加权洗牌，失败后再降级下一层
   -> service.ProxyToUpstream
       - 替换认证为上游 sk-token
       - 清理代理特征 Header
@@ -78,14 +85,21 @@
    - 预算侧：基于供应商余额与最近窗口内使用金额计算；
    - `recent_usage_cost_usd` 的窗口由 `RoutingUsageWindowHours`（默认 24）控制。
 4. 将人工权重与评分融合为贡献值：
-   - `contribution = max(weight + 10, 0) * (RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor)`。
-   - 默认 `RoutingBaseWeightFactor=0.2`、`RoutingValueScoreFactor=0.8`。
-5. 同层按贡献值执行“加权随机不放回”生成重试顺序，层内全部失败后再降级到下一优先级层。
+   - 基础值：`base = max(weight + 10, 0)`；
+   - 同层存在有效评分时：`contribution_base = base * (RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor)`；
+   - 同层评分不可用时：`contribution_base = base`。
+5. 健康调节（默认关闭）：
+   - 开关：`RoutingHealthAdjustmentEnabled`；
+   - 样本窗口：`RoutingHealthWindowHours`（默认 6）；
+   - 仅当样本数达到 `RoutingHealthMinSamples`（默认 5）才生效；
+   - 结合失败率、成功率与平均延迟生成 `health_multiplier`，并限制在 `[RoutingHealthMinMultiplier, RoutingHealthMaxMultiplier]`。
+6. 最终贡献值：`contribution = contribution_base * health_multiplier`（健康调节关闭时倍率为 `1`）。
+7. 同层按贡献值执行“加权随机不放回”生成完整重试顺序，层内全部失败后再降级到下一优先级层。
 
 说明：
 
 - `weight + 10` 仍用于保留低权重路由的基础概率。
-- 三个参数（窗口小时、基础系数、评分系数）均可在系统设置中实时调整。
+- 路由调参项（价值评分 + 健康调节）均可通过系统选项实时调整。
 
 ## 透明代理策略
 
@@ -105,6 +119,9 @@
 
 ## 相关文档
 
+- 快速开始：[QUICK_START.md](./QUICK_START.md)
 - 配置项：[CONFIGURATION.md](./CONFIGURATION.md)
 - API 细节：[API_REFERENCE.md](./API_REFERENCE.md)
 - 数据表说明：[DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md)
+- 运维动作：[OPERATIONS.md](./OPERATIONS.md)
+- 模型别名专题：[model-alias-manual-mapping.md](./model-alias-manual-mapping.md)

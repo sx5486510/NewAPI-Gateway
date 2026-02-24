@@ -2,6 +2,12 @@
 
 > 返回文档入口：[README.md](./README.md)
 
+## 文档导航
+
+- 上一篇：[PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md)
+- 下一篇：[DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md)
+- 接口参考：[API_REFERENCE.md](./API_REFERENCE.md)
+
 ## 开发环境
 
 - Go >= 1.18
@@ -64,8 +70,8 @@ make clean    # 清理构建产物
 
 ### 2. 调整路由策略
 
-1. 修改 `model/model_route.go` 的 `SelectProviderToken`。
-2. 补充对应单元测试（建议覆盖优先级和权重边界）。
+1. 优先修改 `model/model_route.go` 的 `BuildRouteAttemptsByPriority` / `computeRouteContribution` / `finalizeRouteHealthStat`。
+2. 补充对应单元测试（建议覆盖优先级分层、价值评分、健康倍率边界）。
 3. 更新 `docs/ARCHITECTURE.md` 的算法说明。
 
 ### 3. 扩展供应商同步字段
@@ -90,3 +96,4 @@ make clean    # 清理构建产物
 - 项目结构：[PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md)
 - API 参考：[API_REFERENCE.md](./API_REFERENCE.md)
 - 架构说明：[ARCHITECTURE.md](./ARCHITECTURE.md)
+- 数据模型：[DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md)

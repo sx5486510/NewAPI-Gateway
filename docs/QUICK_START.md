@@ -2,6 +2,12 @@
 
 > 返回文档入口：[README.md](./README.md)
 
+## 文档导航
+
+- 上一篇：[文档中心](./README.md)
+- 下一篇：[ARCHITECTURE.md](./ARCHITECTURE.md)
+- 架构规范：[DOCS_ARCHITECTURE.md](./DOCS_ARCHITECTURE.md)
+
 ## 环境要求
 
 - Go >= 1.18
@@ -84,7 +90,7 @@ curl http://localhost:3000/v1/chat/completions \
   }'
 ```
 
-## 下一步阅读
+## 相关文档
 
 - 架构细节：[ARCHITECTURE.md](./ARCHITECTURE.md)
 - 配置与环境变量：[CONFIGURATION.md](./CONFIGURATION.md)

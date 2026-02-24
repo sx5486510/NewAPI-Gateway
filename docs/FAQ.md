@@ -2,6 +2,12 @@
 
 > 返回文档入口：[README.md](./README.md)
 
+## 文档导航
+
+- 上一篇：[OPERATIONS.md](./OPERATIONS.md)
+- 下一篇：[DEVELOPMENT.md](./DEVELOPMENT.md)
+- 接口参考：[API_REFERENCE.md](./API_REFERENCE.md)
+
 ## 1. 首次启动账号密码是什么？
 
 默认是 `root / 123456`。首次启动时若数据库无用户，会自动创建该账号。
@@ -37,7 +43,14 @@
 
 ## 9. 如何让不同供应商按比例分流？
 
-通过路由的 `priority` 与 `weight` 控制。先按优先级分层，再在层内按 `weight + 10` 加权随机。
+通过路由的 `priority` 与 `weight` 控制基础流量，再叠加动态评分：
+
+- 先按 `priority` 分层，高优先级先尝试；
+- 层内以 `weight + 10` 作为基础权重；
+- 结合价格、余额、最近消耗计算 `value_score` 动态放大/缩小占比；
+- 可选开启健康调节（成功率/失败率/延迟）进一步修正贡献值。
+
+因此最终分流比例不是固定静态权重，而是“人工权重 + 实时状态”共同决定。
 
 ## 10. 如何启用更详细的代理认证日志？
 
@@ -55,3 +68,5 @@
 
 - 快速开始：[QUICK_START.md](./QUICK_START.md)
 - 运维手册：[OPERATIONS.md](./OPERATIONS.md)
+- API 参考：[API_REFERENCE.md](./API_REFERENCE.md)
+- 模型别名专题：[model-alias-manual-mapping.md](./model-alias-manual-mapping.md)

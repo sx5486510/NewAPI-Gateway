@@ -12,23 +12,29 @@ _✨ 多供应商 NewAPI 聚合网关 — 统一接入、透明代理、使用�
 
 ## 项目简介
 
-NewAPI Gateway 是一个聚合多个 [NewAPI](https://github.com/QuantumNous/new-api) 供应商的透明网关。用户使用单一聚合 Token（`ag-xxx`）即可调用所有已接入供应商的 AI 模型服务，系统自动进行**权重轮询和优先级路由**，上游供应商无法感知网关的存在。
+NewAPI Gateway 是一个聚合多个 [NewAPI](https://github.com/QuantumNous/new-api) 供应商的透明网关。用户使用单一聚合 Token（`ag-xxx`）即可调用所有已接入供应商的 AI 模型服务，系统自动进行**优先级分层 + 价值评分 + 可选健康调节**的智能路由，上游供应商无法感知网关的存在。
 
 ## 文档中心
 
-- 文档总览：[`docs/README.md`](./docs/README.md)
+- 文档总入口：[`docs/README.md`](./docs/README.md)
+- 文档架构规范：[`docs/DOCS_ARCHITECTURE.md`](./docs/DOCS_ARCHITECTURE.md)
 - 快速开始：[`docs/QUICK_START.md`](./docs/QUICK_START.md)
 - 架构说明：[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+- API 参考：[`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
 - 配置说明：[`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md)
 - 部署指南：[`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)
-- API 参考：[`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
+- 运维手册：[`docs/OPERATIONS.md`](./docs/OPERATIONS.md)
+- 项目结构：[`docs/PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md)
 - 开发指南：[`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)
+- 数据模型：[`docs/DATABASE_SCHEMA.md`](./docs/DATABASE_SCHEMA.md)
+- 模型别名专题：[`docs/model-alias-manual-mapping.md`](./docs/model-alias-manual-mapping.md)
+- 常见问题：[`docs/FAQ.md`](./docs/FAQ.md)
 
 ### 核心特性
 
 - ✅ **透明代理**：Header 清洗、body 零改动、UA 透传，上游仅看到"真实客户端"
 - ✅ **多供应商管理**：统一管理多个 NewAPI 实例的 Token、定价、余额
-- ✅ **智能路由**：Priority 分层 + Weight 加权随机选择，与上游 `ability.go` 同算法
+- ✅ **智能路由**：候选归一匹配 + Priority 分层 + 价值评分加权 + 可选健康调节
 - ✅ **自动同步**：每 5 分钟从上游同步 pricing/tokens/balance，自动重建路由表
 - ✅ **签到服务**：自动为启用签到的供应商执行每日签到
 - ✅ **SSE 流式支持**：完整支持 Server-Sent Events 流式代理
@@ -66,13 +72,30 @@ NewAPI Gateway 是一个聚合多个 [NewAPI](https://github.com/QuantumNous/new
 
 ## 快速开始
 
-### 环境要求
+### 方式一：DockerHub 预编译镜像（推荐）
 
-- Go 1.18+
-- Node.js 16+
-- SQLite（默认）/ MySQL / PostgreSQL
+```bash
+docker pull xxbbzy/newapi-gateway:latest
+docker run -d --name newapi-gateway \
+  --restart always \
+  -p 3000:3000 \
+  -v /data/newapi-gateway:/data \
+  xxbbzy/newapi-gateway:latest
+```
 
-### 手动部署
+### 方式二：预编译二进制启动
+
+1. 从 [Releases](https://github.com/xxbbzy/newapi-gateway) 下载对应系统/架构的二进制文件。
+2. 赋予执行权限并启动：
+
+```bash
+chmod +x ./gateway-aggregator
+./gateway-aggregator --port 3000 --log-dir ./logs
+```
+
+### 方式三：源码构建（保留）
+
+> 适用于二次开发。需要 Go 1.18+、Node.js 16+，数据库支持 SQLite（默认）/ MySQL / PostgreSQL。
 
 ```bash
 # 1. 克隆项目
@@ -85,22 +108,10 @@ npm install
 npm run build
 cd ..
 
-# 3. 构建后端
+# 3. 构建后端并启动
 go mod download
 go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)'" -o gateway-aggregator
-
-# 4. 运行
 ./gateway-aggregator --port 3000 --log-dir ./logs
-```
-
-### Docker 部署
-
-```bash
-docker build -t gateway-aggregator .
-docker run -d --restart always \
-  -p 3000:3000 \
-  -v /data/gateway-aggregator:/data \
-  gateway-aggregator
 ```
 
 ### 首次登录
@@ -119,7 +130,7 @@ docker run -d --restart always \
 | ------------ | ----------------------------------- | ---------------------------- |
 | 名称         | 供应商标识名                        | `Provider-A`                 |
 | Base URL     | 上游 NewAPI 地址                    | `https://api.provider-a.com` |
-| Access Token | 上游 access_token                   | `eyJhbGci...`                |
+| Access Token | 上游NewAPI提供的系统访问令牌                   | `eyJhbGci...`                |
 | 上游 User ID | 上游用户 ID（用于 New-Api-User 头） | `1`                          |
 | 权重         | 路由权重（越高越优先）              | `10`                         |
 | 优先级       | 路由层级（越高越优先）              | `0`                          |
@@ -262,12 +273,31 @@ curl https://your-gateway.com/v1/chat/completions \
 
 ## 路由算法
 
-模型路由查询与上游 `ability.go` 的 `GetChannel` 完全一致：
+实现入口：`model.BuildRouteAttemptsByPriority`（`model/model_route.go`）与 `controller.Relay`。
 
-1. **查询路由表**：`model_routes WHERE model_name = ? AND enabled = true`
-2. **Priority 分层**：按优先级降序排列，默认取最高优先级层
-3. **Weight 加权随机**：`weight_sum = Σ(weight + 10)`，随机数落入哪个区间选哪个
-4. **Retry 降级**：失败后 retry 取下一优先级层
+1. **候选路由筛选**（仅启用路由）：
+   - 精确模型名匹配；
+   - 模型名归一化匹配；
+   - 版本无关键匹配；
+   - 供应商级别名映射（`providers.model_alias_mapping`）匹配。
+2. **Priority 分层**：按 `priority` 降序分组，先尝试高优先级层。
+3. **计算价值评分 `value_score`**：
+   - `unit_cost_usd`：基于 `model_pricings` + token 分组倍率计算；
+   - `recent_usage_cost_usd`：统计窗口内成功请求花费（默认 24h，可调）；
+   - `value_score = cost_score * budget_score`，其中
+     - `cost_score = 1 / (1 + unit_cost_usd)`；
+     - `budget_score = (provider_balance + 1) / (provider_balance + recent_usage_cost_usd + 1)`。
+4. **计算路由贡献值**：
+   - 基础权重：`base = max(weight + 10, 0)`；
+   - 当同层存在有效评分时：`contribution_base = base * (RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor)`；
+   - 当同层评分不可用时，退化为 `contribution_base = base`。
+5. **可选健康调节（默认关闭）**：
+   - 开启 `RoutingHealthAdjustmentEnabled=true` 后，根据窗口内成功率/失败率/平均延迟计算 `health_multiplier`；
+   - 最终贡献值：`contribution = contribution_base * health_multiplier`（并受最小/最大倍率约束）。
+6. **同层加权洗牌重试**：
+   - 在同一优先级层按 `contribution` 做“加权随机不放回”生成完整重试顺序；
+   - 当前层全部失败后才降级到下一优先级层；
+   - 遇到不可重试错误（如明确上游失败）会提前终止，不再继续降级。
 
 ---
 

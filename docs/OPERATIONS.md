@@ -2,6 +2,12 @@
 
 > 返回文档入口：[README.md](./README.md)
 
+## 文档导航
+
+- 上一篇：[DEPLOYMENT.md](./DEPLOYMENT.md)
+- 下一篇：[FAQ.md](./FAQ.md)
+- 接口索引：[API_REFERENCE.md](./API_REFERENCE.md)
+
 ## 日常巡检清单
 
 1. 登录后台检查 `Dashboard` 请求量、失败率、耗时趋势。
@@ -94,3 +100,4 @@ cp gateway-aggregator.db.bak.<timestamp> gateway-aggregator.db
 - 部署指南：[DEPLOYMENT.md](./DEPLOYMENT.md)
 - 配置说明：[CONFIGURATION.md](./CONFIGURATION.md)
 - 常见问题：[FAQ.md](./FAQ.md)
+- API 参考：[API_REFERENCE.md](./API_REFERENCE.md)

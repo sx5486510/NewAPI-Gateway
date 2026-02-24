@@ -2,6 +2,12 @@
 
 > 返回文档入口：[README.md](./README.md)
 
+## 文档导航
+
+- 上一篇：[CONFIGURATION.md](./CONFIGURATION.md)
+- 下一篇：[OPERATIONS.md](./OPERATIONS.md)
+- 启动入口：[QUICK_START.md](./QUICK_START.md)
+
 ## 部署前检查
 
 - 已准备至少一个可访问的 NewAPI 上游。
@@ -135,5 +141,7 @@ server {
 
 ## 相关文档
 
+- 快速开始：[QUICK_START.md](./QUICK_START.md)
 - 配置说明：[CONFIGURATION.md](./CONFIGURATION.md)
 - 运维手册：[OPERATIONS.md](./OPERATIONS.md)
+- 架构说明：[ARCHITECTURE.md](./ARCHITECTURE.md)

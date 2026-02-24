@@ -2,6 +2,12 @@
 
 > 返回文档入口：[README.md](./README.md)
 
+## 文档导航
+
+- 上一篇：[DEVELOPMENT.md](./DEVELOPMENT.md)
+- 下一篇：[OPERATIONS.md](./OPERATIONS.md)
+- 架构主线：[ARCHITECTURE.md](./ARCHITECTURE.md)
+
 ## 数据库支持
 
 项目通过 GORM 支持以下数据库：
@@ -48,12 +54,14 @@
 ### model_routes
 
 - 按 `(model_name, provider_token_id)` 形成路由候选。
-- 选择算法按 `priority` 分层、`weight + 10` 加权。
+- 选择算法按 `priority` 分层，并基于 `weight + 10`、`value_score`、`health_multiplier` 计算最终贡献值。
+- 同一优先级层内按贡献值进行“加权随机不放回”生成重试顺序。
 
 ### usage_logs
 
 - 支持记录流式/非流式请求、首 token 延迟、估算成本。
 - 可按 provider/model/status/关键词筛选与聚合统计。
+- 路由健康调节会消费该表中的成功率、失败率与平均延迟统计。
 
 ## 数据流关系
 
@@ -68,3 +76,4 @@
 - 架构说明：[ARCHITECTURE.md](./ARCHITECTURE.md)
 - API 参考：[API_REFERENCE.md](./API_REFERENCE.md)
 - 运维手册：[OPERATIONS.md](./OPERATIONS.md)
+- 项目结构：[PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md)
