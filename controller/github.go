@@ -1,12 +1,12 @@
 package controller
 
 import (
+	"NewAPI-Gateway/common"
+	"NewAPI-Gateway/model"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"NewAPI-Gateway/common"
-	"NewAPI-Gateway/model"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"net/http"
@@ -42,7 +42,8 @@ func getGitHubUserInfoByCode(code string) (*GitHubUser, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	client := http.Client{
-		Timeout: 5 * time.Second,
+		Timeout:   5 * time.Second,
+		Transport: common.CloneTransportWithProxy(),
 	}
 	res, err := client.Do(req)
 	if err != nil {

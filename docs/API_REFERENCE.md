@@ -123,6 +123,13 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | GET | `/api/option/` | 读取系统选项（隐藏 Secret/Token 字段） |
 | PUT | `/api/option/` | 更新系统选项 |
 
+通用系统选项（通过 `PUT /api/option/` 更新）：
+
+| Key | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `HTTPProxy` | string | 空 | HTTP 代理地址（如 `http://127.0.0.1:7890`） |
+| `HTTPSProxy` | string | 空 | HTTPS 代理地址（如 `http://127.0.0.1:7890`） |
+
 路由策略相关系统选项（通过 `PUT /api/option/` 更新）：
 
 | Key | 类型 | 默认值 | 取值范围 | 说明 |

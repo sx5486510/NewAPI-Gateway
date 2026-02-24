@@ -22,6 +22,7 @@ import (
 var proxyHTTPClient = &http.Client{
 	Timeout: 5 * time.Minute,
 	Transport: &http.Transport{
+		Proxy:               common.ProxyFromSettings,
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 20,
 		IdleConnTimeout:     90 * time.Second,

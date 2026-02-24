@@ -18,6 +18,8 @@ const SystemSetting = () => {
     SMTPAccount: '',
     SMTPToken: '',
     ServerAddress: '',
+    HTTPProxy: '',
+    HTTPSProxy: '',
     Footer: '',
     TurnstileCheckEnabled: '',
     TurnstileSiteKey: '',
@@ -97,6 +99,8 @@ const SystemSetting = () => {
       name === 'Notice' ||
       name.startsWith('SMTP') ||
       name === 'ServerAddress' ||
+      name === 'HTTPProxy' ||
+      name === 'HTTPSProxy' ||
       name === 'GitHubClientId' ||
       name === 'GitHubClientSecret' ||
       name === 'TurnstileSiteKey' ||
@@ -128,6 +132,17 @@ const SystemSetting = () => {
       localStorage.setItem('server_address', ServerAddress);
     } else {
       localStorage.removeItem('server_address');
+    }
+  };
+
+  const submitProxy = async () => {
+    const nextHTTPProxy = String(inputs.HTTPProxy || '').trim();
+    const nextHTTPSProxy = String(inputs.HTTPSProxy || '').trim();
+    if (originInputs['HTTPProxy'] !== nextHTTPProxy) {
+      await updateOption('HTTPProxy', nextHTTPProxy);
+    }
+    if (originInputs['HTTPSProxy'] !== nextHTTPSProxy) {
+      await updateOption('HTTPSProxy', nextHTTPSProxy);
     }
   };
 
@@ -305,6 +320,26 @@ const SystemSetting = () => {
             onChange={handleInputChange}
           />
           <Button onClick={submitServerAddress} variant="secondary" disabled={loading}>更新服务器地址</Button>
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <Input
+              label='HTTP 代理'
+              placeholder='例如：http://127.0.0.1:7890'
+              value={inputs.HTTPProxy}
+              name='HTTPProxy'
+              onChange={handleInputChange}
+            />
+            <Input
+              label='HTTPS 代理'
+              placeholder='例如：http://127.0.0.1:7890'
+              value={inputs.HTTPSProxy}
+              name='HTTPSProxy'
+              onChange={handleInputChange}
+            />
+          </div>
+          <Button onClick={submitProxy} variant="secondary" disabled={loading}>保存代理设置</Button>
         </div>
 
         <div style={{ borderTop: '1px solid var(--border-color)', margin: '1.5rem 0' }}></div>

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -63,6 +64,27 @@ func UpdateOption(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
 				"message": "无法启用 Turnstile 校验，请先填入 Turnstile 校验相关配置信息！",
+			})
+			return
+		}
+	case "HTTPProxy", "HTTPSProxy":
+		trimmed := strings.TrimSpace(option.Value)
+		if trimmed == "" {
+			break
+		}
+		parsed, err := url.Parse(trimmed)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "invalid proxy url, expected http/https",
+			})
+			return
+		}
+		scheme := strings.ToLower(parsed.Scheme)
+		if scheme != "http" && scheme != "https" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "proxy scheme must be http or https",
 			})
 			return
 		}

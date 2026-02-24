@@ -176,6 +176,10 @@ If `SQL_DRIVER` is not set, backward-compatible behavior is used:
 | `--log-dir` | Log directory | none    |
 | `--version` | Print version | -       |
 
+### System Settings (`/api/option/`)
+
+You can configure HTTP/HTTPS proxy (`HTTPProxy` / `HTTPSProxy`) in the admin UI. Once set, all outbound HTTP requests go through the proxy. See [CONFIGURATION.md](./docs/CONFIGURATION.md).
+
 ---
 
 ## Stealth Strategy

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"NewAPI-Gateway/common"
 )
 
 // UpstreamClient wraps HTTP calls to an upstream NewAPI instance
@@ -19,12 +21,14 @@ type UpstreamClient struct {
 }
 
 func NewUpstreamClient(baseURL string, accessToken string, userID int) *UpstreamClient {
+	transport := common.CloneTransportWithProxy()
 	return &UpstreamClient{
 		BaseURL:     baseURL,
 		AccessToken: accessToken,
 		UserID:      userID,
 		HTTPClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: transport,
 		},
 	}
 }

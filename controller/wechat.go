@@ -1,11 +1,11 @@
 package controller
 
 import (
+	"NewAPI-Gateway/common"
+	"NewAPI-Gateway/model"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"NewAPI-Gateway/common"
-	"NewAPI-Gateway/model"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"strconv"
@@ -28,7 +28,8 @@ func getWeChatIdByCode(code string) (string, error) {
 	}
 	req.Header.Set("Authorization", common.WeChatServerToken)
 	client := http.Client{
-		Timeout: 5 * time.Second,
+		Timeout:   5 * time.Second,
+		Transport: common.CloneTransportWithProxy(),
 	}
 	httpResponse, err := client.Do(req)
 	if err != nil {

@@ -30,6 +30,22 @@
 | `UPLOAD_PATH` | 上传目录 | `upload` | `/data/upload` |
 | `DEBUG_PROXY_AUTH` | 开启代理认证调试日志 | 关闭 | `1` |
 
+## 系统设置（`/api/option/`）
+
+可在管理后台“系统设置”中修改，或通过 `PUT /api/option/` 更新。
+
+| Key | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `HTTPProxy` | string | 空 | HTTP 代理地址（如 `http://127.0.0.1:7890`） |
+| `HTTPSProxy` | string | 空 | HTTPS 代理地址（如 `http://127.0.0.1:7890`） |
+
+说明：
+
+- 仅支持 `http` / `https` 协议；留空表示不启用。
+- 若仅设置其中一个，系统会将该值用于所有协议请求。
+- 当两者都为空时，回退使用环境变量 `http_proxy` / `https_proxy`。
+- 生效范围：所有对外 HTTP 请求（上游同步/转发、OAuth、Turnstile 等）。
+
 ## 命令行参数
 
 | 参数 | 说明 | 默认值 |

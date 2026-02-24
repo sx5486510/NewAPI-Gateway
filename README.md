@@ -253,6 +253,10 @@ curl https://your-gateway.com/v1/chat/completions \
 | `--log-dir` | 日志目录 | 不保存 |
 | `--version` | 打印版本 | -      |
 
+### 系统设置（`/api/option/`）
+
+支持在管理后台配置 HTTP/HTTPS 代理（`HTTPProxy` / `HTTPSProxy`），配置后所有对外 HTTP 请求会走代理。详情见：[CONFIGURATION.md](./docs/CONFIGURATION.md)。
+
 ---
 
 ## 路由算法
