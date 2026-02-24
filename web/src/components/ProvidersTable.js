@@ -132,7 +132,10 @@ const ProvidersTable = () => {
   };
 
   const openEdit = (provider) => {
-    setEditProvider({ ...provider });
+    setEditProvider({
+      ...provider,
+      user_id: provider?.user_id ? String(provider.user_id) : '',
+    });
     setShowModal(true);
   };
 
@@ -141,18 +144,36 @@ const ProvidersTable = () => {
       name: '',
       base_url: '',
       access_token: '',
-      user_id: 0,
+      user_id: '',
       priority: 0,
       weight: 10,
-      checkin_enabled: false,
+      checkin_enabled: true,
       remark: '',
     });
     setShowModal(true);
   };
 
+  const buildProviderPayload = () => {
+    const baseUrl = String(editProvider?.base_url || '').trim();
+    const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
+    const userIdRaw = String(editProvider?.user_id || '').trim();
+    if (userIdRaw !== '' && !/^\d+$/.test(userIdRaw)) {
+      showError('上游用户编号必须是数字');
+      return null;
+    }
+    const userId = userIdRaw === '' ? 0 : parseInt(userIdRaw, 10);
+    return {
+      ...editProvider,
+      base_url: normalizedBaseUrl,
+      user_id: userId,
+    };
+  };
+
   const saveProvider = async () => {
+    const payload = buildProviderPayload();
+    if (!payload) return;
     if (editProvider.id) {
-      const res = await API.put('/api/provider/', editProvider);
+      const res = await API.put('/api/provider/', payload);
       const { success, message } = res.data;
       if (success) {
         showSuccess('更新成功');
@@ -162,7 +183,7 @@ const ProvidersTable = () => {
         showError(message);
       }
     } else {
-      const res = await API.post('/api/provider/', editProvider);
+      const res = await API.post('/api/provider/', payload);
       const { success, message } = res.data;
       if (success) {
         showSuccess('创建成功');
@@ -421,8 +442,8 @@ const ProvidersTable = () => {
           <Input
             label="上游用户编号"
             type="number"
-            value={editProvider?.user_id || 0}
-            onChange={(e) => setEditProvider({ ...editProvider, user_id: parseInt(e.target.value) || 0 })}
+            value={editProvider?.user_id || ''}
+            onChange={(e) => setEditProvider({ ...editProvider, user_id: e.target.value })}
           />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <Input

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"NewAPI-Gateway/common"
@@ -113,7 +114,9 @@ func (c *UpstreamClient) doRequest(method string, path string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("upstream returned status %d: %s", resp.StatusCode, string(body))
 	}
-
+	if err := upstreamBodyError(body); err != nil {
+		return nil, err
+	}
 	return body, nil
 }
 
@@ -145,7 +148,33 @@ func (c *UpstreamClient) doRequestWithBody(method string, path string, payload i
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("upstream returned status %d: %s", resp.StatusCode, string(body))
 	}
+	if err := upstreamBodyError(body); err != nil {
+		return nil, err
+	}
 	return body, nil
+}
+
+func upstreamBodyError(body []byte) error {
+	if len(body) == 0 {
+		return nil
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil
+	}
+	successRaw, ok := payload["success"]
+	if !ok {
+		return nil
+	}
+	success, ok := successRaw.(bool)
+	if !ok || success {
+		return nil
+	}
+	message, _ := payload["message"].(string)
+	if strings.TrimSpace(message) == "" {
+		message = "upstream returned success=false"
+	}
+	return fmt.Errorf("%s", message)
 }
 
 // GetPricing fetches /api/pricing from the upstream.
