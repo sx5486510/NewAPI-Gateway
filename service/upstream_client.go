@@ -112,7 +112,7 @@ func (c *UpstreamClient) doRequest(method string, path string) ([]byte, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("upstream returned status %d: %s", resp.StatusCode, string(body))
+		return nil, upstreamHTTPError(resp, body)
 	}
 	if err := upstreamBodyError(body); err != nil {
 		return nil, err
@@ -146,7 +146,7 @@ func (c *UpstreamClient) doRequestWithBody(method string, path string, payload i
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("upstream returned status %d: %s", resp.StatusCode, string(body))
+		return nil, upstreamHTTPError(resp, body)
 	}
 	if err := upstreamBodyError(body); err != nil {
 		return nil, err
@@ -175,6 +175,57 @@ func upstreamBodyError(body []byte) error {
 		message = "upstream returned success=false"
 	}
 	return fmt.Errorf("%s", message)
+}
+
+func upstreamHTTPError(resp *http.Response, body []byte) error {
+	msg := fmt.Sprintf("upstream returned status %d: %s", resp.StatusCode, string(body))
+	if isCloudflareChallenge(resp, body) {
+		msg += " (可能被 Cloudflare 挑战页拦截，请为 /api/* 放行或关闭挑战)"
+	}
+	return fmt.Errorf("%s", msg)
+}
+
+func isCloudflareChallenge(resp *http.Response, body []byte) bool {
+	if resp == nil {
+		return false
+	}
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusServiceUnavailable {
+		if hasCloudflareHeaders(resp.Header) {
+			return true
+		}
+	}
+	if hasCloudflareHeaders(resp.Header) {
+		return true
+	}
+	if len(body) == 0 {
+		return false
+	}
+	lower := strings.ToLower(string(body))
+	return strings.Contains(lower, "cloudflare") ||
+		strings.Contains(lower, "cf-ray") ||
+		strings.Contains(lower, "cf-browser-verification") ||
+		strings.Contains(lower, "attention required") ||
+		strings.Contains(lower, "just a moment")
+}
+
+func hasCloudflareHeaders(header http.Header) bool {
+	if header == nil {
+		return false
+	}
+	server := strings.ToLower(header.Get("Server"))
+	if strings.Contains(server, "cloudflare") {
+		return true
+	}
+	if header.Get("CF-RAY") != "" {
+		return true
+	}
+	if header.Get("CF-Cache-Status") != "" {
+		return true
+	}
+	if header.Get("CF-Chl-Bypass") != "" {
+		return true
+	}
+	return false
 }
 
 // GetPricing fetches /api/pricing from the upstream.
@@ -311,6 +362,15 @@ func (c *UpstreamClient) Checkin() (*CheckinResponse, error) {
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, upstreamHTTPError(resp, body)
+	}
+	if isCloudflareChallenge(resp, body) {
+		return nil, upstreamHTTPError(resp, body)
+	}
+	if err := upstreamBodyError(body); err != nil {
+		return nil, err
+	}
 
 	var result struct {
 		Success bool            `json:"success"`
@@ -318,7 +378,7 @@ func (c *UpstreamClient) Checkin() (*CheckinResponse, error) {
 		Data    CheckinResponse `json:"data"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("checkin decode failed: %w", err)
 	}
 	if !result.Success {
 		return nil, fmt.Errorf("checkin failed: %s", result.Message)
