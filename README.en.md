@@ -14,22 +14,6 @@ _✨ Multi-provider NewAPI aggregation gateway — unified access, transparent p
 
 NewAPI Gateway is a transparent gateway that aggregates multiple [NewAPI](https://github.com/QuantumNous/new-api) providers. Users access all connected AI model services through a single aggregated token (`ag-xxx`). The system uses **priority-tiered routing with value-aware weighting and optional health adjustment**, and upstream providers cannot detect the gateway's presence.
 
-## Documentation Hub
-
-- Docs index: [`docs/README.md`](./docs/README.md)
-- Docs architecture: [`docs/DOCS_ARCHITECTURE.md`](./docs/DOCS_ARCHITECTURE.md)
-- Quick start: [`docs/QUICK_START.md`](./docs/QUICK_START.md)
-- Architecture: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
-- API reference: [`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
-- Configuration: [`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md)
-- Deployment: [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)
-- Operations: [`docs/OPERATIONS.md`](./docs/OPERATIONS.md)
-- Project structure: [`docs/PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md)
-- Development guide: [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)
-- Database schema: [`docs/DATABASE_SCHEMA.md`](./docs/DATABASE_SCHEMA.md)
-- Model alias mapping: [`docs/model-alias-manual-mapping.md`](./docs/model-alias-manual-mapping.md)
-- FAQ: [`docs/FAQ.md`](./docs/FAQ.md)
-
 ### Key Features
 
 - ✅ **Transparent Proxy**: Header sanitization, zero body modification, User-Agent passthrough
@@ -205,6 +189,24 @@ The gateway ensures upstream providers **cannot detect its presence**:
 | User-Agent passthrough | Preserve original client UA                |
 | Zero body modification | Request body forwarded as-is               |
 | No custom headers      | No gateway-identifying headers added       |
+
+---
+
+## Documentation Hub
+
+- Docs index: [`docs/README.md`](./docs/README.md)
+- Docs architecture: [`docs/DOCS_ARCHITECTURE.md`](./docs/DOCS_ARCHITECTURE.md)
+- Quick start: [`docs/QUICK_START.md`](./docs/QUICK_START.md)
+- Architecture: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+- API reference: [`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
+- Configuration: [`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md)
+- Deployment: [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)
+- Operations: [`docs/OPERATIONS.md`](./docs/OPERATIONS.md)
+- Project structure: [`docs/PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md)
+- Development guide: [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)
+- Database schema: [`docs/DATABASE_SCHEMA.md`](./docs/DATABASE_SCHEMA.md)
+- Model alias mapping: [`docs/model-alias-manual-mapping.md`](./docs/model-alias-manual-mapping.md)
+- FAQ: [`docs/FAQ.md`](./docs/FAQ.md)
 
 ---
 

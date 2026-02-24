@@ -14,22 +14,6 @@ _✨ 多供应商 NewAPI 聚合网关 — 统一接入、透明代理、使用�
 
 NewAPI Gateway 是一个聚合多个 [NewAPI](https://github.com/QuantumNous/new-api) 供应商的透明网关。用户使用单一聚合 Token（`ag-xxx`）即可调用所有已接入供应商的 AI 模型服务，系统自动进行**优先级分层 + 价值评分 + 可选健康调节**的智能路由，上游供应商无法感知网关的存在。
 
-## 文档中心
-
-- 文档总入口：[`docs/README.md`](./docs/README.md)
-- 文档架构规范：[`docs/DOCS_ARCHITECTURE.md`](./docs/DOCS_ARCHITECTURE.md)
-- 快速开始：[`docs/QUICK_START.md`](./docs/QUICK_START.md)
-- 架构说明：[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
-- API 参考：[`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
-- 配置说明：[`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md)
-- 部署指南：[`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)
-- 运维手册：[`docs/OPERATIONS.md`](./docs/OPERATIONS.md)
-- 项目结构：[`docs/PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md)
-- 开发指南：[`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)
-- 数据模型：[`docs/DATABASE_SCHEMA.md`](./docs/DATABASE_SCHEMA.md)
-- 模型别名专题：[`docs/model-alias-manual-mapping.md`](./docs/model-alias-manual-mapping.md)
-- 常见问题：[`docs/FAQ.md`](./docs/FAQ.md)
-
 ### 核心特性
 
 - ✅ **透明代理**：Header 清洗、body 零改动、UA 透传，上游仅看到"真实客户端"
@@ -356,6 +340,23 @@ NewAPI-Gateway/
 
 更细粒度的目录与模块说明见：[`docs/PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md)
 
+---
+
+## 文档中心
+
+- 文档总入口：[`docs/README.md`](./docs/README.md)
+- 文档架构规范：[`docs/DOCS_ARCHITECTURE.md`](./docs/DOCS_ARCHITECTURE.md)
+- 快速开始：[`docs/QUICK_START.md`](./docs/QUICK_START.md)
+- 架构说明：[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+- API 参考：[`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
+- 配置说明：[`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md)
+- 部署指南：[`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)
+- 运维手册：[`docs/OPERATIONS.md`](./docs/OPERATIONS.md)
+- 项目结构：[`docs/PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md)
+- 开发指南：[`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)
+- 数据模型：[`docs/DATABASE_SCHEMA.md`](./docs/DATABASE_SCHEMA.md)
+- 模型别名专题：[`docs/model-alias-manual-mapping.md`](./docs/model-alias-manual-mapping.md)
+- 常见问题：[`docs/FAQ.md`](./docs/FAQ.md)
 ---
 
 ## License
