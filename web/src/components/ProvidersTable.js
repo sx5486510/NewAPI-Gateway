@@ -26,6 +26,7 @@ const ProvidersTable = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editProvider, setEditProvider] = useState(null);
+  const [resolvingTitle, setResolvingTitle] = useState(false);
   const [activePage, setActivePage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const inFlightPagesRef = useRef(new Set());
@@ -170,6 +171,50 @@ const ProvidersTable = () => {
       } else {
         showError(message);
       }
+    }
+  };
+
+  const resolveNameFromBaseUrl = async () => {
+    const rawUrl = String(editProvider?.base_url || '').trim();
+    if (!rawUrl) {
+      showError('请输入基础地址');
+      return;
+    }
+    let targetUrl = rawUrl;
+    if (!/^https?:\/\//i.test(targetUrl)) {
+      targetUrl = `https://${targetUrl}`;
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(targetUrl);
+    } catch (e) {
+      showError('基础地址格式不正确');
+      return;
+    }
+
+    setResolvingTitle(true);
+    try {
+      const baseUrl = parsed.toString().replace(/\/+$/, '');
+      const res = await API.get('/api/provider/status', {
+        params: { base_url: baseUrl },
+      });
+      const { success, data, message } = res.data || {};
+      if (!success) {
+        showError(message || '获取站点状态失败');
+        return;
+      }
+      const systemName = String(data?.system_name || '').trim();
+      if (!systemName) {
+        showError('未获取到系统名称');
+        return;
+      }
+      setEditProvider((prev) => ({ ...prev, name: systemName }));
+      showSuccess('已使用系统名称填充名称');
+    } catch (e) {
+      showError('获取失败，可能被跨域限制');
+    } finally {
+      setResolvingTitle(false);
     }
   };
 
@@ -344,16 +389,28 @@ const ProvidersTable = () => {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+            <Input
+              label="基础地址"
+              placeholder="https://api.example.com"
+              value={editProvider?.base_url || ''}
+              onChange={(e) => setEditProvider({ ...editProvider, base_url: e.target.value })}
+              style={{ marginBottom: 0, flex: 1 }}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={resolveNameFromBaseUrl}
+              icon={RefreshCw}
+              disabled={resolvingTitle}
+            >
+              {resolvingTitle ? '获取中' : '获取名称'}
+            </Button>
+          </div>
           <Input
             label="名称"
             value={editProvider?.name || ''}
             onChange={(e) => setEditProvider({ ...editProvider, name: e.target.value })}
-          />
-          <Input
-            label="基础地址"
-            placeholder="https://api.example.com"
-            value={editProvider?.base_url || ''}
-            onChange={(e) => setEditProvider({ ...editProvider, base_url: e.target.value })}
           />
           <Input
             label="访问令牌"

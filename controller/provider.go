@@ -6,8 +6,12 @@ import (
 	"NewAPI-Gateway/service"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -286,6 +290,74 @@ func GetProviderTokens(c *gin.Context) {
 		t.CleanForResponse()
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": tokens})
+}
+
+func GetProviderStatus(c *gin.Context) {
+	baseURL := strings.TrimSpace(c.Query("base_url"))
+	if baseURL == "" {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "base_url 不能为空"})
+		return
+	}
+	if !strings.HasPrefix(strings.ToLower(baseURL), "http://") && !strings.HasPrefix(strings.ToLower(baseURL), "https://") {
+		baseURL = "https://" + baseURL
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "base_url 格式不正确"})
+		return
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "仅支持 http/https 协议"})
+		return
+	}
+
+	statusURL := strings.TrimRight(parsed.String(), "/") + "/api/status"
+	client := http.Client{
+		Timeout:   8 * time.Second,
+		Transport: common.CloneTransportWithProxy(),
+	}
+	req, err := http.NewRequest("GET", statusURL, nil)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "创建请求失败"})
+		return
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请求上游失败: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": fmt.Sprintf("上游状态码 %d: %s", resp.StatusCode, string(body))})
+		return
+	}
+
+	var upstream struct {
+		Success bool                   `json:"success"`
+		Message string                 `json:"message"`
+		Data    map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&upstream); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "解析上游响应失败"})
+		return
+	}
+	if !upstream.Success {
+		msg := strings.TrimSpace(upstream.Message)
+		if msg == "" {
+			msg = "上游返回失败"
+		}
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
+		return
+	}
+	systemName, _ := upstream.Data["system_name"].(string)
+	systemName = strings.TrimSpace(systemName)
+	if systemName == "" {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "未获取到 system_name"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{"system_name": systemName}})
 }
 
 func GetProviderPricing(c *gin.Context) {

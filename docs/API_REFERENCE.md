@@ -169,6 +169,7 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | GET | `/api/provider/:id/pricing` | 获取供应商 pricing 缓存 |
 | GET | `/api/provider/:id/model-alias-mapping` | 获取模型别名手动映射 |
 | PUT | `/api/provider/:id/model-alias-mapping` | 更新模型别名手动映射 |
+| GET | `/api/provider/status?base_url=...` | 获取上游 `/api/status`（用于系统名称） |
 | POST | `/api/provider/:id/tokens` | 在上游创建 token 并回同步 |
 | PUT | `/api/provider/token/:token_id` | 更新本地 token 字段 |
 | DELETE | `/api/provider/token/:token_id` | 删除 token（先删上游再删本地） |

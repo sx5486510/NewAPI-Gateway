@@ -71,6 +71,7 @@ func SetApiRouter(router *gin.Engine) {
 			providerRoute.POST("/:id/sync", controller.SyncProviderHandler)
 			providerRoute.POST("/:id/checkin", controller.CheckinProviderHandler)
 			providerRoute.GET("/:id/tokens", controller.GetProviderTokens)
+			providerRoute.GET("/status", controller.GetProviderStatus)
 			providerRoute.GET("/:id/pricing", controller.GetProviderPricing)
 			providerRoute.GET("/:id/model-alias-mapping", controller.GetProviderModelAliasMapping)
 			providerRoute.PUT("/:id/model-alias-mapping", controller.UpdateProviderModelAliasMapping)
