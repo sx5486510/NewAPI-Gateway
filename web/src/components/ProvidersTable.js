@@ -32,6 +32,7 @@ const ProvidersTable = () => {
   const inFlightPagesRef = useRef(new Set());
   const loadedPagesRef = useRef(new Set());
   const fetchEpochRef = useRef(0);
+  const checkinStorageKey = 'provider_checkin_cache';
 
   const loadProviders = useCallback(async (startIdx = 0) => {
     // Prevent concurrent duplicated fetch for the same page.
@@ -59,6 +60,7 @@ const ProvidersTable = () => {
         if (startIdx === 0) {
           loadedPagesRef.current = new Set([0]);
           setProviders(nextProviders);
+          persistCheckinCache(nextProviders);
         } else {
           loadedPagesRef.current.add(startIdx);
           setProviders((prevProviders) => {
@@ -70,6 +72,7 @@ const ProvidersTable = () => {
                 merged.push(item);
               }
             });
+            persistCheckinCache(merged);
             return merged;
           });
         }
@@ -125,6 +128,7 @@ const ProvidersTable = () => {
     const { success, message } = res.data;
     if (success) {
       showSuccess('签到成功');
+      updateLocalCheckin(id, Math.floor(Date.now() / 1000));
       reloadProviders();
     } else {
       showError(message);
@@ -238,6 +242,80 @@ const ProvidersTable = () => {
       setResolvingTitle(false);
     }
   };
+
+  function persistCheckinCache(list) {
+    const cache = {};
+    list.forEach((p) => {
+      cache[p.id] = p.last_checkin_at || 0;
+    });
+    localStorage.setItem(checkinStorageKey, JSON.stringify(cache));
+  }
+
+  function updateLocalCheckin(id, timestamp) {
+    let cache = {};
+    try {
+      cache = JSON.parse(localStorage.getItem(checkinStorageKey) || '{}');
+    } catch (e) {
+      cache = {};
+    }
+    cache[id] = timestamp;
+    localStorage.setItem(checkinStorageKey, JSON.stringify(cache));
+  }
+
+  function isSameDay(timestampSeconds) {
+    if (!timestampSeconds) return false;
+    const dt = new Date(timestampSeconds * 1000);
+    const now = new Date();
+    return (
+      dt.getFullYear() === now.getFullYear() &&
+      dt.getMonth() === now.getMonth() &&
+      dt.getDate() === now.getDate()
+    );
+  }
+
+  function getCheckinStatusMeta(provider) {
+    if (!provider?.checkin_enabled) {
+      return {
+        label: '签到禁用',
+        bg: 'var(--gray-300)',
+        color: 'var(--gray-700)',
+      };
+    }
+    if (isSameDay(provider?.last_checkin_at)) {
+      return {
+        label: '今日已签',
+        bg: 'var(--success)',
+        color: 'white',
+      };
+    }
+    return {
+      label: '今日未签',
+      bg: 'var(--warning)',
+      color: 'white',
+    };
+  }
+
+  function renderCheckinStatus(provider) {
+    const meta = getCheckinStatusMeta(provider);
+    return (
+      <button
+        type="button"
+        disabled
+        style={{
+          padding: '0.25rem 0.5rem',
+          fontSize: '0.75rem',
+          borderRadius: '999px',
+          border: '1px solid transparent',
+          backgroundColor: meta.bg,
+          color: meta.color,
+          cursor: 'default',
+          minWidth: '5rem',
+        }}
+      >
+        {meta.label}
+      </button>
+    );
+  }
 
   const renderStatus = (status) => {
     if (status === 1) return <Badge color="green">启用</Badge>;
@@ -354,11 +432,7 @@ const ProvidersTable = () => {
                   <Td>{p.weight}</Td>
                   <Td>{p.priority}</Td>
                   <Td>
-                    {p.checkin_enabled ? (
-                      <Badge color="blue">已启用</Badge>
-                    ) : (
-                      <Badge color="gray">未启用</Badge>
-                    )}
+                    {renderCheckinStatus(p)}
                   </Td>
                   <Td>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
