@@ -3,6 +3,7 @@ package model
 import (
 	"NewAPI-Gateway/common"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -59,7 +60,20 @@ func (p *Provider) Insert() error {
 }
 
 func (p *Provider) Update() error {
-	return DB.Model(p).Updates(p).Error
+	updates := map[string]interface{}{
+		"name":            p.Name,
+		"base_url":        p.BaseURL,
+		"user_id":         p.UserID,
+		"status":          p.Status,
+		"priority":        p.Priority,
+		"weight":          p.Weight,
+		"checkin_enabled": p.CheckinEnabled,
+		"remark":          p.Remark,
+	}
+	if strings.TrimSpace(p.AccessToken) != "" {
+		updates["access_token"] = p.AccessToken
+	}
+	return DB.Model(&Provider{}).Where("id = ?", p.Id).Updates(updates).Error
 }
 
 func (p *Provider) Delete() error {
@@ -94,6 +108,10 @@ func (p *Provider) UpdateModelAliasMapping(modelAliasMapping string) {
 
 func (p *Provider) UpdateCheckinTime() {
 	DB.Model(p).Update("last_checkin_at", time.Now().Unix())
+}
+
+func (p *Provider) UpdateCheckinEnabled(enabled bool) {
+	DB.Model(p).Update("checkin_enabled", enabled)
 }
 
 // CleanForResponse removes sensitive fields before sending to frontend

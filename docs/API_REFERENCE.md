@@ -174,6 +174,31 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | PUT | `/api/provider/token/:token_id` | 更新本地 token 字段 |
 | DELETE | `/api/provider/token/:token_id` | 删除 token（先删上游再删本地） |
 
+### 更新供应商
+
+`PUT /api/provider/`
+
+请求体示例：
+
+```json
+{
+  "id": 1,
+  "name": "Provider A",
+  "base_url": "https://api.example.com",
+  "access_token": "sk-xxxx",
+  "user_id": 0,
+  "status": 1,
+  "priority": 0,
+  "weight": 10,
+  "checkin_enabled": true,
+  "remark": "备注"
+}
+```
+
+说明：
+- `access_token` 为空或省略时不覆盖现有值。
+- `checkin_enabled` 支持 `true/false`，可用于启用/禁用签到。
+
 ## 聚合 Token API（Session，`UserAuth + NoTokenAuth`）
 
 | Method | Path | 说明 |

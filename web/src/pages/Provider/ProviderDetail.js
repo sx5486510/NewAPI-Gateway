@@ -147,6 +147,61 @@ const ProviderDetail = () => {
         return <Badge color="red">禁用</Badge>;
     };
 
+    const isSameDay = (timestampSeconds) => {
+        if (!timestampSeconds) return false;
+        const dt = new Date(timestampSeconds * 1000);
+        const now = new Date();
+        return (
+            dt.getFullYear() === now.getFullYear() &&
+            dt.getMonth() === now.getMonth() &&
+            dt.getDate() === now.getDate()
+        );
+    };
+
+    const getCheckinStatusMeta = (currentProvider) => {
+        if (!currentProvider?.checkin_enabled) {
+            return {
+                label: '签到禁用',
+                bg: 'var(--gray-300)',
+                color: 'var(--gray-700)',
+            };
+        }
+        if (isSameDay(currentProvider?.last_checkin_at)) {
+            return {
+                label: '今日已签',
+                bg: 'var(--success)',
+                color: 'white',
+            };
+        }
+        return {
+            label: '今日未签',
+            bg: 'var(--warning)',
+            color: 'white',
+        };
+    };
+
+    const renderCheckinStatus = (currentProvider) => {
+        const meta = getCheckinStatusMeta(currentProvider);
+        return (
+            <button
+                type="button"
+                disabled
+                style={{
+                    padding: '0.25rem 0.5rem',
+                    fontSize: '0.75rem',
+                    borderRadius: '999px',
+                    border: '1px solid transparent',
+                    backgroundColor: meta.bg,
+                    color: meta.color,
+                    cursor: 'default',
+                    minWidth: '5rem',
+                }}
+            >
+                {meta.label}
+            </button>
+        );
+    };
+
     const parseEnableGroups = (enableGroups) => {
         try {
             const groups = JSON.parse(enableGroups || '[]');
@@ -698,7 +753,7 @@ const ProviderDetail = () => {
                         </div>
                         <div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>签到</div>
-                            {provider.checkin_enabled ? <Badge color="blue">已启用</Badge> : <Badge color="gray">未启用</Badge>}
+                            {renderCheckinStatus(provider)}
                         </div>
                         <div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>令牌 / 模型</div>

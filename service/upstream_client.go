@@ -365,9 +365,11 @@ func (c *UpstreamClient) Checkin() (*CheckinResponse, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, upstreamHTTPError(resp, body)
 	}
-	// if isCloudflareChallenge(resp, body) {
-	// 	return nil, upstreamHTTPError(resp, body)
-	// }
+
+	if isCloudflareChallenge(resp, body) {
+		return nil, upstreamHTTPError(resp, body)
+	}
+
 	if err := upstreamBodyError(body); err != nil {
 		return nil, err
 	}
