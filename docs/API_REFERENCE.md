@@ -137,7 +137,7 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | `RoutingUsageWindowHours` | int | `24` | `1 ~ 720` | 计算 `recent_usage_cost_usd` 的统计窗口（小时） |
 | `RoutingBaseWeightFactor` | float | `0.2` | `0 ~ 10` | 占比贡献中的基础系数 |
 | `RoutingValueScoreFactor` | float | `0.8` | `0 ~ 10` | 占比贡献中的性价比系数 |
-| `RoutingHealthAdjustmentEnabled` | bool | `false` | `true/false` | 是否启用健康调节倍率 |
+| `RoutingHealthAdjustmentEnabled` | bool | `true` | `true/false` | 是否启用健康调节倍率 |
 | `RoutingHealthWindowHours` | int | `6` | `1 ~ 720` | 健康统计窗口（小时） |
 | `RoutingFailurePenaltyAlpha` | float | `4.0` | `0 ~ 20` | 失败率惩罚系数（越大惩罚越强） |
 | `RoutingHealthRewardBeta` | float | `0.08` | `0 ~ 2` | 健康奖励系数（越大奖励越强） |

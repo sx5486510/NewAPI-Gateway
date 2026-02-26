@@ -17,7 +17,7 @@ const (
 	defaultRoutingUsageWindowHours = 24
 	defaultRoutingBaseWeightFactor = 0.2
 	defaultRoutingValueScoreFactor = 0.8
-	defaultRoutingHealthEnabled    = false
+	defaultRoutingHealthEnabled    = true
 	defaultRoutingHealthWindowHour = 6
 	defaultRoutingFailurePenaltyA  = 4.0
 	defaultRoutingHealthRewardBeta = 0.08
