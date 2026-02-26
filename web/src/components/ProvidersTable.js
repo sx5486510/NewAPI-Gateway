@@ -33,6 +33,22 @@ const ProvidersTable = () => {
   const loadedPagesRef = useRef(new Set());
   const fetchEpochRef = useRef(0);
   const checkinStorageKey = 'provider_checkin_cache';
+  const compactThStyle = {
+    padding: '0.45rem 0.5rem',
+    fontSize: '0.7rem',
+    whiteSpace: 'nowrap',
+  };
+  const compactTdStyle = {
+    padding: '0.4rem 0.5rem',
+    fontSize: '0.8rem',
+    whiteSpace: 'nowrap',
+  };
+  const ellipsisTextStyle = {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    display: 'block',
+  };
 
   const loadProviders = useCallback(async (startIdx = 0) => {
     // Prevent concurrent duplicated fetch for the same page.
@@ -410,39 +426,43 @@ const ProvidersTable = () => {
         {loading ? (
           <div className="p-4 text-center text-gray-400" style={{ padding: '2rem', textAlign: 'center' }}>加载中...</div>
         ) : (
-          <Table>
+          <Table minWidth="0" tableStyle={{ tableLayout: 'fixed', width: '100%' }}>
             <Thead>
               <Tr>
-                <Th>编号</Th>
-                <Th>名称</Th>
-                <Th>地址</Th>
-                <Th>加入时间</Th>
-                <Th>最新同步</Th>
-                <Th>状态</Th>
-                <Th>余额</Th>
-                <Th>权重</Th>
-                <Th>优先级</Th>
-                <Th>签到</Th>
-                <Th>操作</Th>
+                <Th style={{ ...compactThStyle, width: '4%' }}>编号</Th>
+                <Th style={{ ...compactThStyle, width: '12%' }}>名称</Th>
+                <Th style={{ ...compactThStyle, width: '16%' }}>地址</Th>
+                <Th style={{ ...compactThStyle, width: '10%' }}>加入时间</Th>
+                <Th style={{ ...compactThStyle, width: '10%' }}>最新同步</Th>
+                <Th style={{ ...compactThStyle, width: '6%' }}>状态</Th>
+                <Th style={{ ...compactThStyle, width: '7%' }}>余额</Th>
+                <Th style={{ ...compactThStyle, width: '6%' }}>权重</Th>
+                <Th style={{ ...compactThStyle, width: '6%' }}>优先级</Th>
+                <Th style={{ ...compactThStyle, width: '7%' }}>签到</Th>
+                <Th style={{ ...compactThStyle, width: '16%' }}>操作</Th>
               </Tr>
             </Thead>
             <Tbody>
               {displayedProviders.map((p, idx) => (
                 <Tr key={p.id}>
-                  <Td>{(activePage - 1) * PROVIDERS_PER_PAGE + idx + 1}</Td>
-                  <Td>{p.name}</Td>
-                  <Td><div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.base_url}>{p.base_url}</div></Td>
-                  <Td><span style={{ whiteSpace: 'nowrap' }}>{formatTime(p.created_at)}</span></Td>
-                  <Td><span style={{ whiteSpace: 'nowrap' }}>{formatTime(p.last_synced_at)}</span></Td>
-                  <Td>{renderStatus(p.status)}</Td>
-                  <Td>{p.balance ? p.balance : '无'}</Td>
-                  <Td>{p.weight}</Td>
-                  <Td>{p.priority}</Td>
-                  <Td>
+                  <Td style={compactTdStyle}>{(activePage - 1) * PROVIDERS_PER_PAGE + idx + 1}</Td>
+                  <Td style={compactTdStyle}>
+                    <span style={ellipsisTextStyle} title={p.name}>{p.name}</span>
+                  </Td>
+                  <Td style={compactTdStyle}>
+                    <span style={ellipsisTextStyle} title={p.base_url}>{p.base_url}</span>
+                  </Td>
+                  <Td style={compactTdStyle}><span style={ellipsisTextStyle}>{formatTime(p.created_at)}</span></Td>
+                  <Td style={compactTdStyle}><span style={ellipsisTextStyle}>{formatTime(p.last_synced_at)}</span></Td>
+                  <Td style={compactTdStyle}>{renderStatus(p.status)}</Td>
+                  <Td style={compactTdStyle}>{p.balance ? p.balance : '无'}</Td>
+                  <Td style={compactTdStyle}>{p.weight}</Td>
+                  <Td style={compactTdStyle}>{p.priority}</Td>
+                  <Td style={compactTdStyle}>
                     {renderCheckinStatus(p)}
                   </Td>
-                  <Td>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <Td style={compactTdStyle}>
+                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'nowrap' }}>
                       <Button size="sm" variant="primary" onClick={() => navigate(`/provider/${p.id}`)} title="详情" icon={Eye} />
                       <Button size="sm" variant="secondary" onClick={() => openEdit(p)} title="编辑" icon={Edit} />
                       <Button size="sm" variant="outline" onClick={() => syncProvider(p.id)} title="同步" icon={RefreshCw} />
