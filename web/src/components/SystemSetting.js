@@ -28,13 +28,13 @@ const SystemSetting = () => {
     RoutingUsageWindowHours: '24',
     RoutingBaseWeightFactor: '0.2',
     RoutingValueScoreFactor: '0.8',
-    RoutingHealthAdjustmentEnabled: 'false',
-    RoutingHealthWindowHours: '6',
-    RoutingFailurePenaltyAlpha: '4.0',
-    RoutingHealthRewardBeta: '0.08',
-    RoutingHealthMinMultiplier: '0.05',
-    RoutingHealthMaxMultiplier: '1.12',
-    RoutingHealthMinSamples: '5',
+    RoutingHealthAdjustmentEnabled: 'true',
+    RoutingHealthWindowHours: '24',
+    RoutingFailurePenaltyAlpha: '20.0',
+    RoutingHealthRewardBeta: '0',
+    RoutingHealthMinMultiplier: '0.01',
+    RoutingHealthMaxMultiplier: '1.0',
+    RoutingHealthMinSamples: '1',
   });
   const [originInputs, setOriginInputs] = useState({});
   let [loading, setLoading] = useState(false);

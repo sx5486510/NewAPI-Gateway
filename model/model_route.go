@@ -18,12 +18,12 @@ const (
 	defaultRoutingBaseWeightFactor = 0.2
 	defaultRoutingValueScoreFactor = 0.8
 	defaultRoutingHealthEnabled    = true
-	defaultRoutingHealthWindowHour = 6
-	defaultRoutingFailurePenaltyA  = 4.0
-	defaultRoutingHealthRewardBeta = 0.08
-	defaultRoutingHealthMinMult    = 0.05
-	defaultRoutingHealthMaxMult    = 1.12
-	defaultRoutingHealthMinSamples = 5
+	defaultRoutingHealthWindowHour = 24
+	defaultRoutingFailurePenaltyA  = 20.0
+	defaultRoutingHealthRewardBeta = 0.0
+	defaultRoutingHealthMinMult    = 0.01
+	defaultRoutingHealthMaxMult    = 1.0
+	defaultRoutingHealthMinSamples = 1
 
 	routingUsageWindowHoursOptionKey    = "RoutingUsageWindowHours"
 	routingBaseWeightFactorOptionKey    = "RoutingBaseWeightFactor"
