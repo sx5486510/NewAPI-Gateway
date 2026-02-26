@@ -13,6 +13,8 @@ import (
 	"NewAPI-Gateway/common"
 )
 
+const maxUpstreamBodyLogBytes = 200
+
 // UpstreamClient wraps HTTP calls to an upstream NewAPI instance
 type UpstreamClient struct {
 	BaseURL     string
@@ -178,11 +180,19 @@ func upstreamBodyError(body []byte) error {
 }
 
 func upstreamHTTPError(resp *http.Response, body []byte) error {
-	msg := fmt.Sprintf("upstream returned status %d: %s", resp.StatusCode, string(body))
+	msg := fmt.Sprintf("upstream returned status %d: %s", resp.StatusCode, truncateBodyForLog(body, maxUpstreamBodyLogBytes))
 	if isCloudflareChallenge(resp, body) {
 		msg += " (可能被 Cloudflare 挑战页拦截，请为 /api/* 放行或关闭挑战)"
 	}
 	return fmt.Errorf("%s", msg)
+}
+
+func truncateBodyForLog(body []byte, limit int) string {
+	if limit <= 0 || len(body) <= limit {
+		return string(body)
+	}
+	remaining := len(body) - limit
+	return fmt.Sprintf("%s...[truncated %d bytes]", string(body[:limit]), remaining)
 }
 
 func isCloudflareChallenge(resp *http.Response, body []byte) bool {
@@ -363,10 +373,9 @@ func (c *UpstreamClient) Checkin() (*CheckinResponse, error) {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, upstreamHTTPError(resp, body)
-	}
-
-	if isCloudflareChallenge(resp, body) {
+		// if isCloudflareChallenge(resp, body) {
+		// 	return nil, upstreamHTTPError(resp, body)
+		// }
 		return nil, upstreamHTTPError(resp, body)
 	}
 

@@ -80,8 +80,9 @@ make clean    # 清理构建产物
 2. 更新 `service/sync.go` 写库逻辑。
 3. 注意：上游可能返回 `HTTP 200` 但 `success=false` 的错误体，`UpstreamClient` 会直接返回错误。
 4. 若上游被 Cloudflare 挑战页拦截，`UpstreamClient` 会在错误中提示可能的拦截原因。
-3. 如新增字段入库，更新 `model/*` 结构并确认迁移兼容性。
-4. 更新 `docs/DATABASE_SCHEMA.md`。
+5. 上游错误响应体在日志中会截断（默认 200 bytes），需要完整响应请查看上游日志或抓包。
+6. 如新增字段入库，更新 `model/*` 结构并确认迁移兼容性。
+7. 更新 `docs/DATABASE_SCHEMA.md`。
 
 ## 提交前检查清单
 
