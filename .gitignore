@@ -1,6 +1,7 @@
 .idea
 .vscode
 upload
+__debug_bin.exe*
 *.exe
 *.db
 build
