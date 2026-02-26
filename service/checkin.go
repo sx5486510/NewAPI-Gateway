@@ -57,7 +57,8 @@ func isCheckinDisabledError(err error) bool {
 		strings.Contains(msg, "签到未开启") ||
 		strings.Contains(msg, "签到未启用") ||
 		strings.Contains(msg, "签到功能未开启") ||
-		strings.Contains(msg, "签到功能未启用")
+		strings.Contains(msg, "签到功能未启用") ||
+		strings.Contains(msg, "cloudflare")
 }
 
 func isCheckinAlreadyDoneError(err error) bool {
