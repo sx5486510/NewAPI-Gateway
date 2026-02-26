@@ -108,6 +108,7 @@ func ExportProviders(c *gin.Context) {
 	}
 	// Export format: include access_token for re-import
 	type ExportItem struct {
+		Id                int    `json:"id"`
 		Name              string `json:"name"`
 		BaseURL           string `json:"base_url"`
 		AccessToken       string `json:"access_token"`
@@ -118,12 +119,20 @@ func ExportProviders(c *gin.Context) {
 		Priority          int    `json:"priority,omitempty"`
 		Weight            int    `json:"weight,omitempty"`
 		CheckinEnabled    bool   `json:"checkin_enabled,omitempty"`
+		LastCheckinAt     int64  `json:"last_checkin_at,omitempty"`
+		LastSyncedAt      int64  `json:"last_synced_at,omitempty"`
+		Balance           string `json:"balance,omitempty"`
+		BalanceUpdated    int64  `json:"balance_updated,omitempty"`
+		PricingGroupRatio string `json:"pricing_group_ratio,omitempty"`
+		PricingSupported  string `json:"pricing_supported_endpoint,omitempty"`
 		ModelAliasMapping string `json:"model_alias_mapping,omitempty"`
 		Remark            string `json:"remark,omitempty"`
+		CreatedAt         int64  `json:"created_at,omitempty"`
 	}
 	var items []ExportItem
 	for _, p := range providers {
 		items = append(items, ExportItem{
+			Id:                p.Id,
 			Name:              p.Name,
 			BaseURL:           p.BaseURL,
 			AccessToken:       p.AccessToken,
@@ -134,32 +143,63 @@ func ExportProviders(c *gin.Context) {
 			Priority:          p.Priority,
 			Weight:            p.Weight,
 			CheckinEnabled:    p.CheckinEnabled,
+			LastCheckinAt:     p.LastCheckinAt,
+			LastSyncedAt:      p.LastSyncedAt,
+			Balance:           p.Balance,
+			BalanceUpdated:    p.BalanceUpdated,
+			PricingGroupRatio: p.PricingGroupRatio,
+			PricingSupported:  p.PricingSupportedEndpoint,
 			ModelAliasMapping: p.ModelAliasMapping,
 			Remark:            p.Remark,
+			CreatedAt:         p.CreatedAt,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": items})
 }
 
+
 func ImportProviders(c *gin.Context) {
+	parseModelAliasMapping := func(raw json.RawMessage) (string, error) {
+		if len(raw) == 0 || string(raw) == "null" {
+			return "", nil
+		}
+		var asString string
+		if err := json.Unmarshal(raw, &asString); err == nil {
+			return strings.TrimSpace(asString), nil
+		}
+		var asMap map[string]string
+		if err := json.Unmarshal(raw, &asMap); err == nil {
+			return model.MarshalProviderAliasMapping(asMap)
+		}
+		return "", fmt.Errorf("invalid model_alias_mapping")
+	}
+
 	// Use a flexible import struct to accept user_id as string or int
 	type ImportItem struct {
-		Name              string            `json:"name"`
-		BaseURL           string            `json:"base_url"`
-		AccessToken       string            `json:"access_token"`
-		ApiKey            string            `json:"api_key"`
-		ProviderType      string            `json:"provider_type"`
-		UserID            json.Number       `json:"user_id"`
-		Status            int               `json:"status"`
-		Priority          int               `json:"priority"`
-		Weight            int               `json:"weight"`
-		CheckinEnabled    bool              `json:"checkin_enabled"`
-		ModelAliasMapping map[string]string `json:"model_alias_mapping"`
-		Remark            string            `json:"remark"`
+		Id                json.Number     `json:"id"`
+		Name              string          `json:"name"`
+		BaseURL           string          `json:"base_url"`
+		AccessToken       string          `json:"access_token"`
+		ApiKey            string          `json:"api_key"`
+		ProviderType      string          `json:"provider_type"`
+		UserID            json.Number     `json:"user_id"`
+		Status            int             `json:"status"`
+		Priority          int             `json:"priority"`
+		Weight            int             `json:"weight"`
+		CheckinEnabled    bool            `json:"checkin_enabled"`
+		LastCheckinAt     int64           `json:"last_checkin_at"`
+		LastSyncedAt      int64           `json:"last_synced_at"`
+		Balance           string          `json:"balance"`
+		BalanceUpdated    int64           `json:"balance_updated"`
+		PricingGroupRatio string          `json:"pricing_group_ratio"`
+		PricingSupported  string          `json:"pricing_supported_endpoint"`
+		ModelAliasMapping json.RawMessage `json:"model_alias_mapping"`
+		Remark            string          `json:"remark"`
+		CreatedAt         int64           `json:"created_at"`
 	}
 	var items []ImportItem
 	if err := json.NewDecoder(c.Request.Body).Decode(&items); err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "JSON 格式错误: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "JSON ??????: " + err.Error()})
 		return
 	}
 	imported := 0
@@ -180,22 +220,37 @@ func ImportProviders(c *gin.Context) {
 			skipped++
 			continue
 		}
+		id64, _ := item.Id.Int64()
 		uid, _ := item.UserID.Int64()
-		p := model.Provider{
-			Name:           item.Name,
-			BaseURL:        item.BaseURL,
-			AccessToken:    item.AccessToken,
-			ApiKey:         item.ApiKey,
-			ProviderType:   providerType,
-			UserID:         int(uid),
-			Status:         item.Status,
-			Priority:       item.Priority,
-			Weight:         item.Weight,
-			CheckinEnabled: item.CheckinEnabled,
-			Remark:         item.Remark,
+		modelAliasMapping, err := parseModelAliasMapping(item.ModelAliasMapping)
+		if err != nil {
+			skipped++
+			continue
 		}
-		if payload, err := model.MarshalProviderAliasMapping(item.ModelAliasMapping); err == nil {
-			p.ModelAliasMapping = payload
+		p := model.Provider{
+			Id:                       int(id64),
+			Name:                     item.Name,
+			BaseURL:                  item.BaseURL,
+			AccessToken:              item.AccessToken,
+			ApiKey:                   item.ApiKey,
+			ProviderType:             providerType,
+			UserID:                   int(uid),
+			Status:                   item.Status,
+			Priority:                 item.Priority,
+			Weight:                   item.Weight,
+			CheckinEnabled:           item.CheckinEnabled,
+			LastCheckinAt:            item.LastCheckinAt,
+			LastSyncedAt:             item.LastSyncedAt,
+			Balance:                  item.Balance,
+			BalanceUpdated:           item.BalanceUpdated,
+			PricingGroupRatio:        item.PricingGroupRatio,
+			PricingSupportedEndpoint: item.PricingSupported,
+			ModelAliasMapping:        modelAliasMapping,
+			Remark:                   item.Remark,
+			CreatedAt:                item.CreatedAt,
+		}
+		if p.CreatedAt == 0 {
+			p.CreatedAt = time.Now().Unix()
 		}
 		if p.Status == 0 {
 			p.Status = 1
@@ -209,9 +264,10 @@ func ImportProviders(c *gin.Context) {
 			imported++
 		}
 	}
-	msg := fmt.Sprintf("成功导入 %d 个，跳过 %d 个", imported, skipped)
+	msg := fmt.Sprintf("?????? %d ?????? %d ??", imported, skipped)
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": msg})
 }
+
 
 func CreateProvider(c *gin.Context) {
 	var provider model.Provider

@@ -210,7 +210,7 @@ Environment="GIN_MODE=release"
 Environment="PORT=${PORT}"
 Environment="LOG_DIR=${LOG_DIR}"
 Environment="SESSION_SECRET=${SESSION_SECRET}"
-Environment="SQL_DSN=sqlite://${DATA_DIR}/newapi.db"
+# Environment="SQL_DSN=sqlite://${DATA_DIR}/newapi.db"
 
 NoNewPrivileges=true
 PrivateTmp=true
@@ -306,7 +306,7 @@ if systemctl is-active --quiet "${SERVICE_NAME}"; then
     echo "Update code:"
     echo "  cd ${SOURCE_DIR}"
     echo "  git pull"
-    echo "  sudo bash ${SOURCE_DIR}/deploy/build-on-centos.sh"
+    echo "  sudo bash ${SOURCE_DIR}/deploy/deploy-on-centos.sh"
     echo ""
     echo "Or re-run deploy script:"
     echo "  sudo bash ${SOURCE_DIR}/deploy/deploy-on-centos.sh"

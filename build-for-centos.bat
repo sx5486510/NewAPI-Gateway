@@ -49,9 +49,9 @@ echo.
 echo 注意: 此脚本使用 CGO_ENABLED=0 生成纯静态可执行文件，
 echo       但 SQLite3 需要启用 CGO。因此有两种部署方式：
 echo.
-echo 方式一: 在 CentOS 上直接编译（推荐，支持 SQLite）
-echo   1. 将源代码上传到服务器
-echo   2. 在服务器上运行: bash deploy/build-on-centos.sh
+echo 方式一: 一键部署（推荐，支持 SQLite）
+echo   1. 直接在服务器执行
+echo   2. 在服务器上运行: bash deploy/deploy-on-centos.sh
 echo.
 echo 方式二: 交叉编译（需要使用 MySQL/PostgreSQL）
 echo   使用本脚本编译，然后在 CentOS 上配置 SQL_DSN 环境变量

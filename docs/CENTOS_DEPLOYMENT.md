@@ -1,10 +1,10 @@
 ﻿# CentOS 部署指南
 
 本指南介绍在 CentOS 7/8/Stream 上部署 NewAPI-Gateway 的两种方式：
-- 方式一：在 CentOS 上直接编译（推荐，支持 SQLite）
+- 方式一：一键部署（推荐，支持 SQLite）
 - 方式二：Windows 交叉编译（需要 MySQL/PostgreSQL）
 
-## 方式一：CentOS 上直接编译（推荐）
+## 方式一：一键部署（推荐）
 
 1. 打包源码（排除构建产物）
 
@@ -27,10 +27,10 @@ cd /opt/newapi-gateway/source
 tar -xzf newapi-gateway-source.tar.gz
 ```
 
-4. 运行脚本（会安装依赖、构建前端、编译后端、生成 systemd 服务并启动）
+4. 运行脚本（会拉取代码、安装依赖、构建前端、编译后端、生成 systemd 服务并启动）
 
 ```bash
-sudo bash deploy/build-on-centos.sh
+sudo bash deploy/deploy-on-centos.sh
 ```
 
 ## 方式二：Windows 交叉编译（不支持 SQLite）
@@ -61,7 +61,6 @@ export SQL_DSN='host=localhost user=username password=password dbname=newapi por
 
 4. 使用 systemd（推荐）或直接运行
 
-- 使用 `deploy/newapi-gateway.service` 作为服务模板
 - 或直接运行：
 
 ```bash
