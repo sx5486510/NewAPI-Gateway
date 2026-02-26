@@ -12,6 +12,8 @@ type Provider struct {
 	Name                     string `json:"name" gorm:"index;not null"`
 	BaseURL                  string `json:"base_url" gorm:"not null"`
 	AccessToken              string `json:"access_token" gorm:"type:text"`
+	ApiKey                   string `json:"api_key" gorm:"type:text"`
+	ProviderType             string `json:"provider_type" gorm:"type:varchar(32);default:'full'"`
 	UserID                   int    `json:"user_id"`
 	Status                   int    `json:"status" gorm:"default:1"`
 	Priority                 int    `json:"priority" gorm:"default:0"`
@@ -27,6 +29,11 @@ type Provider struct {
 	Remark                   string `json:"remark" gorm:"type:text"`
 	CreatedAt                int64  `json:"created_at"`
 }
+
+const (
+	ProviderTypeFull    = "full"
+	ProviderTypeKeyOnly = "key_only"
+)
 
 func GetAllProviders(startIdx int, num int) ([]*Provider, error) {
 	var providers []*Provider
@@ -57,6 +64,7 @@ func GetCheckinEnabledProviders() ([]*Provider, error) {
 
 func (p *Provider) Insert() error {
 	p.CreatedAt = time.Now().Unix()
+	p.ProviderType = NormalizeProviderType(p.ProviderType)
 	return DB.Create(p).Error
 }
 
@@ -70,9 +78,13 @@ func (p *Provider) Update() error {
 		"weight":          p.Weight,
 		"checkin_enabled": p.CheckinEnabled,
 		"remark":          p.Remark,
+		"provider_type":   NormalizeProviderType(p.ProviderType),
 	}
 	if strings.TrimSpace(p.AccessToken) != "" {
 		updates["access_token"] = p.AccessToken
+	}
+	if strings.TrimSpace(p.ApiKey) != "" {
+		updates["api_key"] = p.ApiKey
 	}
 	return DB.Model(&Provider{}).Where("id = ?", p.Id).Updates(updates).Error
 }
@@ -122,6 +134,23 @@ func (p *Provider) UpdateCheckinEnabled(enabled bool) {
 // CleanForResponse removes sensitive fields before sending to frontend
 func (p *Provider) CleanForResponse() {
 	p.AccessToken = ""
+	p.ApiKey = ""
+}
+
+func NormalizeProviderType(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch value {
+	case ProviderTypeKeyOnly:
+		return ProviderTypeKeyOnly
+	case ProviderTypeFull, "":
+		return ProviderTypeFull
+	default:
+		return ProviderTypeFull
+	}
+}
+
+func (p *Provider) IsKeyOnly() bool {
+	return NormalizeProviderType(p.ProviderType) == ProviderTypeKeyOnly
 }
 
 func CountProviders() int64 {

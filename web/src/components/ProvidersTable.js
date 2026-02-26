@@ -49,6 +49,8 @@ const ProvidersTable = () => {
     whiteSpace: 'nowrap',
     display: 'block',
   };
+  const providerType = editProvider?.provider_type || 'full';
+  const isKeyOnlyProvider = providerType === 'key_only';
 
   const loadProviders = useCallback(async (startIdx = 0) => {
     // Prevent concurrent duplicated fetch for the same page.
@@ -159,6 +161,7 @@ const ProvidersTable = () => {
   const openEdit = (provider) => {
     setEditProvider({
       ...provider,
+      provider_type: provider?.provider_type || 'full',
       user_id: provider?.user_id ? String(provider.user_id) : '',
     });
     setShowModal(true);
@@ -169,6 +172,8 @@ const ProvidersTable = () => {
       name: '',
       base_url: '',
       access_token: '',
+      api_key: '',
+      provider_type: 'full',
       user_id: '',
       priority: 0,
       weight: 10,
@@ -187,16 +192,30 @@ const ProvidersTable = () => {
       return null;
     }
     const userId = userIdRaw === '' ? 0 : parseInt(userIdRaw, 10);
+    const normalizedType = editProvider?.provider_type || 'full';
     return {
       ...editProvider,
       base_url: normalizedBaseUrl,
       user_id: userId,
+      provider_type: normalizedType,
+      checkin_enabled: normalizedType === 'key_only' ? false : !!editProvider?.checkin_enabled,
     };
   };
 
   const saveProvider = async () => {
     const payload = buildProviderPayload();
     if (!payload) return;
+    if (!editProvider.id) {
+      if (payload.provider_type === 'key_only') {
+        if (!String(payload.api_key || '').trim()) {
+          showError('API Key 不能为空');
+          return;
+        }
+      } else if (!String(payload.access_token || '').trim()) {
+        showError('AccessToken 不能为空');
+        return;
+      }
+    }
     if (editProvider.id) {
       const res = await API.put('/api/provider/', payload);
       const { success, message } = res.data;
@@ -524,28 +543,64 @@ const ProvidersTable = () => {
               variant="outline"
               onClick={resolveNameFromBaseUrl}
               icon={RefreshCw}
-              disabled={resolvingTitle}
+              disabled={resolvingTitle || isKeyOnlyProvider}
             >
               {resolvingTitle ? '获取中' : '获取名称'}
             </Button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+            <label style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>供应商类型</label>
+            <select
+              value={providerType}
+              onChange={(e) => {
+                const nextType = e.target.value;
+                setEditProvider((prev) => ({
+                  ...prev,
+                  provider_type: nextType,
+                  checkin_enabled: nextType === 'key_only' ? false : (prev?.checkin_enabled ?? true),
+                }));
+              }}
+              style={{
+                padding: '0.5rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-primary)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <option value="full">完整供应商（NewAPI）</option>
+              <option value="key_only">仅 BaseURL + API Key（OpenAI 兼容）</option>
+            </select>
           </div>
           <Input
             label="名称"
             value={editProvider?.name || ''}
             onChange={(e) => setEditProvider({ ...editProvider, name: e.target.value })}
           />
-          <Input
-            label="访问令牌"
-            type="password"
-            value={editProvider?.access_token || ''}
-            onChange={(e) => setEditProvider({ ...editProvider, access_token: e.target.value })}
-          />
-          <Input
-            label="上游用户编号"
-            type="number"
-            value={editProvider?.user_id || ''}
-            onChange={(e) => setEditProvider({ ...editProvider, user_id: e.target.value })}
-          />
+          {!isKeyOnlyProvider && (
+            <>
+              <Input
+                label="访问令牌"
+                type="password"
+                value={editProvider?.access_token || ''}
+                onChange={(e) => setEditProvider({ ...editProvider, access_token: e.target.value })}
+              />
+              <Input
+                label="上游用户编号"
+                type="number"
+                value={editProvider?.user_id || ''}
+                onChange={(e) => setEditProvider({ ...editProvider, user_id: e.target.value })}
+              />
+            </>
+          )}
+          {isKeyOnlyProvider && (
+            <Input
+              label="API Key"
+              type="password"
+              value={editProvider?.api_key || ''}
+              onChange={(e) => setEditProvider({ ...editProvider, api_key: e.target.value })}
+            />
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <Input
               label="权重"
@@ -561,16 +616,18 @@ const ProvidersTable = () => {
             />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
-            <input
-              type="checkbox"
-              id="checkin_enabled"
-              checked={editProvider?.checkin_enabled || false}
-              onChange={(e) => setEditProvider({ ...editProvider, checkin_enabled: e.target.checked })}
-              style={{ marginRight: '0.5rem' }}
-            />
-            <label htmlFor="checkin_enabled">启用签到</label>
-          </div>
+          {!isKeyOnlyProvider && (
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
+              <input
+                type="checkbox"
+                id="checkin_enabled"
+                checked={editProvider?.checkin_enabled || false}
+                onChange={(e) => setEditProvider({ ...editProvider, checkin_enabled: e.target.checked })}
+                style={{ marginRight: '0.5rem' }}
+              />
+              <label htmlFor="checkin_enabled">启用签到</label>
+            </div>
+          )}
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <label style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>备注</label>

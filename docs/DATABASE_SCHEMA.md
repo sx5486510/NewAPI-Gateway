@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | `users` | 管理台用户 | `id`, `username`, `role`, `status`, `token` |
 | `options` | 系统 KV 配置 | `key`, `value` |
-| `providers` | 上游供应商 | `id`, `name`, `base_url`, `access_token`, `status`, `priority`, `weight`, `checkin_enabled`, `last_checkin_at`, `last_synced_at` |
+| `providers` | 上游供应商 | `id`, `name`, `base_url`, `access_token`, `api_key`, `provider_type`, `status`, `priority`, `weight`, `checkin_enabled`, `last_checkin_at`, `last_synced_at` |
 | `provider_tokens` | 上游 sk token 缓存 | `id`, `provider_id`, `upstream_token_id`, `sk_key`, `group_name`, `status` |
 | `aggregated_tokens` | 聚合令牌（ag） | `id`, `user_id`, `key`, `status`, `expired_time`, `model_limits`, `allow_ips` |
 | `model_pricings` | 上游模型定价与能力缓存 | `model_name`, `provider_id`, `quota_type`, `enable_groups` |
@@ -39,6 +39,9 @@
 - `checkin_enabled`：是否启用签到。
 - `last_checkin_at`：最近一次签到时间（Unix 秒）。
 - `last_synced_at`：最近一次同步成功时间（Unix 秒）。
+- `provider_type`：供应商类型（`full`/`key_only`）。
+- `api_key`：仅 `key_only` 模式使用的上游 API Key。
+- `key_only` 模式不支持签到，`checkin_enabled` 固定为 `false`。
 - `pricing_group_ratio`：上游分组倍率缓存（JSON）。
 - `pricing_supported_endpoint`：上游支持端点缓存（JSON）。
 

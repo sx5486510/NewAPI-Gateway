@@ -72,8 +72,8 @@ docker run -d --name gateway-aggregator \
 
 ## 最小可用流程
 
-1. 登录后台后在「供应商」页面添加 NewAPI 上游。
-2. 点击「同步」，系统会抓取上游 `pricing`、`token`、`balance` 并重建路由。
+1. 登录后台后在「供应商」页面添加上游。
+2. 点击「同步」，系统会抓取上游 `pricing`、`token`、`balance` 并重建路由；若为 `key_only` 模式，仅拉取模型列表并构建路由。
 3. 在「令牌」页面创建聚合令牌，得到 `ag-xxxx`。
 4. 使用该令牌调用网关接口。
 

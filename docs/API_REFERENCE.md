@@ -197,7 +197,9 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
   "id": 1,
   "name": "Provider A",
   "base_url": "https://api.example.com",
+  "provider_type": "full",
   "access_token": "sk-xxxx",
+  "api_key": "",
   "user_id": 0,
   "status": 1,
   "priority": 0,
@@ -209,6 +211,9 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 
 说明：
 - `access_token` 为空或省略时不覆盖现有值。
+- `provider_type` 支持 `full`（默认）与 `key_only`。
+- `api_key` 为空或省略时不覆盖现有值；`key_only` 模式要求有可用的 `api_key`。
+- `key_only` 模式不支持签到，`checkin_enabled` 会强制为 `false`。
 - `checkin_enabled` 支持 `true/false`，可用于启用/禁用签到。
 
 ## 聚合 Token API（Session，`UserAuth + NoTokenAuth`）

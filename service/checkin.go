@@ -10,6 +10,16 @@ import (
 
 // CheckinProvider performs a checkin for a specific provider
 func CheckinProvider(provider *model.Provider) error {
+	if provider == nil {
+		return fmt.Errorf("provider is nil")
+	}
+	if provider.IsKeyOnly() {
+		return fmt.Errorf("provider does not support checkin")
+	}
+	if !provider.CheckinEnabled {
+		return fmt.Errorf("checkin disabled")
+	}
+
 	client := NewUpstreamClient(provider.BaseURL, provider.AccessToken, provider.UserID)
 	result, err := client.Checkin()
 	if err != nil {

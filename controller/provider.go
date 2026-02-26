@@ -111,6 +111,8 @@ func ExportProviders(c *gin.Context) {
 		Name              string `json:"name"`
 		BaseURL           string `json:"base_url"`
 		AccessToken       string `json:"access_token"`
+		ApiKey            string `json:"api_key"`
+		ProviderType      string `json:"provider_type"`
 		UserID            int    `json:"user_id,omitempty"`
 		Status            int    `json:"status,omitempty"`
 		Priority          int    `json:"priority,omitempty"`
@@ -125,6 +127,8 @@ func ExportProviders(c *gin.Context) {
 			Name:              p.Name,
 			BaseURL:           p.BaseURL,
 			AccessToken:       p.AccessToken,
+			ApiKey:            p.ApiKey,
+			ProviderType:      model.NormalizeProviderType(p.ProviderType),
 			UserID:            p.UserID,
 			Status:            p.Status,
 			Priority:          p.Priority,
@@ -143,6 +147,8 @@ func ImportProviders(c *gin.Context) {
 		Name              string            `json:"name"`
 		BaseURL           string            `json:"base_url"`
 		AccessToken       string            `json:"access_token"`
+		ApiKey            string            `json:"api_key"`
+		ProviderType      string            `json:"provider_type"`
 		UserID            json.Number       `json:"user_id"`
 		Status            int               `json:"status"`
 		Priority          int               `json:"priority"`
@@ -159,7 +165,18 @@ func ImportProviders(c *gin.Context) {
 	imported := 0
 	skipped := 0
 	for _, item := range items {
-		if item.Name == "" || item.BaseURL == "" || item.AccessToken == "" {
+		if item.Name == "" || item.BaseURL == "" {
+			skipped++
+			continue
+		}
+		providerType := model.NormalizeProviderType(item.ProviderType)
+		if providerType == model.ProviderTypeKeyOnly {
+			if strings.TrimSpace(item.ApiKey) == "" {
+				skipped++
+				continue
+			}
+			item.CheckinEnabled = false
+		} else if strings.TrimSpace(item.AccessToken) == "" {
 			skipped++
 			continue
 		}
@@ -168,6 +185,8 @@ func ImportProviders(c *gin.Context) {
 			Name:           item.Name,
 			BaseURL:        item.BaseURL,
 			AccessToken:    item.AccessToken,
+			ApiKey:         item.ApiKey,
+			ProviderType:   providerType,
 			UserID:         int(uid),
 			Status:         item.Status,
 			Priority:       item.Priority,
@@ -200,9 +219,22 @@ func CreateProvider(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
 		return
 	}
-	if provider.Name == "" || provider.BaseURL == "" || provider.AccessToken == "" {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "名称、地址和 AccessToken 不能为空"})
+	if provider.Name == "" || provider.BaseURL == "" {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "名称和地址不能为空"})
 		return
+	}
+	provider.ProviderType = model.NormalizeProviderType(provider.ProviderType)
+	if provider.IsKeyOnly() {
+		if strings.TrimSpace(provider.ApiKey) == "" {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "API Key 不能为空"})
+			return
+		}
+		provider.CheckinEnabled = false
+	} else {
+		if strings.TrimSpace(provider.AccessToken) == "" {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "AccessToken 不能为空"})
+			return
+		}
 	}
 	if err := provider.Insert(); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
@@ -216,6 +248,27 @@ func UpdateProvider(c *gin.Context) {
 	if err := json.NewDecoder(c.Request.Body).Decode(&provider); err != nil || provider.Id == 0 {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
 		return
+	}
+	existing, err := model.GetProviderById(provider.Id)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "供应商不存在"})
+		return
+	}
+	if strings.TrimSpace(provider.ProviderType) == "" {
+		provider.ProviderType = existing.ProviderType
+	}
+	provider.ProviderType = model.NormalizeProviderType(provider.ProviderType)
+	if provider.IsKeyOnly() {
+		if strings.TrimSpace(provider.ApiKey) == "" && strings.TrimSpace(existing.ApiKey) == "" {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "API Key 不能为空"})
+			return
+		}
+		provider.CheckinEnabled = false
+	} else {
+		if strings.TrimSpace(provider.AccessToken) == "" && strings.TrimSpace(existing.AccessToken) == "" {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "AccessToken 不能为空"})
+			return
+		}
 	}
 	if err := provider.Update(); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})

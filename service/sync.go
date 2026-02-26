@@ -5,12 +5,22 @@ import (
 	"NewAPI-Gateway/model"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 )
 
 // SyncProvider synchronizes pricing, tokens, and balance from an upstream provider
 func SyncProvider(provider *model.Provider) error {
+	if provider.IsKeyOnly() {
+		if err := syncKeyOnlyProvider(provider); err != nil {
+			return err
+		}
+		provider.UpdateLastSyncedTime()
+		return nil
+	}
+
 	client := NewUpstreamClient(provider.BaseURL, provider.AccessToken, provider.UserID)
 	success := true
 
@@ -41,6 +51,129 @@ func SyncProvider(provider *model.Provider) error {
 	if success {
 		provider.UpdateLastSyncedTime()
 	}
+
+	return nil
+}
+
+type openAIModelsResponse struct {
+	Data []struct {
+		ID string `json:"id"`
+	} `json:"data"`
+}
+
+func syncKeyOnlyProvider(provider *model.Provider) error {
+	apiKey := strings.TrimSpace(provider.ApiKey)
+	if apiKey == "" {
+		return fmt.Errorf("api_key is empty")
+	}
+
+	models, err := fetchOpenAIModels(provider.BaseURL, apiKey)
+	if err != nil {
+		return err
+	}
+
+	if err := upsertKeyOnlyToken(provider, apiKey); err != nil {
+		return err
+	}
+
+	if err := syncKeyOnlyPricing(provider, models); err != nil {
+		return err
+	}
+
+	if err := RebuildProviderRoutes(provider.Id); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func fetchOpenAIModels(baseURL string, apiKey string) ([]string, error) {
+	url := strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/v1/models"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: common.CloneTransportWithProxy(),
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("fetch models failed: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var payload openAIModelsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]bool)
+	models := make([]string, 0, len(payload.Data))
+	for _, item := range payload.Data {
+		id := strings.TrimSpace(item.ID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		models = append(models, id)
+	}
+	if len(models) == 0 {
+		return nil, fmt.Errorf("no models returned")
+	}
+	return models, nil
+}
+
+func upsertKeyOnlyToken(provider *model.Provider, apiKey string) error {
+	pt := &model.ProviderToken{
+		ProviderId:      provider.Id,
+		UpstreamTokenId: 0,
+		SkKey:           apiKey,
+		Name:            provider.Name,
+		GroupName:       "default",
+		Status:          1,
+		Priority:        provider.Priority,
+		Weight:          provider.Weight,
+		UnlimitedQuota:  true,
+		LastSynced:      time.Now().Unix(),
+	}
+	if err := model.UpsertProviderToken(pt); err != nil {
+		return err
+	}
+	return model.DeleteProviderTokensNotInIds(provider.Id, []int{0})
+}
+
+func syncKeyOnlyPricing(provider *model.Provider, models []string) error {
+	if err := model.DeletePricingForProvider(provider.Id); err != nil {
+		return err
+	}
+
+	enableGroupsJSON, _ := json.Marshal([]string{"default"})
+	supportedEndpointTypesJSON, _ := json.Marshal([]string{})
+	now := time.Now().Unix()
+	for _, modelName := range models {
+		mp := &model.ModelPricing{
+			ModelName:              modelName,
+			ProviderId:             provider.Id,
+			EnableGroups:           string(enableGroupsJSON),
+			SupportedEndpointTypes: string(supportedEndpointTypesJSON),
+			LastSynced:             now,
+		}
+		if err := model.UpsertModelPricing(mp); err != nil {
+			common.SysLog(fmt.Sprintf("upsert pricing failed for model %s: %v", modelName, err))
+		}
+	}
+
+	provider.UpdatePricingGroupRatio("{}")
+	provider.UpdatePricingSupportedEndpoint("{}")
 
 	return nil
 }
