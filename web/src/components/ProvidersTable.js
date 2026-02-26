@@ -417,6 +417,7 @@ const ProvidersTable = () => {
                 <Th>名称</Th>
                 <Th>地址</Th>
                 <Th>加入时间</Th>
+                <Th>最新同步</Th>
                 <Th>状态</Th>
                 <Th>余额</Th>
                 <Th>权重</Th>
@@ -431,7 +432,8 @@ const ProvidersTable = () => {
                   <Td>{(activePage - 1) * PROVIDERS_PER_PAGE + idx + 1}</Td>
                   <Td>{p.name}</Td>
                   <Td><div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.base_url}>{p.base_url}</div></Td>
-                  <Td>{formatTime(p.created_at)}</Td>
+                  <Td><span style={{ whiteSpace: 'nowrap' }}>{formatTime(p.created_at)}</span></Td>
+                  <Td><span style={{ whiteSpace: 'nowrap' }}>{formatTime(p.last_synced_at)}</span></Td>
                   <Td>{renderStatus(p.status)}</Td>
                   <Td>{p.balance ? p.balance : '无'}</Td>
                   <Td>{p.weight}</Td>
@@ -454,7 +456,7 @@ const ProvidersTable = () => {
               ))}
               {displayedProviders.length === 0 && (
                 <Tr>
-                  <Td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <Td colSpan={11} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                     暂无供应商数据
                   </Td>
                 </Tr>

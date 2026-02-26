@@ -12,25 +12,34 @@ import (
 // SyncProvider synchronizes pricing, tokens, and balance from an upstream provider
 func SyncProvider(provider *model.Provider) error {
 	client := NewUpstreamClient(provider.BaseURL, provider.AccessToken, provider.UserID)
+	success := true
 
 	// 1. Sync pricing
 	if err := syncPricing(client, provider); err != nil {
 		common.SysLog(fmt.Sprintf("sync pricing failed for provider %s: %v", provider.Name, err))
+		success = false
 	}
 
 	// 2. Sync tokens
 	if err := syncTokens(client, provider); err != nil {
 		common.SysLog(fmt.Sprintf("sync tokens failed for provider %s: %v", provider.Name, err))
+		success = false
 	}
 
 	// 3. Sync balance
 	if err := syncBalance(client, provider); err != nil {
 		common.SysLog(fmt.Sprintf("sync balance failed for provider %s: %v", provider.Name, err))
+		success = false
 	}
 
 	// 4. Rebuild routes for this provider
 	if err := RebuildProviderRoutes(provider.Id); err != nil {
 		common.SysLog(fmt.Sprintf("rebuild routes failed for provider %s: %v", provider.Name, err))
+		success = false
+	}
+
+	if success {
+		provider.UpdateLastSyncedTime()
 	}
 
 	return nil
@@ -92,12 +101,16 @@ func syncTokens(client *UpstreamClient, provider *model.Provider) error {
 	var upstreamIds []int
 	for _, t := range allTokens {
 		upstreamIds = append(upstreamIds, t.Id)
+		groupName := strings.TrimSpace(t.Group)
+		if groupName == "" {
+			groupName = "default"
+		}
 		pt := &model.ProviderToken{
 			ProviderId:      provider.Id,
 			UpstreamTokenId: t.Id,
 			SkKey:           "sk-" + t.Key,
 			Name:            t.Name,
-			GroupName:       t.Group,
+			GroupName:       groupName,
 			Status:          t.Status,
 			Priority:        provider.Priority,
 			Weight:          provider.Weight,

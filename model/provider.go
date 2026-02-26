@@ -18,6 +18,7 @@ type Provider struct {
 	Weight                   int    `json:"weight" gorm:"default:10"`
 	CheckinEnabled           bool   `json:"checkin_enabled"`
 	LastCheckinAt            int64  `json:"last_checkin_at"`
+	LastSyncedAt             int64  `json:"last_synced_at"`
 	Balance                  string `json:"balance"`
 	BalanceUpdated           int64  `json:"balance_updated"`
 	PricingGroupRatio        string `json:"pricing_group_ratio" gorm:"type:text"`
@@ -108,6 +109,10 @@ func (p *Provider) UpdateModelAliasMapping(modelAliasMapping string) {
 
 func (p *Provider) UpdateCheckinTime() {
 	DB.Model(p).Update("last_checkin_at", time.Now().Unix())
+}
+
+func (p *Provider) UpdateLastSyncedTime() {
+	DB.Model(p).Update("last_synced_at", time.Now().Unix())
 }
 
 func (p *Provider) UpdateCheckinEnabled(enabled bool) {
