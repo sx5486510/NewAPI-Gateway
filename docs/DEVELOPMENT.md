@@ -30,7 +30,7 @@ make dev
 
 默认端口：
 
-- 后端：`http://localhost:3000`
+- 后端：`http://localhost:3030`
 - 前端：`http://localhost:3001`
 
 前端 `package.json` 已配置代理到后端。

@@ -24,10 +24,10 @@ RUN apk update \
     && apk upgrade \
     && apk add --no-cache ca-certificates tzdata \
     && update-ca-certificates 2>/dev/null || true
-ENV PORT=3000
+ENV PORT=3030
 COPY --from=builder2 /build/gateway-aggregator /
 COPY --from=builder2 /build/LICENSE /build/THIRD_PARTY_NOTICES.md /licenses/
 LABEL org.opencontainers.image.licenses="MIT"
-EXPOSE 3000
+EXPOSE 3030
 WORKDIR /data
 ENTRYPOINT ["/gateway-aggregator"]

@@ -62,7 +62,7 @@ NewAPI Gateway 是一个聚合多个 [NewAPI](https://github.com/QuantumNous/new
 docker pull xxbbzy/newapi-gateway:latest
 docker run -d --name newapi-gateway \
   --restart always \
-  -p 3000:3000 \
+  -p 3030:3030 \
   -v ./data:/data \
   xxbbzy/newapi-gateway:latest
 ```
@@ -74,7 +74,7 @@ docker run -d --name newapi-gateway \
 
 ```bash
 chmod +x ./gateway-aggregator
-./gateway-aggregator --port 3000 --log-dir ./logs
+./gateway-aggregator --port 3030 --log-dir ./logs
 ```
 
 ### 方式三：源码构建（保留）
@@ -95,12 +95,12 @@ cd ..
 # 3. 构建后端并启动
 go mod download
 go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)'" -o gateway-aggregator
-./gateway-aggregator --port 3000 --log-dir ./logs
+./gateway-aggregator --port 3030 --log-dir ./logs
 ```
 
 ### 首次登录
 
-访问 `http://localhost:3000/` — 初始账号：`root` / `123456`
+访问 `http://localhost:3030/` — 初始账号：`root` / `123456`
 
 ---
 
@@ -234,7 +234,7 @@ curl https://your-gateway.com/v1/chat/completions \
 
 | 变量                | 说明                                  | 示例                                   |
 | ------------------- | ------------------------------------- | -------------------------------------- |
-| `PORT`              | 监听端口                              | `3000`                                 |
+| `PORT`              | 监听端口                              | `3030`                                 |
 | `SQL_DRIVER`        | SQL 驱动（可选）                      | `sqlite` / `mysql` / `postgres`        |
 | `SQL_DSN`           | 数据库连接串（MySQL/PostgreSQL 必填） | `root:pwd@tcp(localhost:3306)/gateway` |
 | `REDIS_CONN_STRING` | Redis 连接（用于限流和 Session）      | `redis://default:pw@localhost:6379`    |
@@ -249,7 +249,7 @@ curl https://your-gateway.com/v1/chat/completions \
 
 | 参数        | 说明     | 默认值 |
 | ----------- | -------- | ------ |
-| `--port`    | 服务端口 | `3000` |
+| `--port`    | 服务端口 | `3030` |
 | `--log-dir` | 日志目录 | 不保存 |
 | `--version` | 打印版本 | -      |
 

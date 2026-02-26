@@ -267,7 +267,7 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 ### 1. 登录
 
 ```bash
-curl -X POST http://localhost:3000/api/user/login \
+curl -X POST http://localhost:3030/api/user/login \
   -H "Content-Type: application/json" \
   -d '{"username":"root","password":"123456"}'
 ```
@@ -275,7 +275,7 @@ curl -X POST http://localhost:3000/api/user/login \
 ### 2. 创建聚合 Token（需带登录 Cookie）
 
 ```bash
-curl -X POST http://localhost:3000/api/agg-token/ \
+curl -X POST http://localhost:3030/api/agg-token/ \
   -H "Content-Type: application/json" \
   -b 'session=<your-session-cookie>' \
   -d '{"name":"demo","expired_time":-1}'
@@ -284,14 +284,14 @@ curl -X POST http://localhost:3000/api/agg-token/ \
 ### 3. 触发供应商同步（需管理员 Session）
 
 ```bash
-curl -X POST http://localhost:3000/api/provider/1/sync \
+curl -X POST http://localhost:3030/api/provider/1/sync \
   -b 'session=<your-session-cookie>'
 ```
 
 ### 4. Relay 调用
 
 ```bash
-curl http://localhost:3000/v1/chat/completions \
+curl http://localhost:3030/v1/chat/completions \
   -H "Authorization: Bearer ag-your-token" \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}'

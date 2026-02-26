@@ -15,7 +15,7 @@ npm --prefix web install
 npm --prefix web start
 ```
 
-默认开发端口是 `3001`，并通过 `package.json` 代理到后端 `3000`。
+默认开发端口是 `3001`，并通过 `package.json` 代理到后端 `3030`。
 
 ## 构建
 

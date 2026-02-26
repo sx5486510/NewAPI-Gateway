@@ -38,7 +38,7 @@ NewAPI Gateway is a transparent gateway that aggregates multiple [NewAPI](https:
 docker pull xxbbzy/newapi-gateway:latest
 docker run -d --name newapi-gateway \
   --restart always \
-  -p 3000:3000 \
+  -p 3030:3030 \
   -v ./data:/data \
   xxbbzy/newapi-gateway:latest
 ```
@@ -50,7 +50,7 @@ docker run -d --name newapi-gateway \
 
 ```bash
 chmod +x ./gateway-aggregator
-./gateway-aggregator --port 3000 --log-dir ./logs
+./gateway-aggregator --port 3030 --log-dir ./logs
 ```
 
 ### Option 3: Build from source (kept)
@@ -68,12 +68,12 @@ cd web && npm install && npm run build && cd ..
 # 3. Build backend and run
 go mod download
 go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)'" -o gateway-aggregator
-./gateway-aggregator --port 3000 --log-dir ./logs
+./gateway-aggregator --port 3030 --log-dir ./logs
 ```
 
 ### First Login
 
-Visit `http://localhost:3000/` — Default credentials: `root` / `123456`
+Visit `http://localhost:3030/` — Default credentials: `root` / `123456`
 
 ---
 
@@ -157,7 +157,7 @@ For complete endpoint and auth details, see [`docs/API_REFERENCE.md`](./docs/API
 
 | Variable            | Description                                  | Example                                |
 | ------------------- | -------------------------------------------- | -------------------------------------- |
-| `PORT`              | Listening port                               | `3000`                                 |
+| `PORT`              | Listening port                               | `3030`                                 |
 | `SQL_DRIVER`        | SQL driver (optional)                        | `sqlite` / `mysql` / `postgres`        |
 | `SQL_DSN`           | Database DSN (required for MySQL/PostgreSQL) | `root:pwd@tcp(localhost:3306)/gateway` |
 | `REDIS_CONN_STRING` | Redis (for rate-limit & session)             | `redis://default:pw@localhost:6379`    |
@@ -172,7 +172,7 @@ If `SQL_DRIVER` is not set, backward-compatible behavior is used:
 
 | Arg         | Description   | Default |
 | ----------- | ------------- | ------- |
-| `--port`    | Server port   | `3000`  |
+| `--port`    | Server port   | `3030`  |
 | `--log-dir` | Log directory | none    |
 | `--version` | Print version | -       |
 

@@ -34,12 +34,12 @@ go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)'" -o .
 ### 3. 启动服务
 
 ```bash
-./bin/gateway-aggregator --port 3000 --log-dir ./logs
+./bin/gateway-aggregator --port 3030 --log-dir ./logs
 ```
 
 ### 4. 首次登录
 
-- 地址：`http://localhost:3000/`
+- 地址：`http://localhost:3030/`
 - 默认账号：`root`
 - 默认密码：`123456`
 
@@ -47,7 +47,7 @@ go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)'" -o .
 
 ```bash
 make deps
-make dev      # 同时启动后端(:3000)和前端(:3001)
+make dev      # 同时启动后端(:3030)和前端(:3001)
 ```
 
 可选命令：
@@ -65,7 +65,7 @@ make build    # 构建前后端
 docker build -t gateway-aggregator .
 docker run -d --name gateway-aggregator \
   --restart always \
-  -p 3000:3000 \
+  -p 3030:3030 \
   -v /data/gateway-aggregator:/data \
   gateway-aggregator
 ```
@@ -80,7 +80,7 @@ docker run -d --name gateway-aggregator \
 示例：
 
 ```bash
-curl http://localhost:3000/v1/chat/completions \
+curl http://localhost:3030/v1/chat/completions \
   -H "Authorization: Bearer ag-your-token" \
   -H "Content-Type: application/json" \
   -d '{

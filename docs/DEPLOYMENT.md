@@ -28,10 +28,10 @@ go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)'" -o g
 ### 2. 启动
 
 ```bash
-PORT=3000 \
+PORT=3030 \
 GIN_MODE=release \
 SESSION_SECRET='replace-with-strong-secret' \
-./gateway-aggregator --port 3000 --log-dir ./logs
+./gateway-aggregator --port 3030 --log-dir ./logs
 ```
 
 ## 方式二：Docker 部署
@@ -42,7 +42,7 @@ SESSION_SECRET='replace-with-strong-secret' \
 docker build -t gateway-aggregator .
 docker run -d --name gateway-aggregator \
   --restart always \
-  -p 3000:3000 \
+  -p 3030:3030 \
   -e GIN_MODE=release \
   -e SESSION_SECRET='replace-with-strong-secret' \
   -v /data/gateway-aggregator:/data \
@@ -59,9 +59,9 @@ services:
     container_name: gateway-aggregator
     restart: always
     ports:
-      - "3000:3000"
+      - "3030:3030"
     environment:
-      PORT: "3000"
+      PORT: "3030"
       GIN_MODE: "release"
       SESSION_SECRET: "replace-with-strong-secret"
       SQLITE_PATH: "/data/gateway-aggregator.db"
@@ -89,7 +89,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/gateway
-ExecStart=/opt/gateway/gateway-aggregator --port 3000 --log-dir /opt/gateway/logs
+ExecStart=/opt/gateway/gateway-aggregator --port 3030 --log-dir /opt/gateway/logs
 Environment=GIN_MODE=release
 Environment=SESSION_SECRET=replace-with-strong-secret
 Environment=SQLITE_PATH=/opt/gateway/data/gateway-aggregator.db
@@ -116,7 +116,7 @@ server {
     server_name gateway.example.com;
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:3030;
         proxy_http_version 1.1;
 
         proxy_set_header Host $host;

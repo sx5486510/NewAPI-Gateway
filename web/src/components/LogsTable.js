@@ -219,7 +219,7 @@ const LogsTable = ({ selfOnly }) => {
     localStorage.setItem(storageKey, JSON.stringify(detail));
 
     const configuredServerAddress = String(localStorage.getItem('server_address') || '').trim();
-    const fallbackBase = 'http://localhost:3000';
+    const fallbackBase = 'http://localhost:3030';
     const base = (configuredServerAddress || fallbackBase).replace(/\/+$/, '');
     const url = `${base}/log/raw?key=${encodeURIComponent(storageKey)}`;
     const win = window.open(url, '_blank');
