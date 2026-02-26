@@ -174,6 +174,18 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | PUT | `/api/provider/token/:token_id` | 更新本地 token 字段 |
 | DELETE | `/api/provider/token/:token_id` | 删除 token（先删上游再删本地） |
 
+### 供应商列表
+
+`GET /api/provider/`
+
+参数：
+
+- `p`：页码（从 0 起）
+
+说明：
+
+- 每页固定 50 条（前后端保持一致，如需调整修改 `common.ProviderItemsPerPage` 与前端常量）。
+
 ### 更新供应商
 
 `PUT /api/provider/`

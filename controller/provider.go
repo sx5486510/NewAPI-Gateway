@@ -21,7 +21,7 @@ func GetProviders(c *gin.Context) {
 	if p < 0 {
 		p = 0
 	}
-	providers, err := model.GetAllProviders(p*common.ItemsPerPage, common.ItemsPerPage)
+	providers, err := model.GetAllProviders(p*common.ProviderItemsPerPage, common.ProviderItemsPerPage)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return

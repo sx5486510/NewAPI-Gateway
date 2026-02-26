@@ -107,10 +107,16 @@ const ProviderDetail = () => {
     };
 
     const checkinProvider = async () => {
-        const res = await API.post(`/api/provider/${id}/checkin`);
-        const { success, message } = res.data;
-        if (success) { showSuccess('签到成功'); loadProvider(); }
-        else showError(message);
+        try {
+            const res = await API.post(`/api/provider/${id}/checkin`);
+            const { success, message } = res.data;
+            if (success) { showSuccess('签到成功'); }
+            else showError(message);
+        } catch (e) {
+            showError('签到失败');
+        } finally {
+            loadProvider();
+        }
     };
 
     const openAddToken = () => {

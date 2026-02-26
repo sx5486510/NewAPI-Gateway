@@ -11,7 +11,7 @@ import {
   Upload
 } from 'lucide-react';
 import { API, showError, showSuccess, timestamp2string } from '../helpers';
-import { ITEMS_PER_PAGE } from '../constants';
+import { PROVIDERS_PER_PAGE } from '../constants';
 import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
 import Button from './ui/Button';
 import Card from './ui/Card';
@@ -56,7 +56,7 @@ const ProvidersTable = () => {
       }
       if (success) {
         const nextProviders = data || [];
-        setHasMore(nextProviders.length === ITEMS_PER_PAGE);
+        setHasMore(nextProviders.length === PROVIDERS_PER_PAGE);
         if (startIdx === 0) {
           loadedPagesRef.current = new Set([0]);
           setProviders(nextProviders);
@@ -124,14 +124,19 @@ const ProvidersTable = () => {
   };
 
   const checkinProvider = async (id) => {
-    const res = await API.post(`/api/provider/${id}/checkin`);
-    const { success, message } = res.data;
-    if (success) {
-      showSuccess('签到成功');
-      updateLocalCheckin(id, Math.floor(Date.now() / 1000));
+    try {
+      const res = await API.post(`/api/provider/${id}/checkin`);
+      const { success, message } = res.data;
+      if (success) {
+        showSuccess('签到成功');
+        updateLocalCheckin(id, Math.floor(Date.now() / 1000));
+      } else {
+        showError(message);
+      }
+    } catch (e) {
+      showError('签到失败');
+    } finally {
       reloadProviders();
-    } else {
-      showError(message);
     }
   };
 
@@ -375,7 +380,7 @@ const ProvidersTable = () => {
 
   const onPaginationChange = async (e, { activePage: nextActivePage }) => {
     if (nextActivePage < 1) return;
-    const loadedPages = Math.max(1, Math.ceil(providers.length / ITEMS_PER_PAGE));
+    const loadedPages = Math.max(1, Math.ceil(providers.length / PROVIDERS_PER_PAGE));
     if (nextActivePage > loadedPages) {
       if (!hasMore) return;
       const loadedCount = await loadProviders(nextActivePage - 1);
@@ -385,10 +390,10 @@ const ProvidersTable = () => {
   };
 
   const displayedProviders = providers.slice(
-    (activePage - 1) * ITEMS_PER_PAGE,
-    activePage * ITEMS_PER_PAGE
+    (activePage - 1) * PROVIDERS_PER_PAGE,
+    activePage * PROVIDERS_PER_PAGE
   );
-  const totalPages = Math.max(1, Math.ceil(providers.length / ITEMS_PER_PAGE) + (hasMore ? 1 : 0));
+  const totalPages = Math.max(1, Math.ceil(providers.length / PROVIDERS_PER_PAGE) + (hasMore ? 1 : 0));
 
   return (
     <>
@@ -423,7 +428,7 @@ const ProvidersTable = () => {
             <Tbody>
               {displayedProviders.map((p, idx) => (
                 <Tr key={p.id}>
-                  <Td>{(activePage - 1) * ITEMS_PER_PAGE + idx + 1}</Td>
+                  <Td>{(activePage - 1) * PROVIDERS_PER_PAGE + idx + 1}</Td>
                   <Td>{p.name}</Td>
                   <Td><div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.base_url}>{p.base_url}</div></Td>
                   <Td>{formatTime(p.created_at)}</Td>

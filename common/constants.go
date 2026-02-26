@@ -23,6 +23,7 @@ var OptionMap map[string]string
 var OptionMapRWMutex sync.RWMutex
 
 var ItemsPerPage = 10
+var ProviderItemsPerPage = 50
 
 var PasswordLoginEnabled = true
 var PasswordRegisterEnabled = true
