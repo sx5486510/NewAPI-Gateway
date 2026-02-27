@@ -99,46 +99,27 @@ sudo bash deploy/deploy-on-centos.sh
 │   ├── web/               # 前端源码
 │   └── ...
 ├── logs/                   # 日志目录
-├── data/                   # 数据库文件（SQLite）
-│   └── newapi.db
-└── .env                    # 环境配置文件
+└── data/                   # 数据库文件（SQLite）
+    └── newapi.db
 ```
 
 ---
 
 ## ⚙️ 配置文件
 
-### .env 文件
+### systemd 服务文件
 
-位置：`/opt/newapi-gateway/.env`
+位置：`/etc/systemd/system/newapi-gateway.service`
+
+所有配置通过 `Environment=` 指令在服务文件中定义：
 
 ```bash
-# 服务配置
-PORT=3030
-LOG_DIR=/opt/newapi-gateway/logs
-GIN_MODE=release
-
-# 安全配置
-SESSION_SECRET=your-random-secret-key
-
-# HTTPS 配置（默认启用）
-HTTPS_ENABLED=true
-
-# 数据库配置（默认使用 SQLite）
-SQL_DSN=sqlite:///opt/newapi-gateway/data/newapi.db
-
-# MySQL 示例：
-# SQL_DSN=username:password@tcp(localhost:3306)/newapi?charset=utf8mb4&parseTime=True&loc=Local
-
-# PostgreSQL 示例：
-# SQL_DSN=host=localhost user=username password=password dbname=newapi port=5432 sslmode=disable TimeZone=Asia/Shanghai
-
-# Redis 配置（可选，用于会话管理）
-# REDIS_CONN_STRING=redis://localhost:6379
-# REDIS_PASSWORD=
-
-# 其他配置
-# REDIS_ENABLED=false
+[Service]
+Environment="GIN_MODE=release"
+Environment="PORT=3030"
+Environment="LOG_DIR=/opt/newapi-gateway/logs"
+Environment="SESSION_SECRET=your-random-secret-key"
+Environment="HTTPS_ENABLED=true"
 ```
 
 ### HTTPS 自签名证书
@@ -330,20 +311,33 @@ sudo systemctl enable nginx
 
 ### 切换 HTTP/HTTPS
 
-在 `.env` 文件中修改：
+修改 systemd 服务文件：
 
 ```bash
+sudo vi /etc/systemd/system/newapi-gateway.service
+
 # 启用 HTTPS（默认）
-HTTPS_ENABLED=true
+Environment="HTTPS_ENABLED=true"
 
 # 禁用 HTTPS，使用 HTTP
-HTTPS_ENABLED=false
+# Environment="HTTPS_ENABLED=true"  # 注释掉或删除此行
 ```
 
-修改后重启服务：
+修改后重新加载并重启服务：
 
 ```bash
+sudo systemctl daemon-reload
 sudo systemctl restart newapi-gateway
+```
+
+或重新运行部署脚本：
+
+```bash
+# HTTPS 模式
+sudo bash /opt/newapi-gateway/source/deploy/deploy-on-centos.sh
+
+# HTTP 模式
+sudo bash /opt/newapi-gateway/source/deploy/deploy-on-centos.sh --http
 ```
 
 ---
@@ -456,8 +450,8 @@ sudo systemctl restart newapi-gateway
 # 备份数据库
 sudo cp /opt/newapi-gateway/data/newapi.db /opt/newapi-gateway/data/newapi.db.backup.$(date +%Y%m%d)
 
-# 备份配置文件
-sudo cp /opt/newapi-gateway/.env /opt/newapi-gateway/.env.backup.$(date +%Y%m%d)
+# 备份 systemd 服务文件
+sudo cp /etc/systemd/system/newapi-gateway.service /etc/systemd/system/newapi-gateway.service.backup.$(date +%Y%m%d)
 
 # 创建完整备份
 tar -czf newapi-gateway-backup-$(date +%Y%m%d).tar.gz /opt/newapi-gateway
@@ -472,8 +466,9 @@ sudo systemctl stop newapi-gateway
 # 恢复数据库
 sudo cp /path/to/newapi.db.backup /opt/newapi-gateway/data/newapi.db
 
-# 恢复配置
-sudo cp /path/to/.env.backup /opt/newapi-gateway/.env
+# 恢复服务配置
+sudo cp /path/to/newapi-gateway.service.backup /etc/systemd/system/newapi-gateway.service
+sudo systemctl daemon-reload
 
 # 启动服务
 sudo systemctl start newapi-gateway

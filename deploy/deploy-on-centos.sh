@@ -81,7 +81,7 @@ echo -e "${BLUE}Using branch: ${BRANCH}${NC}"
 echo ""
 
 # Install dependencies
-echo -e "${YELLOW}[1/10] Check and install dependencies...${NC}"
+echo -e "${YELLOW}[1/9] Check and install dependencies...${NC}"
 
 # Git
 if ! command -v git &> /dev/null; then
@@ -132,7 +132,7 @@ fi
 echo ""
 
 # Create directories
-echo -e "${YELLOW}[2/10] Create directories...${NC}"
+echo -e "${YELLOW}[2/9] Create directories...${NC}"
 mkdir -p "${INSTALL_DIR}/bin"
 mkdir -p "${SOURCE_DIR}"
 mkdir -p "${LOG_DIR}"
@@ -141,7 +141,7 @@ echo -e "${GREEN}Directories created.${NC}"
 echo ""
 
 # Clone or update source
-echo -e "${YELLOW}[3/10] Fetch source code...${NC}"
+echo -e "${YELLOW}[3/9] Fetch source code...${NC}"
 if [ -d "${SOURCE_DIR}/.git" ]; then
     echo "Updating existing repository..."
     cd "${SOURCE_DIR}"
@@ -164,7 +164,7 @@ fi
 echo ""
 
 # Build frontend
-echo -e "${YELLOW}[4/10] Build frontend...${NC}"
+echo -e "${YELLOW}[4/9] Build frontend...${NC}"
 cd "${SOURCE_DIR}/web"
 echo "Installing npm dependencies..."
 npm install --silent
@@ -183,7 +183,7 @@ echo -e "${GREEN}Frontend build completed.${NC}"
 echo ""
 
 # Build Go program
-echo -e "${YELLOW}[5/10] Build backend...${NC}"
+echo -e "${YELLOW}[5/9] Build backend...${NC}"
 echo "Downloading Go modules..."
 go mod download
 if [ $? -ne 0 ]; then
@@ -202,14 +202,14 @@ echo -e "${GREEN}Build completed.${NC}"
 echo ""
 
 # Permissions
-echo -e "${YELLOW}[6/10] Set permissions...${NC}"
+echo -e "${YELLOW}[6/9] Set permissions...${NC}"
 chmod +x "${INSTALL_DIR}/bin/${BINARY_NAME}"
 chown -R root:root "${INSTALL_DIR}"
 echo -e "${GREEN}Permissions set.${NC}"
 echo ""
 
 # Generate session secret
-echo -e "${YELLOW}[7/10] Generate SESSION_SECRET...${NC}"
+echo -e "${YELLOW}[7/9] Generate SESSION_SECRET...${NC}"
 SESSION_SECRET=$(openssl rand -hex 32)
 echo -e "${GREEN}SESSION_SECRET generated.${NC}"
 echo ""
@@ -221,7 +221,14 @@ if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
 fi
 
 # Create systemd service
-echo -e "${YELLOW}[8/10] Create systemd service...${NC}"
+echo -e "${YELLOW}[8/9] Create systemd service...${NC}"
+
+# Build HTTPS environment variable
+HTTPS_ENV=""
+if [ "$ENABLE_HTTPS" = true ]; then
+    HTTPS_ENV='Environment="HTTPS_ENABLED=true"'
+fi
+
 cat > "${SERVICE_FILE}" <<EOF
 [Unit]
 Description=NewAPI Gateway Service
@@ -245,6 +252,7 @@ Environment="GIN_MODE=release"
 Environment="PORT=${PORT}"
 Environment="LOG_DIR=${LOG_DIR}"
 Environment="SESSION_SECRET=${SESSION_SECRET}"
+${HTTPS_ENV}
 # Environment="SQL_DSN=sqlite://${DATA_DIR}/newapi.db"
 
 NoNewPrivileges=true
@@ -265,57 +273,8 @@ EOF
 echo -e "${GREEN}Service file created: ${SERVICE_FILE}${NC}"
 echo ""
 
-# Create .env
-echo -e "${YELLOW}[9/10] Create .env file...${NC}"
-
-# Build HTTPS configuration
-HTTPS_CONFIG=""
-if [ "$ENABLE_HTTPS" = true ]; then
-    HTTPS_CONFIG="
-# HTTPS configuration
-HTTPS_ENABLED=true
-# HTTPS_CERT_FILE and HTTPS_KEY_FILE will be auto-generated if not specified
-# HTTPS_CERT_FILE=/path/to/cert.pem
-# HTTPS_KEY_FILE=/path/to/key.pem"
-fi
-
-cat > "${INSTALL_DIR}/.env" <<EOF
-# NewAPI-Gateway .env
-# Generated: $(date)
-# Repo: ${REPO_URL}
-# Branch: ${BRANCH}
-
-# Server
-PORT=${PORT}
-LOG_DIR=${LOG_DIR}
-GIN_MODE=release
-
-# Security
-SESSION_SECRET=${SESSION_SECRET}${HTTPS_CONFIG}
-
-# Database (SQLite by default)
-SQL_DSN=sqlite://${DATA_DIR}/newapi.db
-
-# MySQL example:
-# SQL_DSN=username:password@tcp(localhost:3306)/newapi?charset=utf8mb4&parseTime=True&loc=Local
-
-# PostgreSQL example:
-# SQL_DSN=host=localhost user=username password=password dbname=newapi port=5432 sslmode=disable TimeZone=Asia/Shanghai
-
-# Redis (optional)
-# REDIS_CONN_STRING=redis://localhost:6379
-# REDIS_PASSWORD=
-
-# Other
-# REDIS_ENABLED=false
-EOF
-
-chmod 600 "${INSTALL_DIR}/.env"
-echo -e "${GREEN}.env file created: ${INSTALL_DIR}/.env${NC}"
-echo ""
-
 # Start service
-echo -e "${YELLOW}[10/10] Starting service...${NC}"
+echo -e "${YELLOW}[9/9] Starting service...${NC}"
 systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
 systemctl start "${SERVICE_NAME}"
@@ -404,8 +363,7 @@ if systemctl is-active --quiet "${SERVICE_NAME}"; then
         echo "  3. Browser will show security warning - click 'Advanced' -> 'Proceed to continue'"
     fi
     echo "  3. Keep system and app updated"
-    echo "  4. Protect secrets in .env"
-    echo "  5. Change default password"
+    echo "  4. Change default password"
     echo ""
 else
     echo -e "${RED}Service failed to start.${NC}"
