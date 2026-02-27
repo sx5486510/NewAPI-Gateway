@@ -2,7 +2,13 @@
 #
 # NewAPI-Gateway CentOS one-click deploy script
 # Clones from GitHub and deploys on CentOS server.
-# Usage: sudo bash deploy-on-centos.sh [branch]
+# Usage: sudo bash deploy-on-centos.sh [branch] [--https domain]
+#
+# Examples:
+#   sudo bash deploy-on-centos.sh                    # Deploy with HTTP only
+#   sudo bash deploy-on-centos.sh develop             # Deploy with 'develop' branch
+#   sudo bash deploy-on-centos.sh --https example.com  # Deploy with HTTPS
+#   sudo bash deploy-on-centos.sh develop --https example.com  # Deploy with specific branch and HTTPS
 #
 
 set -e
@@ -25,6 +31,28 @@ LOG_DIR="${INSTALL_DIR}/logs"
 DATA_DIR="${INSTALL_DIR}/data"
 REPO_URL="https://github.com/sx5486510/NewAPI-Gateway.git"
 BRANCH="main"
+ENABLE_HTTPS=false
+DOMAIN=""
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --https)
+            ENABLE_HTTPS=true
+            if [ -n "$2" ] && [[ $2 != -* ]]; then
+                DOMAIN="$2"
+                shift
+            fi
+            shift
+            ;;
+        *)
+            if [[ $1 != -* ]]; then
+                BRANCH="$1"
+            fi
+            shift
+            ;;
+    esac
+done
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  NewAPI-Gateway One-Click Deploy${NC}"
@@ -32,18 +60,31 @@ echo -e "${GREEN}  For CentOS 7/8/Stream${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
+# Show deployment mode
+if [ "$ENABLE_HTTPS" = true ]; then
+    if [ -z "$DOMAIN" ]; then
+        echo -e "${YELLOW}Warning: HTTPS enabled but no domain specified.${NC}"
+        echo -e "${YELLOW}Usage: sudo bash deploy-on-centos.sh --https your-domain.com${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}Deployment mode: HTTPS${NC}"
+    echo -e "${GREEN}Domain: ${DOMAIN}${NC}"
+else
+    echo -e "${BLUE}Deployment mode: HTTP${NC}"
+    echo -e "${YELLOW}Tip: Use --https your-domain.com to enable HTTPS${NC}"
+fi
+echo ""
+
 # Require root
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}Error: please run as root.${NC}"
-    echo "Usage: sudo bash deploy-on-centos.sh [branch]"
+    echo "Usage: sudo bash deploy-on-centos.sh [branch] [--https domain]"
     exit 1
 fi
 
-# Optional branch argument
-if [ -n "$1" ]; then
-    BRANCH="$1"
-    echo -e "${BLUE}Using branch: ${BRANCH}${NC}"
-fi
+# Show branch
+echo -e "${BLUE}Using branch: ${BRANCH}${NC}"
+echo ""
 
 # Install dependencies
 echo -e "${YELLOW}[1/10] Check and install dependencies...${NC}"
@@ -92,6 +133,18 @@ if ! command -v openssl &> /dev/null; then
     echo -e "${GREEN}OpenSSL installed.${NC}"
 else
     echo -e "${GREEN}OpenSSL installed.${NC}"
+fi
+
+# Certbot for HTTPS (if enabled)
+if [ "$ENABLE_HTTPS" = true ]; then
+    if ! command -v certbot &> /dev/null; then
+        echo -e "${YELLOW}Certbot not found, installing...${NC}"
+        yum install -y epel-release
+        yum install -y certbot
+        echo -e "${GREEN}Certbot installed.${NC}"
+    else
+        echo -e "${GREEN}Certbot installed: $(certbot --version | head -n1)${NC}"
+    fi
 fi
 
 echo ""
@@ -275,6 +328,57 @@ systemctl start "${SERVICE_NAME}"
 echo -e "${GREEN}Service started.${NC}"
 echo ""
 
+# Configure HTTPS if enabled
+if [ "$ENABLE_HTTPS" = true ]; then
+    echo -e "${YELLOW}========================================${NC}"
+    echo -e "${YELLOW}Configuring HTTPS...${NC}"
+    echo -e "${YELLOW}========================================${NC}"
+    echo ""
+    
+    # Open firewall ports
+    echo -e "${YELLOW}[11/12] Configure firewall...${NC}"
+    if command -v firewall-cmd &> /dev/null; then
+        echo "Opening ports 80 and 443..."
+        firewall-cmd --permanent --add-port=80/tcp 2>/dev/null || true
+        firewall-cmd --permanent --add-port=443/tcp 2>/dev/null || true
+        firewall-cmd --reload 2>/dev/null || true
+        echo -e "${GREEN}Firewall configured.${NC}"
+    else
+        echo -e "${YELLOW}firewalld not found, skipping firewall configuration.${NC}"
+    fi
+    echo ""
+    
+    # Wait for DNS to propagate (optional)
+    echo -e "${YELLOW}[12/12] Obtaining SSL certificate...${NC}"
+    echo "This may take a few minutes..."
+    echo ""
+    
+    # Obtain certificate
+    certbot certonly --standalone -d "${DOMAIN}" --non-interactive --agree-tos --register-unsafely-without-email 2>/dev/null || {
+        echo -e "${RED}Failed to obtain SSL certificate.${NC}"
+        echo -e "${YELLOW}Please ensure:${NC}"
+        echo "  1. Domain ${DOMAIN} resolves to this server's IP"
+        echo "  2. Ports 80 and 443 are accessible from the internet"
+        echo "  3. No other service is using port 80"
+        echo ""
+        echo "You can obtain the certificate later manually:"
+        echo "  certbot certonly --standalone -d ${DOMAIN}"
+        echo ""
+        ENABLE_HTTPS=false
+    }
+    
+    if [ "$ENABLE_HTTPS" = true ]; then
+        echo -e "${GREEN}SSL certificate obtained successfully!${NC}"
+        echo ""
+        
+        # Setup auto-renewal
+        echo "Setting up auto-renewal..."
+        systemctl enable --now certbot-renew.timer 2>/dev/null || true
+        echo -e "${GREEN}Auto-renewal configured.${NC}"
+        echo ""
+    fi
+fi
+
 # Verify status
 sleep 3
 if systemctl is-active --quiet "${SERVICE_NAME}"; then
@@ -312,8 +416,13 @@ if systemctl is-active --quiet "${SERVICE_NAME}"; then
     echo "  sudo bash ${SOURCE_DIR}/deploy/deploy-on-centos.sh"
     echo ""
     echo "Access:"
-    echo "  Local:  http://${LOCAL_IP}:${PORT}"
-    echo "  Public: http://${PUBLIC_IP}:${PORT}"
+    if [ "$ENABLE_HTTPS" = true ]; then
+        echo "  HTTPS: https://${DOMAIN}"
+        echo "  HTTP:  http://${DOMAIN} (will redirect to HTTPS)"
+    else
+        echo "  Local:  http://${LOCAL_IP}:${PORT}"
+        echo "  Public: http://${PUBLIC_IP}:${PORT}"
+    fi
     echo ""
     echo "Default credentials:"
     echo "  user: root"
@@ -322,7 +431,11 @@ if systemctl is-active --quiet "${SERVICE_NAME}"; then
     echo ""
     echo "Security tips:"
     echo "  1. Open only required ports in firewall"
-    echo "  2. Consider enabling HTTPS (Let's Encrypt)"
+    if [ "$ENABLE_HTTPS" = false ]; then
+        echo "  2. Consider enabling HTTPS: sudo bash ${SOURCE_DIR}/deploy/deploy-on-centos.sh --https your-domain.com"
+    else
+        echo "  2. HTTPS is enabled with Let's Encrypt"
+    fi
     echo "  3. Keep system and app updated"
     echo "  4. Protect secrets in .env"
     echo "  5. Change default password"
