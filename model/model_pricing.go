@@ -1,6 +1,11 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
 
 type ModelPricing struct {
 	Id                     int     `json:"id"`
@@ -15,16 +20,27 @@ type ModelPricing struct {
 	LastSynced             int64   `json:"last_synced"`
 }
 
-// UpsertModelPricing creates or updates a pricing record
-func UpsertModelPricing(p *ModelPricing) error {
+func upsertModelPricingWithDB(db *gorm.DB, p *ModelPricing) error {
 	var existing ModelPricing
-	result := DB.Where("model_name = ? AND provider_id = ?", p.ModelName, p.ProviderId).First(&existing)
+	result := db.Where("model_name = ? AND provider_id = ?", p.ModelName, p.ProviderId).First(&existing)
 	if result.RowsAffected > 0 {
 		p.Id = existing.Id
-		return DB.Model(&existing).Updates(p).Error
+		return db.Model(&existing).Updates(p).Error
 	}
 	p.LastSynced = time.Now().Unix()
-	return DB.Create(p).Error
+	return db.Create(p).Error
+}
+
+// UpsertModelPricing creates or updates a pricing record
+func UpsertModelPricing(p *ModelPricing) error {
+	return upsertModelPricingWithDB(DB, p)
+}
+
+// UpsertModelPricingSilent creates or updates a pricing record without logging query warnings.
+// Intended for sync flows that delete records first.
+func UpsertModelPricingSilent(p *ModelPricing) error {
+	silentDB := DB.Session(&gorm.Session{Logger: logger.Discard})
+	return upsertModelPricingWithDB(silentDB, p)
 }
 
 func GetModelPricingByProvider(providerId int) ([]*ModelPricing, error) {

@@ -167,7 +167,7 @@ func syncKeyOnlyPricing(provider *model.Provider, models []string) error {
 			SupportedEndpointTypes: string(supportedEndpointTypesJSON),
 			LastSynced:             now,
 		}
-		if err := model.UpsertModelPricing(mp); err != nil {
+		if err := model.UpsertModelPricingSilent(mp); err != nil {
 			common.SysLog(fmt.Sprintf("upsert pricing failed for model %s: %v", modelName, err))
 		}
 	}
@@ -344,7 +344,11 @@ func RebuildProviderRoutes(providerId int) error {
 		return err
 	}
 
-	common.SysLog(fmt.Sprintf("rebuilt %d routes for provider %d", len(routes), providerId))
+	providerLabel := fmt.Sprintf("%d", providerId)
+	if p, err := model.GetProviderById(providerId); err == nil && p != nil && p.Name != "" {
+		providerLabel = p.Name
+	}
+	common.SysLog(fmt.Sprintf("rebuilt %d routes for provider %s", len(routes), providerLabel))
 	return nil
 }
 
