@@ -4,11 +4,13 @@ import (
 	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/model"
 	"encoding/json"
-	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func GetOptions(c *gin.Context) {
@@ -174,4 +176,88 @@ func UpdateOption(c *gin.Context) {
 		"message": "",
 	})
 	return
+}
+
+func TestProxy(c *gin.Context) {
+	var option model.Option
+	err := json.NewDecoder(c.Request.Body).Decode(&option)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "无效的参数",
+		})
+		return
+	}
+
+	proxy := strings.TrimSpace(option.Value)
+	if proxy == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "代理地址不能为空",
+		})
+		return
+	}
+
+	// Validate proxy URL format
+	proxyURL, err := url.Parse(proxy)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "代理地址格式错误: " + err.Error(),
+		})
+		return
+	}
+
+	if proxyURL.Scheme != "http" && proxyURL.Scheme != "https" && proxyURL.Scheme != "socks5" {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "代理协议必须是 http、https 或 sockss5",
+		})
+		return
+	}
+
+	// Test proxy by making a request to Google
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			Proxy: func(*http.Request) (*url.URL, error) {
+				return proxyURL, nil
+			},
+		},
+	}
+
+	req, err := http.NewRequest("GET", "https://www.google.com", nil)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "创建测试请求失败: " + err.Error(),
+		})
+		return
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "代理连接失败: " + err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "代理连接成功！",
+			"data": gin.H{
+				"status_code": resp.StatusCode,
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": false,
+		"message": "代理返回错误状态码: " + strconv.Itoa(resp.StatusCode),
+	})
 }

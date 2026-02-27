@@ -37,6 +37,7 @@ const SystemSetting = () => {
   });
   const [originInputs, setOriginInputs] = useState({});
   let [loading, setLoading] = useState(false);
+  let [testingProxy, setTestingProxy] = useState(false);
 
   const getOptions = async () => {
     const res = await API.get('/api/option/');
@@ -137,6 +138,32 @@ const SystemSetting = () => {
     const nextProxy = String(inputs.Proxy || '').trim();
     if (originInputs['Proxy'] !== nextProxy) {
       await updateOption('Proxy', nextProxy);
+    }
+  };
+
+  const testProxy = async () => {
+    const proxy = String(inputs.Proxy || '').trim();
+    if (!proxy) {
+      showError('请先输入代理地址');
+      return;
+    }
+    
+    setTestingProxy(true);
+    try {
+      const res = await API.post('/api/option/test-proxy', {
+        key: 'Proxy',
+        value: proxy
+      });
+      const { success, message, data } = res.data;
+      if (success) {
+        showSuccess(message || '代理连接成功！');
+      } else {
+        showError(message || '代理连接失败');
+      }
+    } catch (error) {
+      showError('测试代理失败：' + error.message);
+    } finally {
+      setTestingProxy(false);
     }
   };
 
@@ -326,7 +353,12 @@ const SystemSetting = () => {
               onChange={handleInputChange}
             />
           </div>
-          <Button onClick={submitProxy} variant="secondary" disabled={loading}>保存代理设置</Button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <Button onClick={submitProxy} variant="secondary" disabled={loading}>保存代理设置</Button>
+            <Button onClick={testProxy} variant="secondary" disabled={testingProxy || loading}>
+              {testingProxy ? '测试中...' : '测试代理'}
+            </Button>
+          </div>
         </div>
 
         <div style={{ borderTop: '1px solid var(--border-color)', margin: '1.5rem 0' }}></div>

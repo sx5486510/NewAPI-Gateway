@@ -55,6 +55,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			optionRoute.GET("/", controller.GetOptions)
 			optionRoute.PUT("/", controller.UpdateOption)
+			optionRoute.POST("/test-proxy", controller.TestProxy)
 		}
 
 		// === Provider Management (Admin) ===
