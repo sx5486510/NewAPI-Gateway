@@ -153,9 +153,16 @@ func updateOptionMap(key string, value string) {
 		common.TurnstileSiteKey = value
 	case "TurnstileSecretKey":
 		common.TurnstileSecretKey = value
+	case "Proxy":
+		common.Proxy = value
+	// Legacy support for old HTTPProxy/HTTPSProxy settings
 	case "HTTPProxy":
-		common.HTTPProxy = value
+		if common.Proxy == "" {
+			common.Proxy = value
+		}
 	case "HTTPSProxy":
-		common.HTTPSProxy = value
+		if common.Proxy == "" {
+			common.Proxy = value
+		}
 	}
 }

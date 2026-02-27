@@ -48,8 +48,7 @@ var WeChatAccountQRCodeImageURL = ""
 var TurnstileSiteKey = ""
 var TurnstileSecretKey = ""
 
-var HTTPProxy = ""
-var HTTPSProxy = ""
+var Proxy = ""
 
 const (
 	RoleGuestUser  = 0

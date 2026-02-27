@@ -18,8 +18,7 @@ const SystemSetting = () => {
     SMTPAccount: '',
     SMTPToken: '',
     ServerAddress: '',
-    HTTPProxy: '',
-    HTTPSProxy: '',
+    Proxy: '',
     Footer: '',
     TurnstileCheckEnabled: '',
     TurnstileSiteKey: '',
@@ -99,8 +98,7 @@ const SystemSetting = () => {
       name === 'Notice' ||
       name.startsWith('SMTP') ||
       name === 'ServerAddress' ||
-      name === 'HTTPProxy' ||
-      name === 'HTTPSProxy' ||
+      name === 'Proxy' ||
       name === 'GitHubClientId' ||
       name === 'GitHubClientSecret' ||
       name === 'TurnstileSiteKey' ||
@@ -136,13 +134,9 @@ const SystemSetting = () => {
   };
 
   const submitProxy = async () => {
-    const nextHTTPProxy = String(inputs.HTTPProxy || '').trim();
-    const nextHTTPSProxy = String(inputs.HTTPSProxy || '').trim();
-    if (originInputs['HTTPProxy'] !== nextHTTPProxy) {
-      await updateOption('HTTPProxy', nextHTTPProxy);
-    }
-    if (originInputs['HTTPSProxy'] !== nextHTTPSProxy) {
-      await updateOption('HTTPSProxy', nextHTTPSProxy);
+    const nextProxy = String(inputs.Proxy || '').trim();
+    if (originInputs['Proxy'] !== nextProxy) {
+      await updateOption('Proxy', nextProxy);
     }
   };
 
@@ -325,17 +319,10 @@ const SystemSetting = () => {
         <div style={{ marginBottom: '1rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
             <Input
-              label='HTTP 代理'
-              placeholder='例如：http://127.0.0.1:7890'
-              value={inputs.HTTPProxy}
-              name='HTTPProxy'
-              onChange={handleInputChange}
-            />
-            <Input
-              label='HTTPS 代理'
-              placeholder='例如：http://127.0.0.1:7890'
-              value={inputs.HTTPSProxy}
-              name='HTTPSProxy'
+              label='代理地址'
+              placeholder='例如：http://127.0.0.1:7890 (支持 HTTP/HTTPS)'
+              value={inputs.Proxy}
+              name='Proxy'
               onChange={handleInputChange}
             />
           </div>

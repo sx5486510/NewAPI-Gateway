@@ -8,72 +8,29 @@ import (
 )
 
 func ProxyFromSettings(req *http.Request) (*url.URL, error) {
-	httpProxy := strings.TrimSpace(HTTPProxy)
-	httpsProxy := strings.TrimSpace(HTTPSProxy)
+	proxy := strings.TrimSpace(Proxy)
 
 	// Log proxy configuration for debugging
-	if httpProxy != "" || httpsProxy != "" {
+	if proxy != "" {
 		scheme := ""
 		if req != nil && req.URL != nil {
 			scheme = strings.ToLower(req.URL.Scheme)
 		}
-		SysLog(fmt.Sprintf("ProxyFromSettings: request scheme=%s, httpProxy=%s, httpsProxy=%s",
-			scheme, maskProxyUrl(httpProxy), maskProxyUrl(httpsProxy)))
+		SysLog(fmt.Sprintf("ProxyFromSettings: request scheme=%s, proxy=%s", scheme, maskProxyUrl(proxy)))
 	}
 
-	if httpProxy == "" && httpsProxy == "" {
+	if proxy == "" {
 		return http.ProxyFromEnvironment(req)
 	}
 
-	scheme := ""
-	if req != nil && req.URL != nil {
-		scheme = strings.ToLower(req.URL.Scheme)
+	proxyURL, err := url.Parse(proxy)
+	if err != nil {
+		SysLog(fmt.Sprintf("ProxyFromSettings: failed to parse proxy URL '%s': %v", maskProxyUrl(proxy), err))
+		return nil, err
 	}
 
-	var proxyURL *url.URL
-	var err error
-
-	if scheme == "https" && httpsProxy != "" {
-		proxyURL, err = url.Parse(httpsProxy)
-		if err != nil {
-			SysLog(fmt.Sprintf("ProxyFromSettings: failed to parse HTTPS proxy URL '%s': %v", maskProxyUrl(httpsProxy), err))
-			return nil, err
-		}
-		SysLog(fmt.Sprintf("ProxyFromSettings: using HTTPS proxy %s for %s request", maskProxyUrl(httpsProxy), scheme))
-		return proxyURL, nil
-	}
-
-	if scheme == "http" && httpProxy != "" {
-		proxyURL, err = url.Parse(httpProxy)
-		if err != nil {
-			SysLog(fmt.Sprintf("ProxyFromSettings: failed to parse HTTP proxy URL '%s': %v", maskProxyUrl(httpProxy), err))
-			return nil, err
-		}
-		SysLog(fmt.Sprintf("ProxyFromSettings: using HTTP proxy %s for %s request", maskProxyUrl(httpProxy), scheme))
-		return proxyURL, nil
-	}
-
-	if httpsProxy != "" {
-		proxyURL, err = url.Parse(httpsProxy)
-		if err != nil {
-			SysLog(fmt.Sprintf("ProxyFromSettings: failed to parse HTTPS proxy URL '%s': %v", maskProxyUrl(httpsProxy), err))
-			return nil, err
-		}
-		SysLog(fmt.Sprintf("ProxyFromSettings: using HTTPS proxy %s as default", maskProxyUrl(httpsProxy)))
-		return proxyURL, nil
-	}
-
-	if httpProxy != "" {
-		proxyURL, err = url.Parse(httpProxy)
-		if err != nil {
-			SysLog(fmt.Sprintf("ProxyFromSettings: failed to parse HTTP proxy URL '%s': %v", maskProxyUrl(httpProxy), err))
-			return nil, err
-		}
-		SysLog(fmt.Sprintf("ProxyFromSettings: using HTTP proxy %s as default", maskProxyUrl(httpProxy)))
-		return proxyURL, nil
-	}
-
-	return nil, nil
+	SysLog(fmt.Sprintf("ProxyFromSettings: using proxy %s", maskProxyUrl(proxy)))
+	return proxyURL, nil
 }
 
 // maskProxyUrl masks sensitive parts of the proxy URL for logging
@@ -99,13 +56,9 @@ func CloneTransportWithProxy() *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = ProxyFromSettings
 
-	// Increase timeouts for better proxy compatibility
-	transport.DialContext = transport.DialContext
-
 	// Log transport configuration
-	if HTTPProxy != "" || HTTPSProxy != "" {
-		SysLog(fmt.Sprintf("CloneTransportWithProxy: configured transport with proxy (HTTP=%s, HTTPS=%s)",
-			maskProxyUrl(HTTPProxy), maskProxyUrl(HTTPSProxy)))
+	if Proxy != "" {
+		SysLog(fmt.Sprintf("CloneTransportWithProxy: configured transport with proxy=%s", maskProxyUrl(Proxy)))
 	}
 
 	return transport
