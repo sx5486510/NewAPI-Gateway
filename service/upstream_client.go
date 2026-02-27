@@ -96,7 +96,7 @@ func (c *UpstreamClient) doRequest(method string, path string) ([]byte, error) {
 	url := c.BaseURL + path
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("upstream_client: failed to create request for %s %s: %w", method, path, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.AccessToken)
 	req.Header.Set("New-Api-User", strconv.Itoa(c.UserID))
@@ -104,13 +104,20 @@ func (c *UpstreamClient) doRequest(method string, path string) ([]byte, error) {
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, err
+		// Provide more context for proxy connection errors
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "proxyconnect") || strings.Contains(errMsg, "EOF") {
+			common.SysLog(fmt.Sprintf("upstream_client: proxy connection error for %s %s: %v", method, url, err))
+			return nil, fmt.Errorf("upstream_client: proxy connection failed for %s %s: %w (check proxy configuration and ensure proxy supports HTTPS CONNECT)", method, url, err)
+		}
+		common.SysLog(fmt.Sprintf("upstream_client: HTTP request failed for %s %s: %v", method, url, err))
+		return nil, fmt.Errorf("upstream_client: HTTP request failed for %s %s: %w", method, url, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("upstream_client: failed to read response body from %s %s: %w", method, path, err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -126,12 +133,12 @@ func (c *UpstreamClient) doRequest(method string, path string) ([]byte, error) {
 func (c *UpstreamClient) doRequestWithBody(method string, path string, payload interface{}) ([]byte, error) {
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("upstream_client: failed to marshal JSON payload for %s %s: %w", method, path, err)
 	}
 	url := c.BaseURL + path
 	req, err := http.NewRequest(method, url, bytes.NewReader(jsonData))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("upstream_client: failed to create request for %s %s: %w", method, path, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.AccessToken)
 	req.Header.Set("New-Api-User", strconv.Itoa(c.UserID))
@@ -139,13 +146,20 @@ func (c *UpstreamClient) doRequestWithBody(method string, path string, payload i
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, err
+		// Provide more context for proxy connection errors
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "proxyconnect") || strings.Contains(errMsg, "EOF") {
+			common.SysLog(fmt.Sprintf("upstream_client: proxy connection error for %s %s: %v", method, url, err))
+			return nil, fmt.Errorf("upstream_client: proxy connection failed for %s %s: %w (check proxy configuration and ensure proxy supports HTTPS CONNECT)", method, url, err)
+		}
+		common.SysLog(fmt.Sprintf("upstream_client: HTTP request failed for %s %s: %v", method, url, err))
+		return nil, fmt.Errorf("upstream_client: HTTP request failed for %s %s: %w", method, url, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("upstream_client: failed to read response body from %s %s: %w", method, path, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, upstreamHTTPError(resp, body)
