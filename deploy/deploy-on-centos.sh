@@ -2,13 +2,13 @@
 #
 # NewAPI-Gateway CentOS one-click deploy script
 # Clones from GitHub and deploys on CentOS server.
-# Usage: sudo bash deploy-on-centos.sh [branch] [--https domain]
+# Usage: sudo bash deploy-on-centos.sh [branch] [--http]
 #
 # Examples:
-#   sudo bash deploy-on-centos.sh                    # Deploy with HTTP only
-#   sudo bash deploy-on-centos.sh develop             # Deploy with 'develop' branch
-#   sudo bash deploy-on-centos.sh --https example.com  # Deploy with HTTPS
-#   sudo bash deploy-on-centos.sh develop --https example.com  # Deploy with specific branch and HTTPS
+#   sudo bash deploy-on-centos.sh                    # Deploy with HTTPS (default, self-signed cert)
+#   sudo bash deploy-on-centos.sh develop             # Deploy with 'develop' branch (HTTPS)
+#   sudo bash deploy-on-centos.sh --http              # Deploy with HTTP only
+#   sudo bash deploy-on-centos.sh develop --http      # Deploy with specific branch (HTTP)
 #
 
 set -e
@@ -31,18 +31,17 @@ LOG_DIR="${INSTALL_DIR}/logs"
 DATA_DIR="${INSTALL_DIR}/data"
 REPO_URL="https://github.com/sx5486510/NewAPI-Gateway.git"
 BRANCH="main"
-ENABLE_HTTPS=false
-DOMAIN=""
+ENABLE_HTTPS=true
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         --https)
             ENABLE_HTTPS=true
-            if [ -n "$2" ] && [[ $2 != -* ]]; then
-                DOMAIN="$2"
-                shift
-            fi
+            shift
+            ;;
+        --http)
+            ENABLE_HTTPS=false
             shift
             ;;
         *)
@@ -62,23 +61,18 @@ echo ""
 
 # Show deployment mode
 if [ "$ENABLE_HTTPS" = true ]; then
-    if [ -z "$DOMAIN" ]; then
-        echo -e "${YELLOW}Warning: HTTPS enabled but no domain specified.${NC}"
-        echo -e "${YELLOW}Usage: sudo bash deploy-on-centos.sh --https your-domain.com${NC}"
-        exit 1
-    fi
-    echo -e "${GREEN}Deployment mode: HTTPS${NC}"
-    echo -e "${GREEN}Domain: ${DOMAIN}${NC}"
+    echo -e "${GREEN}Deployment mode: HTTPS (default, with self-signed certificate)${NC}"
+    echo -e "${YELLOW}Note: Browser will show security warning for self-signed certificate${NC}"
+    echo -e "${YELLOW}      Use --http to deploy with HTTP instead${NC}"
 else
     echo -e "${BLUE}Deployment mode: HTTP${NC}"
-    echo -e "${YELLOW}Tip: Use --https your-domain.com to enable HTTPS${NC}"
 fi
 echo ""
 
 # Require root
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}Error: please run as root.${NC}"
-    echo "Usage: sudo bash deploy-on-centos.sh [branch] [--https domain]"
+    echo "Usage: sudo bash deploy-on-centos.sh [branch] [--https]"
     exit 1
 fi
 
@@ -126,25 +120,13 @@ else
     echo -e "${GREEN}GCC installed: $(gcc --version | head -n1)${NC}"
 fi
 
-# OpenSSL for SESSION_SECRET
+# OpenSSL for SESSION_SECRET and HTTPS
 if ! command -v openssl &> /dev/null; then
     echo -e "${YELLOW}OpenSSL not found, installing...${NC}"
     yum install -y openssl
     echo -e "${GREEN}OpenSSL installed.${NC}"
 else
     echo -e "${GREEN}OpenSSL installed.${NC}"
-fi
-
-# Certbot for HTTPS (if enabled)
-if [ "$ENABLE_HTTPS" = true ]; then
-    if ! command -v certbot &> /dev/null; then
-        echo -e "${YELLOW}Certbot not found, installing...${NC}"
-        yum install -y epel-release
-        yum install -y certbot
-        echo -e "${GREEN}Certbot installed.${NC}"
-    else
-        echo -e "${GREEN}Certbot installed: $(certbot --version | head -n1)${NC}"
-    fi
 fi
 
 echo ""
@@ -285,6 +267,18 @@ echo ""
 
 # Create .env
 echo -e "${YELLOW}[9/10] Create .env file...${NC}"
+
+# Build HTTPS configuration
+HTTPS_CONFIG=""
+if [ "$ENABLE_HTTPS" = true ]; then
+    HTTPS_CONFIG="
+# HTTPS configuration
+HTTPS_ENABLED=true
+# HTTPS_CERT_FILE and HTTPS_KEY_FILE will be auto-generated if not specified
+# HTTPS_CERT_FILE=/path/to/cert.pem
+# HTTPS_KEY_FILE=/path/to/key.pem"
+fi
+
 cat > "${INSTALL_DIR}/.env" <<EOF
 # NewAPI-Gateway .env
 # Generated: $(date)
@@ -297,7 +291,7 @@ LOG_DIR=${LOG_DIR}
 GIN_MODE=release
 
 # Security
-SESSION_SECRET=${SESSION_SECRET}
+SESSION_SECRET=${SESSION_SECRET}${HTTPS_CONFIG}
 
 # Database (SQLite by default)
 SQL_DSN=sqlite://${DATA_DIR}/newapi.db
@@ -335,48 +329,17 @@ if [ "$ENABLE_HTTPS" = true ]; then
     echo -e "${YELLOW}========================================${NC}"
     echo ""
     
-    # Open firewall ports
-    echo -e "${YELLOW}[11/12] Configure firewall...${NC}"
+    # Open firewall port
+    echo -e "${YELLOW}[11/11] Configure firewall...${NC}"
     if command -v firewall-cmd &> /dev/null; then
-        echo "Opening ports 80 and 443..."
-        firewall-cmd --permanent --add-port=80/tcp 2>/dev/null || true
-        firewall-cmd --permanent --add-port=443/tcp 2>/dev/null || true
+        echo "Opening port ${PORT}..."
+        firewall-cmd --permanent --add-port=${PORT}/tcp 2>/dev/null || true
         firewall-cmd --reload 2>/dev/null || true
         echo -e "${GREEN}Firewall configured.${NC}"
     else
         echo -e "${YELLOW}firewalld not found, skipping firewall configuration.${NC}"
     fi
     echo ""
-    
-    # Wait for DNS to propagate (optional)
-    echo -e "${YELLOW}[12/12] Obtaining SSL certificate...${NC}"
-    echo "This may take a few minutes..."
-    echo ""
-    
-    # Obtain certificate
-    certbot certonly --standalone -d "${DOMAIN}" --non-interactive --agree-tos --register-unsafely-without-email 2>/dev/null || {
-        echo -e "${RED}Failed to obtain SSL certificate.${NC}"
-        echo -e "${YELLOW}Please ensure:${NC}"
-        echo "  1. Domain ${DOMAIN} resolves to this server's IP"
-        echo "  2. Ports 80 and 443 are accessible from the internet"
-        echo "  3. No other service is using port 80"
-        echo ""
-        echo "You can obtain the certificate later manually:"
-        echo "  certbot certonly --standalone -d ${DOMAIN}"
-        echo ""
-        ENABLE_HTTPS=false
-    }
-    
-    if [ "$ENABLE_HTTPS" = true ]; then
-        echo -e "${GREEN}SSL certificate obtained successfully!${NC}"
-        echo ""
-        
-        # Setup auto-renewal
-        echo "Setting up auto-renewal..."
-        systemctl enable --now certbot-renew.timer 2>/dev/null || true
-        echo -e "${GREEN}Auto-renewal configured.${NC}"
-        echo ""
-    fi
 fi
 
 # Verify status
@@ -417,8 +380,11 @@ if systemctl is-active --quiet "${SERVICE_NAME}"; then
     echo ""
     echo "Access:"
     if [ "$ENABLE_HTTPS" = true ]; then
-        echo "  HTTPS: https://${DOMAIN}"
-        echo "  HTTP:  http://${DOMAIN} (will redirect to HTTPS)"
+        echo "  HTTPS (self-signed): https://${LOCAL_IP}:${PORT}"
+        echo "  HTTPS (public):     https://${PUBLIC_IP}:${PORT}"
+        echo ""
+        echo "  ⚠️  Browser will show security warning for self-signed certificate"
+        echo "  ⚠️  Click 'Advanced' -> 'Proceed to...' to continue"
     else
         echo "  Local:  http://${LOCAL_IP}:${PORT}"
         echo "  Public: http://${PUBLIC_IP}:${PORT}"
@@ -432,9 +398,10 @@ if systemctl is-active --quiet "${SERVICE_NAME}"; then
     echo "Security tips:"
     echo "  1. Open only required ports in firewall"
     if [ "$ENABLE_HTTPS" = false ]; then
-        echo "  2. Consider enabling HTTPS: sudo bash ${SOURCE_DIR}/deploy/deploy-on-centos.sh --https your-domain.com"
+        echo "  2. Consider enabling HTTPS: remove --http parameter and redeploy"
     else
-        echo "  2. HTTPS is enabled with Let's Encrypt"
+        echo "  2. HTTPS is enabled with self-signed certificate"
+        echo "  3. Browser will show security warning - click 'Advanced' -> 'Proceed to continue'"
     fi
     echo "  3. Keep system and app updated"
     echo "  4. Protect secrets in .env"

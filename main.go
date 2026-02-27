@@ -1,6 +1,15 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
+	"os"
+	"time"
+
 	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/middleware"
 	"NewAPI-Gateway/model"
@@ -8,7 +17,6 @@ import (
 	"NewAPI-Gateway/service"
 	"embed"
 	"log"
-	"os"
 	"strconv"
 
 	"github.com/gin-contrib/sessions"
@@ -69,12 +77,93 @@ func main() {
 	}
 
 	router.SetRouter(server, buildFS, indexPage)
-	var port = os.Getenv("PORT")
+
+	// Get port configuration
+	port := os.Getenv("PORT")
 	if port == "" {
 		port = strconv.Itoa(*common.Port)
 	}
-	err = server.Run(":" + port)
-	if err != nil {
-		log.Println(err)
+
+	// Check if HTTPS is enabled
+	httpsEnabled := os.Getenv("HTTPS_ENABLED") == "true"
+	httpsCertFile := os.Getenv("HTTPS_CERT_FILE")
+	httpsKeyFile := os.Getenv("HTTPS_KEY_FILE")
+
+	if httpsEnabled {
+		// HTTPS mode
+		common.SysLog("HTTPS mode enabled")
+
+		// If certificate files are not specified, generate self-signed certificate
+		if httpsCertFile == "" || httpsKeyFile == "" {
+			common.SysLog("No certificate specified, generating self-signed certificate...")
+			certFile, keyFile, err := generateSelfSignedCert()
+			if err != nil {
+				common.FatalLog("Failed to generate self-signed certificate: " + err.Error())
+			}
+			httpsCertFile = certFile
+			httpsKeyFile = keyFile
+			common.SysLog("Self-signed certificate generated: " + certFile)
+		}
+
+		// Run HTTPS server
+		common.SysLog("Starting HTTPS server on :" + port)
+		err = server.RunTLS(":"+port, httpsCertFile, httpsKeyFile)
+		if err != nil {
+			common.FatalLog(err)
+		}
+	} else {
+		// HTTP mode
+		common.SysLog("Starting HTTP server on :" + port)
+		err = server.Run(":" + port)
+		if err != nil {
+			log.Println(err)
+		}
 	}
+}
+
+// generateSelfSignedCert generates a self-signed SSL certificate
+func generateSelfSignedCert() (certFile, keyFile string, err error) {
+	// Generate private key
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Create certificate template
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization: []string{"NewAPI-Gateway"},
+			Country:      []string{"US"},
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	// Generate certificate
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Save certificate to file
+	certOut, err := os.Create("server.crt")
+	if err != nil {
+		return "", "", err
+	}
+	defer certOut.Close()
+	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+
+	// Save private key to file
+	keyOut, err := os.Create("server.key")
+	if err != nil {
+		return "", "", err
+	}
+	defer keyOut.Close()
+	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+
+	return "server.crt", "server.key", nil
 }
