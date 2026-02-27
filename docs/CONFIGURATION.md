@@ -30,6 +30,8 @@
 | `UPLOAD_PATH` | 上传目录 | `upload` | `/data/upload` |
 | `DEBUG_PROXY_AUTH` | 开启代理认证调试日志 | 关闭 | `1` |
 
+提示：系统设置页会展示当前数据库类型；当使用 SQLite 时，会显示 `SQLITE_PATH` 的绝对路径。
+
 ## 系统设置（`/api/option/`）
 
 可在管理后台“系统设置”中修改，或通过 `PUT /api/option/` 更新。

@@ -64,6 +64,27 @@ func detectSQLDriver(dsn string) string {
 	return "mysql"
 }
 
+// GetDBInfo returns the current database driver and the sqlite path when applicable.
+func GetDBInfo() (driver string, sqlitePath string) {
+	dsn := strings.TrimSpace(os.Getenv("SQL_DSN"))
+	configuredDriver := normalizeSQLDriver(os.Getenv("SQL_DRIVER"))
+	driver = configuredDriver
+	if driver == "" {
+		if dsn == "" {
+			driver = "sqlite"
+		} else {
+			driver = detectSQLDriver(dsn)
+		}
+	}
+	if driver == "sqlite" {
+		sqlitePath = common.SQLitePath
+		if dsn != "" {
+			sqlitePath = dsn
+		}
+	}
+	return driver, sqlitePath
+}
+
 func InitDB() (err error) {
 	var db *gorm.DB
 

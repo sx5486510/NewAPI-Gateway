@@ -53,9 +53,9 @@ const ProvidersTable = () => {
   // Check if last sync time is more than 1 hour ago
   const isSyncStale = (lastSyncTime) => {
     if (!lastSyncTime) return false;
-    const now = Date.now();
+    const now = Math.floor(Date.now() / 1000);
     const syncTime = new Date(lastSyncTime).getTime();
-    const oneHour = 60 * 60 * 1000; // 1 hour in milliseconds
+    const oneHour = 60 * 60; // 1 hour in seconds
     return (now - syncTime) > oneHour;
   };
 

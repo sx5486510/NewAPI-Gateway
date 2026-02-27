@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { API, removeTrailingSlash, showError } from '../helpers';
+import { API, removeTrailingSlash, showError, showSuccess } from '../helpers';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Card from './ui/Card';
@@ -36,6 +36,7 @@ const SystemSetting = () => {
     RoutingHealthMinSamples: '1',
   });
   const [originInputs, setOriginInputs] = useState({});
+  const [dbInfo, setDbInfo] = useState({ driver: '', sqlitePath: '' });
   let [loading, setLoading] = useState(false);
   let [testingProxy, setTestingProxy] = useState(false);
 
@@ -60,8 +61,22 @@ const SystemSetting = () => {
     }
   };
 
+  const getSystemInfo = async () => {
+    const res = await API.get('/api/option/system');
+    const { success, message, data } = res.data;
+    if (success) {
+      setDbInfo({
+        driver: String(data?.db_driver || ''),
+        sqlitePath: String(data?.sqlite_path || ''),
+      });
+    } else if (message) {
+      showError(message);
+    }
+  };
+
   useEffect(() => {
     getOptions();
+    getSystemInfo();
   }, []);
 
   const updateOption = async (key, value) => {
@@ -330,6 +345,21 @@ const SystemSetting = () => {
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <Card padding="1.5rem">
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>数据库信息</h3>
+        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+          当前数据库类型：<strong style={{ color: 'var(--text-primary)' }}>{dbInfo.driver || '-'}</strong>
+        </div>
+        {dbInfo.driver === 'sqlite' && (
+          <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+            SQLite 文件路径：
+            <code style={{ marginLeft: '0.25rem', backgroundColor: 'var(--gray-200)', padding: '0.15rem 0.35rem' }}>
+              {dbInfo.sqlitePath || '-'}
+            </code>
+          </div>
+        )}
+      </Card>
+
       <Card padding="1.5rem">
         <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '1rem' }}>通用设置</h3>
         <div style={{ marginBottom: '1rem' }}>

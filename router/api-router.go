@@ -54,6 +54,7 @@ func SetApiRouter(router *gin.Engine) {
 		optionRoute.Use(middleware.RootAuth(), middleware.NoTokenAuth())
 		{
 			optionRoute.GET("/", controller.GetOptions)
+			optionRoute.GET("/system", controller.GetSystemInfo)
 			optionRoute.PUT("/", controller.UpdateOption)
 			optionRoute.POST("/test-proxy", controller.TestProxy)
 		}

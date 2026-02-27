@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,25 @@ func GetOptions(c *gin.Context) {
 		"data":    options,
 	})
 	return
+}
+
+func GetSystemInfo(c *gin.Context) {
+	driver, sqlitePath := model.GetDBInfo()
+	resp := gin.H{
+		"db_driver": driver,
+	}
+	if driver == "sqlite" {
+		if absPath, err := filepath.Abs(sqlitePath); err == nil {
+			resp["sqlite_path"] = absPath
+		} else {
+			resp["sqlite_path"] = sqlitePath
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    resp,
+	})
 }
 
 func UpdateOption(c *gin.Context) {

@@ -121,6 +121,7 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | Method | Path | 说明 |
 | --- | --- | --- |
 | GET | `/api/option/` | 读取系统选项（隐藏 Secret/Token 字段） |
+| GET | `/api/option/system` | 读取系统运行信息（数据库类型与 SQLite 路径） |
 | PUT | `/api/option/` | 更新系统选项 |
 
 通用系统选项（通过 `PUT /api/option/` 更新）：
