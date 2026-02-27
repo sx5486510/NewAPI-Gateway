@@ -49,6 +49,27 @@ const ProvidersTable = () => {
     whiteSpace: 'nowrap',
     display: 'block',
   };
+
+  // Check if last sync time is more than 1 hour ago
+  const isSyncStale = (lastSyncTime) => {
+    if (!lastSyncTime) return false;
+    const now = Date.now();
+    const syncTime = new Date(lastSyncTime).getTime();
+    const oneHour = 60 * 60 * 1000; // 1 hour in milliseconds
+    return (now - syncTime) > oneHour;
+  };
+
+  const getSyncTimeStyle = (lastSyncTime) => {
+    if (!lastSyncTime) return ellipsisTextStyle;
+    if (isSyncStale(lastSyncTime)) {
+      return {
+        ...ellipsisTextStyle,
+        color: '#ff4444', // Red for stale sync
+      };
+    }
+    return ellipsisTextStyle;
+  };
+
   const providerType = editProvider?.provider_type || 'full';
   const isKeyOnlyProvider = providerType === 'key_only';
 
@@ -472,7 +493,7 @@ const ProvidersTable = () => {
                     <span style={ellipsisTextStyle} title={p.base_url}>{p.base_url}</span>
                   </Td>
                   <Td style={compactTdStyle}><span style={ellipsisTextStyle}>{formatTime(p.created_at)}</span></Td>
-                  <Td style={compactTdStyle}><span style={ellipsisTextStyle}>{formatTime(p.last_synced_at)}</span></Td>
+                  <Td style={compactTdStyle}><span style={getSyncTimeStyle(p.last_synced_at)}>{formatTime(p.last_synced_at)}</span></Td>
                   <Td style={compactTdStyle}>{renderStatus(p.status)}</Td>
                   <Td style={compactTdStyle}>{p.balance ? p.balance : '无'}</Td>
                   <Td style={compactTdStyle}>{p.weight}</Td>
