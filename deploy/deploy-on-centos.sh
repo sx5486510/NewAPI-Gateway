@@ -2,13 +2,13 @@
 #
 # NewAPI-Gateway CentOS one-click deploy script
 # Clones from GitHub and deploys on CentOS server.
-# Usage: sudo bash deploy-on-centos.sh [branch] [--http]
+# Usage: sudo bash deploy-on-centos.sh [branch] [--https]
 #
 # Examples:
-#   sudo bash deploy-on-centos.sh                    # Deploy with HTTPS (default, self-signed cert)
-#   sudo bash deploy-on-centos.sh develop             # Deploy with 'develop' branch (HTTPS)
-#   sudo bash deploy-on-centos.sh --http              # Deploy with HTTP only
-#   sudo bash deploy-on-centos.sh develop --http      # Deploy with specific branch (HTTP)
+#   sudo bash deploy-on-centos.sh                    # Deploy with HTTP (default)
+#   sudo bash deploy-on-centos.sh develop            # Deploy with 'develop' branch (HTTP)
+#   sudo bash deploy-on-centos.sh --https            # Deploy with HTTPS (self-signed cert)
+#   sudo bash deploy-on-centos.sh develop --https    # Deploy with specific branch (HTTPS)
 #
 
 set -e
@@ -31,7 +31,7 @@ LOG_DIR="${INSTALL_DIR}/logs"
 DATA_DIR="${INSTALL_DIR}/data"
 REPO_URL="https://github.com/sx5486510/NewAPI-Gateway.git"
 BRANCH="main"
-ENABLE_HTTPS=true
+ENABLE_HTTPS=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -61,9 +61,8 @@ echo ""
 
 # Show deployment mode
 if [ "$ENABLE_HTTPS" = true ]; then
-    echo -e "${GREEN}Deployment mode: HTTPS (default, with self-signed certificate)${NC}"
+    echo -e "${GREEN}Deployment mode: HTTPS (self-signed certificate)${NC}"
     echo -e "${YELLOW}Note: Browser will show security warning for self-signed certificate${NC}"
-    echo -e "${YELLOW}      Use --http to deploy with HTTP instead${NC}"
 else
     echo -e "${BLUE}Deployment mode: HTTP${NC}"
 fi
@@ -281,25 +280,17 @@ systemctl start "${SERVICE_NAME}"
 echo -e "${GREEN}Service started.${NC}"
 echo ""
 
-# Configure HTTPS if enabled
-if [ "$ENABLE_HTTPS" = true ]; then
-    echo -e "${YELLOW}========================================${NC}"
-    echo -e "${YELLOW}Configuring HTTPS...${NC}"
-    echo -e "${YELLOW}========================================${NC}"
-    echo ""
-    
-    # Open firewall port
-    echo -e "${YELLOW}[11/11] Configure firewall...${NC}"
-    if command -v firewall-cmd &> /dev/null; then
-        echo "Opening port ${PORT}..."
-        firewall-cmd --permanent --add-port=${PORT}/tcp 2>/dev/null || true
-        firewall-cmd --reload 2>/dev/null || true
-        echo -e "${GREEN}Firewall configured.${NC}"
-    else
-        echo -e "${YELLOW}firewalld not found, skipping firewall configuration.${NC}"
-    fi
-    echo ""
+# Configure firewall
+echo -e "${YELLOW}[10/10] Configure firewall...${NC}"
+if command -v firewall-cmd &> /dev/null; then
+    echo "Opening port ${PORT}..."
+    firewall-cmd --permanent --add-port=${PORT}/tcp 2>/dev/null || true
+    firewall-cmd --reload 2>/dev/null || true
+    echo -e "${GREEN}Firewall configured.${NC}"
+else
+    echo -e "${YELLOW}firewalld not found, skipping firewall configuration.${NC}"
 fi
+echo ""
 
 # Verify status
 sleep 3
@@ -357,7 +348,7 @@ if systemctl is-active --quiet "${SERVICE_NAME}"; then
     echo "Security tips:"
     echo "  1. Open only required ports in firewall"
     if [ "$ENABLE_HTTPS" = false ]; then
-        echo "  2. Consider enabling HTTPS: remove --http parameter and redeploy"
+        echo "  2. Consider enabling HTTPS: use --https or deploy Caddy with certificate"
     else
         echo "  2. HTTPS is enabled with self-signed certificate"
         echo "  3. Browser will show security warning - click 'Advanced' -> 'Proceed to continue'"
