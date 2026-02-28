@@ -139,12 +139,12 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | `RoutingBaseWeightFactor` | float | `0.2` | `0 ~ 10` | 占比贡献中的基础系数 |
 | `RoutingValueScoreFactor` | float | `0.8` | `0 ~ 10` | 占比贡献中的性价比系数 |
 | `RoutingHealthAdjustmentEnabled` | bool | `true` | `true/false` | 是否启用健康调节倍率 |
-| `RoutingHealthWindowHours` | int | `6` | `1 ~ 720` | 健康统计窗口（小时） |
-| `RoutingFailurePenaltyAlpha` | float | `4.0` | `0 ~ 20` | 失败率惩罚系数（越大惩罚越强） |
-| `RoutingHealthRewardBeta` | float | `0.08` | `0 ~ 2` | 健康奖励系数（越大奖励越强） |
-| `RoutingHealthMinMultiplier` | float | `0.05` | `0 ~ 10` | 健康倍率下限 |
-| `RoutingHealthMaxMultiplier` | float | `1.12` | `0 ~ 10` | 健康倍率上限 |
-| `RoutingHealthMinSamples` | int | `5` | `1 ~ 1000` | 启用健康调节所需最小样本数 |
+| `RoutingHealthWindowHours` | int | `24` | `1 ~ 720` | 健康统计窗口（小时） |
+| `RoutingFailurePenaltyAlpha` | float | `20.0` | `0 ~ 20` | 失败率惩罚系数（越大惩罚越强） |
+| `RoutingHealthRewardBeta` | float | `0` | `0 ~ 2` | 健康奖励系数（越大奖励越强） |
+| `RoutingHealthMinMultiplier` | float | `0.01` | `0 ~ 10` | 健康倍率下限 |
+| `RoutingHealthMaxMultiplier` | float | `1.0` | `0 ~ 10` | 健康倍率上限 |
+| `RoutingHealthMinSamples` | int | `1` | `1 ~ 1000` | 启用健康调节所需最小样本数 |
 
 占比贡献公式：
 

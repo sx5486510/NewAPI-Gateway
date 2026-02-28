@@ -92,8 +92,8 @@
    - 同层评分不可用时：`contribution_base = base`。
 5. 健康调节（默认关闭）：
    - 开关：`RoutingHealthAdjustmentEnabled`；
-- 样本窗口：`RoutingHealthWindowHours`（默认 6，健康调节默认启用）；
-   - 仅当样本数达到 `RoutingHealthMinSamples`（默认 5）才生效；
+- 样本窗口：`RoutingHealthWindowHours`（默认 24，健康调节默认启用）；
+   - 仅当样本数达到 `RoutingHealthMinSamples`（默认 1）才生效；
    - 结合失败率、成功率与平均延迟生成 `health_multiplier`，并限制在 `[RoutingHealthMinMultiplier, RoutingHealthMaxMultiplier]`。
 6. 最终贡献值：`contribution = contribution_base * health_multiplier`（健康调节关闭时倍率为 `1`）。
 7. 同层按贡献值执行“加权随机不放回”生成完整重试顺序，层内全部失败后再降级到下一优先级层。

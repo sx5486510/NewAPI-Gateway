@@ -340,7 +340,7 @@ const SystemSetting = () => {
     if (Number.isInteger(parsed) && parsed > 0) {
       return parsed;
     }
-    return 5;
+    return 1;
   })();
 
   return (
@@ -498,7 +498,7 @@ const SystemSetting = () => {
             min='1'
             max='720'
             step='1'
-            placeholder='默认 6'
+            placeholder='默认 24'
           />
           <Input
             label='故障惩罚系数 α'
@@ -509,7 +509,7 @@ const SystemSetting = () => {
             min='0'
             max='20'
             step='0.1'
-            placeholder='默认 4.0'
+            placeholder='默认 20.0'
           />
           <Input
             label='健康奖励系数 β'
@@ -520,7 +520,7 @@ const SystemSetting = () => {
             min='0'
             max='2'
             step='0.01'
-            placeholder='默认 0.08'
+            placeholder='默认 0'
           />
           <Input
             label='健康最小倍率'
@@ -531,7 +531,7 @@ const SystemSetting = () => {
             min='0'
             max='10'
             step='0.01'
-            placeholder='默认 0.05'
+            placeholder='默认 0.01'
           />
           <Input
             label='健康最大倍率'
@@ -542,7 +542,7 @@ const SystemSetting = () => {
             min='0'
             max='10'
             step='0.01'
-            placeholder='默认 1.12'
+            placeholder='默认 1.0'
           />
           <Input
             label='健康最小样本数'
@@ -553,7 +553,7 @@ const SystemSetting = () => {
             min='1'
             max='1000'
             step='1'
-            placeholder='默认 5'
+            placeholder='默认 1'
           />
         </div>
         <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>

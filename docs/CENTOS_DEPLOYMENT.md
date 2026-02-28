@@ -28,10 +28,10 @@ sudo bash deploy-on-centos.sh --https
 
 ```bash
 sudo bash /opt/newapi-gateway/source/deploy/deploy-with-caddy.sh \
-  --domain usbip.pycloud.com.cn \
+  --domain gateway.example.com \
   --app-port 3030 \
-  --cert-file /etc/ssl/newapi/usbip.pycloud.com.cn_bundle.crt \
-  --key-file /etc/ssl/newapi/usbip.pycloud.com.cn.key
+  --cert-file /etc/ssl/newapi/gateway.example.com_bundle.crt \
+  --key-file /etc/ssl/newapi/gateway.example.com.key
 ```
 
 脚本行为：
@@ -44,7 +44,7 @@ sudo bash /opt/newapi-gateway/source/deploy/deploy-with-caddy.sh \
 访问地址：
 
 ```text
-https://usbip.pycloud.com.cn:3031
+https://gateway.example.com:3031
 ```
 
 ## 3. Caddy 脚本参数
@@ -54,7 +54,7 @@ sudo bash deploy-with-caddy.sh [--domain <域名>] [--app-port <端口>] [--cert
 ```
 
 参数说明：
-- `--domain`：公网域名，默认 `usbip.pycloud.com.cn`
+- `--domain`：公网域名，默认 `gateway.example.com`
 - `--app-port`：应用本地端口，默认 `3030`
 - `--cert-file` / `--key-file`：自定义证书和私钥，需同时提供
 
@@ -73,7 +73,7 @@ sudo journalctl -u caddy -f
 
 # 本地联通检查
 curl -I http://127.0.0.1:3030
-curl -I https://usbip.pycloud.com.cn:3031
+curl -I https://gateway.example.com:3031
 ```
 
 ## 5. 证书文件建议

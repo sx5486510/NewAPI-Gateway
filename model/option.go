@@ -55,12 +55,12 @@ func InitOptionMap() {
 	common.OptionMap["RoutingBaseWeightFactor"] = "0.2"
 	common.OptionMap["RoutingValueScoreFactor"] = "0.8"
 	common.OptionMap["RoutingHealthAdjustmentEnabled"] = "true"
-	common.OptionMap["RoutingHealthWindowHours"] = "6"
-	common.OptionMap["RoutingFailurePenaltyAlpha"] = "4.0"
-	common.OptionMap["RoutingHealthRewardBeta"] = "0.08"
-	common.OptionMap["RoutingHealthMinMultiplier"] = "0.05"
-	common.OptionMap["RoutingHealthMaxMultiplier"] = "1.12"
-	common.OptionMap["RoutingHealthMinSamples"] = "5"
+	common.OptionMap["RoutingHealthWindowHours"] = "24"
+	common.OptionMap["RoutingFailurePenaltyAlpha"] = "20.0"
+	common.OptionMap["RoutingHealthRewardBeta"] = "0"
+	common.OptionMap["RoutingHealthMinMultiplier"] = "0.01"
+	common.OptionMap["RoutingHealthMaxMultiplier"] = "1.0"
+	common.OptionMap["RoutingHealthMinSamples"] = "1"
 	common.OptionMapRWMutex.Unlock()
 	options, _ := AllOption()
 	for _, option := range options {

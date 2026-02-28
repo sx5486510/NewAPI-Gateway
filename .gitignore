@@ -10,3 +10,5 @@ node_modules
 /logs
 /yewu
 .DS_Store
+server.crt
+server.key
