@@ -88,8 +88,64 @@ install_caddy() {
     dnf install -y caddy
   else
     yum install -y yum-plugin-copr || true
-    yum copr enable -y @caddy/caddy
-    yum install -y caddy
+    if yum copr enable -y @caddy/caddy && yum install -y caddy; then
+      return
+    fi
+
+    echo -e "${YELLOW}Copr install failed, fallback to binary install...${NC}"
+    yum install -y curl tar
+
+    ARCH=$(uname -m)
+    case "${ARCH}" in
+      x86_64) CADDY_ARCH="amd64" ;;
+      aarch64) CADDY_ARCH="arm64" ;;
+      armv7l) CADDY_ARCH="armv7" ;;
+      *)
+        echo -e "${RED}Unsupported architecture: ${ARCH}${NC}"
+        exit 1
+        ;;
+    esac
+
+    CADDY_VERSION=$(curl -fsSL https://api.github.com/repos/caddyserver/caddy/releases/latest | sed -n 's/.*"tag_name": *"v\\([^"]*\\)".*/\\1/p' | head -n1)
+    if [ -z "${CADDY_VERSION}" ]; then
+      echo -e "${RED}Failed to detect latest Caddy version.${NC}"
+      exit 1
+    fi
+
+    TMP_DIR=$(mktemp -d)
+    CADDY_TGZ="caddy_${CADDY_VERSION}_linux_${CADDY_ARCH}.tar.gz"
+    CADDY_URL="https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/${CADDY_TGZ}"
+
+    curl -fsSL "${CADDY_URL}" -o "${TMP_DIR}/${CADDY_TGZ}"
+    tar -xzf "${TMP_DIR}/${CADDY_TGZ}" -C "${TMP_DIR}"
+    install -m 755 "${TMP_DIR}/caddy" /usr/local/bin/caddy
+    rm -rf "${TMP_DIR}"
+
+    mkdir -p /etc/caddy /var/lib/caddy /var/log/caddy
+
+    cat > /etc/systemd/system/caddy.service <<EOF
+[Unit]
+Description=Caddy
+Documentation=https://caddyserver.com/docs/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/caddy run --environ --config /etc/caddy/Caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --force
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+LimitNPROC=512
+PrivateTmp=true
+ProtectSystem=full
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
   fi
 }
 
