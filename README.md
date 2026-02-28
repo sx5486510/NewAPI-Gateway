@@ -20,7 +20,7 @@ NewAPI Gateway 是一个聚合多个 [NewAPI](https://github.com/QuantumNous/new
 - ✅ **多供应商管理**：统一管理多个 NewAPI 实例的 Token、定价、余额
 - ✅ **智能路由**：候选归一匹配 + Priority 分层 + 价值评分加权 + 可选健康调节
 - ✅ **自动同步**：每 5 分钟从上游同步 pricing/tokens/balance，自动重建路由表
-- ✅ **签到服务**：自动为启用签到的供应商执行每日签到
+- ✅ **签到服务**：每天本地时间 `00:05` 自动签到（启动后补跑一次，已签当日自动跳过）
 - ✅ **SSE 流式支持**：完整支持 Server-Sent Events 流式代理
 - ✅ **使用统计**：详细记录每次调用的模型/供应商/耗时/状态
 - ✅ **OpenAI 兼容**：支持 OpenAI / Anthropic / Gemini 等多种 API 格式
@@ -118,7 +118,7 @@ go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)'" -o g
 | 上游 User ID | 上游用户 ID（用于 New-Api-User 头） | `1`                          |
 | 权重         | 路由权重（越高越优先）              | `10`                         |
 | 优先级       | 路由层级（越高越优先）              | `0`                          |
-| 启用签到     | 是否自动签到                        | ☑️                            |
+| 启用签到     | 是否自动签到（每天 `00:05`）         | ☑️                            |
 
 ### 2. 同步数据
 

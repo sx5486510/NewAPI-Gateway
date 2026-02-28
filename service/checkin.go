@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/model"
@@ -47,11 +48,23 @@ func CheckinAllProviders() {
 		common.SysLog(fmt.Sprintf("get checkin providers failed: %v", err))
 		return
 	}
+	now := time.Now()
 	for _, p := range providers {
+		if checkedInToday(p.LastCheckinAt, now) {
+			continue
+		}
 		if err := CheckinProvider(p); err != nil {
 			common.SysLog(fmt.Sprintf("checkin failed for provider %s: %v", p.Name, err))
 		}
 	}
+}
+
+func checkedInToday(lastCheckinAt int64, now time.Time) bool {
+	if lastCheckinAt <= 0 {
+		return false
+	}
+	last := time.Unix(lastCheckinAt, 0).In(now.Location())
+	return last.Year() == now.Year() && last.Month() == now.Month() && last.Day() == now.Day()
 }
 
 func isCheckinDisabledError(err error) bool {

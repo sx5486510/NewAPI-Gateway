@@ -62,7 +62,9 @@
 ### 定时任务
 
 - 同步任务：每 5 分钟执行一次 `syncAllProviders()`。
-- 签到任务：每 24 小时执行一次 `CheckinAllProviders()`。
+- 签到任务：每天本地时间 `00:05` 执行一次 `CheckinAllProviders()`。
+- 启动补跑：服务启动后会立即执行一次 `CheckinAllProviders()`。
+- 去重策略：若供应商 `last_checkin_at` 已是当天，则跳过该供应商的自动签到请求。
 
 ### 单供应商同步流程
 

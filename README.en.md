@@ -20,7 +20,7 @@ NewAPI Gateway is a transparent gateway that aggregates multiple [NewAPI](https:
 - ✅ **Multi-Provider Management**: Unified management of tokens, pricing, and balance across NewAPI instances
 - ✅ **Smart Routing**: Candidate normalization + priority tiers + value-aware weighted retry + optional health adjustment
 - ✅ **Auto Sync**: Syncs pricing/tokens/balance from upstream every 5 minutes, auto-rebuilds route table
-- ✅ **Check-in Service**: Automatic daily check-in for enabled providers
+- ✅ **Check-in Service**: Daily check-in at local `00:05` (startup catch-up run, skip if already checked in today)
 - ✅ **SSE Streaming**: Full Server-Sent Events streaming proxy support
 - ✅ **Usage Analytics**: Detailed logging of model/provider/latency/status per request
 - ✅ **OpenAI Compatible**: Supports OpenAI / Anthropic / Gemini API formats
@@ -91,7 +91,7 @@ Navigate to **Providers** page and click "Add Provider":
 | User ID         | Upstream user ID (for New-Api-User header) | `1`                          |
 | Weight          | Routing weight (higher = more traffic)     | `10`                         |
 | Priority        | Routing tier (higher = tried first)        | `0`                          |
-| Enable Check-in | Auto daily check-in                        | ☑️                            |
+| Enable Check-in | Auto check-in (daily at `00:05`)           | ☑️                            |
 
 ### 2. Sync Data
 

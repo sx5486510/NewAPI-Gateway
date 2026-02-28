@@ -7,8 +7,13 @@ import (
 )
 
 var syncTicker *time.Ticker
-var checkinTicker *time.Ticker
+var checkinTimer *time.Timer
 var stopCron chan bool
+
+const (
+	dailyCheckinHour   = 0
+	dailyCheckinMinute = 5
+)
 
 // StartCronJobs starts background sync and checkin tasks
 func StartCronJobs() {
@@ -16,25 +21,34 @@ func StartCronJobs() {
 
 	// Sync every 5 minutes
 	syncTicker = time.NewTicker(5 * time.Minute)
-	// Checkin every 24 hours
-	checkinTicker = time.NewTicker(24 * time.Hour)
+	// Checkin at fixed local calendar time every day
+	checkinTimer = time.NewTimer(durationUntilNextCheckin(time.Now()))
+
+	// Catch up one run on startup
+	go CheckinAllProviders()
 
 	go func() {
 		for {
 			select {
 			case <-syncTicker.C:
 				syncAllProviders()
-			case <-checkinTicker.C:
+			case <-checkinTimer.C:
 				CheckinAllProviders()
+				checkinTimer.Reset(durationUntilNextCheckin(time.Now()))
 			case <-stopCron:
 				syncTicker.Stop()
-				checkinTicker.Stop()
+				if !checkinTimer.Stop() {
+					select {
+					case <-checkinTimer.C:
+					default:
+					}
+				}
 				return
 			}
 		}
 	}()
 
-	common.SysLog("cron jobs started: sync every 5m, checkin every 24h")
+	common.SysLog("cron jobs started: sync every 5m, checkin daily at 00:05 local time")
 }
 
 // StopCronJobs stops background tasks
@@ -55,4 +69,21 @@ func syncAllProviders() {
 			common.SysLog("sync failed for provider " + p.Name + ": " + err.Error())
 		}
 	}
+}
+
+func durationUntilNextCheckin(now time.Time) time.Duration {
+	next := time.Date(
+		now.Year(),
+		now.Month(),
+		now.Day(),
+		dailyCheckinHour,
+		dailyCheckinMinute,
+		0,
+		0,
+		now.Location(),
+	)
+	if !now.Before(next) {
+		next = next.AddDate(0, 0, 1)
+	}
+	return next.Sub(now)
 }
