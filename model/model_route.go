@@ -35,9 +35,48 @@ const (
 	routingHealthMinMultiplierOptionKey = "RoutingHealthMinMultiplier"
 	routingHealthMaxMultiplierOptionKey = "RoutingHealthMaxMultiplier"
 	routingHealthMinSamplesOptionKey    = "RoutingHealthMinSamples"
+
+	sqliteSingleInChunkSize = 800
+	sqlitePairInChunkSize   = 400
 )
 
 var balanceNumberPattern = regexp.MustCompile(`[-+]?\d*\.?\d+`)
+
+func chunkInts(values []int, chunkSize int) [][]int {
+	if len(values) == 0 {
+		return nil
+	}
+	if chunkSize <= 0 || len(values) <= chunkSize {
+		return [][]int{values}
+	}
+	result := make([][]int, 0, (len(values)+chunkSize-1)/chunkSize)
+	for start := 0; start < len(values); start += chunkSize {
+		end := start + chunkSize
+		if end > len(values) {
+			end = len(values)
+		}
+		result = append(result, values[start:end])
+	}
+	return result
+}
+
+func chunkStrings(values []string, chunkSize int) [][]string {
+	if len(values) == 0 {
+		return nil
+	}
+	if chunkSize <= 0 || len(values) <= chunkSize {
+		return [][]string{values}
+	}
+	result := make([][]string, 0, (len(values)+chunkSize-1)/chunkSize)
+	for start := 0; start < len(values); start += chunkSize {
+		end := start + chunkSize
+		if end > len(values) {
+			end = len(values)
+		}
+		result = append(result, values[start:end])
+	}
+	return result
+}
 
 type ModelRoute struct {
 	Id              int    `json:"id"`
@@ -418,13 +457,15 @@ func loadProvidersByIDs(providerIds []int) (map[int]*Provider, error) {
 	if len(providerIds) == 0 {
 		return lookup, nil
 	}
-	var providers []Provider
-	if err := DB.Where("id IN ?", providerIds).Find(&providers).Error; err != nil {
-		return nil, err
-	}
-	for i := range providers {
-		provider := providers[i]
-		lookup[provider.Id] = &provider
+	for _, batch := range chunkInts(providerIds, sqliteSingleInChunkSize) {
+		var providers []Provider
+		if err := DB.Where("id IN ?", batch).Find(&providers).Error; err != nil {
+			return nil, err
+		}
+		for i := range providers {
+			provider := providers[i]
+			lookup[provider.Id] = &provider
+		}
 	}
 	return lookup, nil
 }
@@ -434,13 +475,15 @@ func loadProviderTokensByIDs(tokenIds []int) (map[int]*ProviderToken, error) {
 	if len(tokenIds) == 0 {
 		return lookup, nil
 	}
-	var tokens []ProviderToken
-	if err := DB.Where("id IN ?", tokenIds).Find(&tokens).Error; err != nil {
-		return nil, err
-	}
-	for i := range tokens {
-		token := tokens[i]
-		lookup[token.Id] = &token
+	for _, batch := range chunkInts(tokenIds, sqliteSingleInChunkSize) {
+		var tokens []ProviderToken
+		if err := DB.Where("id IN ?", batch).Find(&tokens).Error; err != nil {
+			return nil, err
+		}
+		for i := range tokens {
+			token := tokens[i]
+			lookup[token.Id] = &token
+		}
 	}
 	return lookup, nil
 }
@@ -470,12 +513,16 @@ func buildRouteRuntimeMetrics(routes []ModelRoute, providers map[int]*Provider, 
 
 	pricingLookup := make(map[string]ModelPricing)
 	if len(providerIds) > 0 && len(modelNames) > 0 {
-		var pricings []ModelPricing
-		if err := DB.Where("provider_id IN ? AND model_name IN ?", providerIds, modelNames).Find(&pricings).Error; err != nil {
-			return nil, err
-		}
-		for _, pricing := range pricings {
-			pricingLookup[routePricingKey(pricing.ProviderId, pricing.ModelName)] = pricing
+		for _, providerBatch := range chunkInts(providerIds, sqlitePairInChunkSize) {
+			for _, modelBatch := range chunkStrings(modelNames, sqlitePairInChunkSize) {
+				var pricings []ModelPricing
+				if err := DB.Where("provider_id IN ? AND model_name IN ?", providerBatch, modelBatch).Find(&pricings).Error; err != nil {
+					return nil, err
+				}
+				for _, pricing := range pricings {
+					pricingLookup[routePricingKey(pricing.ProviderId, pricing.ModelName)] = pricing
+				}
+			}
 		}
 	}
 
@@ -809,20 +856,24 @@ func loadRecentUsageCostByTokenModel(tokenIds []int, modelNames []string, usageW
 		ModelName       string  `gorm:"column:model_name"`
 		TotalCost       float64 `gorm:"column:total_cost"`
 	}
-	var rows []usageRow
 	if usageWindowHours <= 0 {
 		usageWindowHours = defaultRoutingUsageWindowHours
 	}
 	since := time.Now().Add(-time.Duration(usageWindowHours) * time.Hour).Unix()
-	if err := DB.Table("usage_logs").
-		Select("provider_token_id, model_name, COALESCE(SUM(cost_usd), 0) AS total_cost").
-		Where("created_at >= ? AND provider_token_id IN ? AND model_name IN ? AND status = 1", since, tokenIds, modelNames).
-		Group("provider_token_id, model_name").
-		Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	for _, row := range rows {
-		usageLookup[routeUsageKey(row.ProviderTokenId, row.ModelName)] = row.TotalCost
+	for _, tokenBatch := range chunkInts(tokenIds, sqlitePairInChunkSize) {
+		for _, modelBatch := range chunkStrings(modelNames, sqlitePairInChunkSize) {
+			var rows []usageRow
+			if err := DB.Table("usage_logs").
+				Select("provider_token_id, model_name, COALESCE(SUM(cost_usd), 0) AS total_cost").
+				Where("created_at >= ? AND provider_token_id IN ? AND model_name IN ? AND status = 1", since, tokenBatch, modelBatch).
+				Group("provider_token_id, model_name").
+				Scan(&rows).Error; err != nil {
+				return nil, err
+			}
+			for _, row := range rows {
+				usageLookup[routeUsageKey(row.ProviderTokenId, row.ModelName)] = row.TotalCost
+			}
+		}
 	}
 	return usageLookup, nil
 }
@@ -848,37 +899,41 @@ func loadRouteHealthStatsByTokenModel(tokenIds []int, modelNames []string, windo
 	const successCondition = "(status = 1 AND (error_message IS NULL OR TRIM(error_message) = ''))"
 	const errorCondition = "(status <> 1 OR (error_message IS NOT NULL AND TRIM(error_message) <> ''))"
 
-	var rows []healthRow
 	since := time.Now().Add(-time.Duration(windowHours) * time.Hour).Unix()
-	if err := DB.Table("usage_logs").
-		Select(
-			"provider_token_id",
-			"model_name",
-			"SUM(CASE WHEN "+successCondition+" THEN 1 ELSE 0 END) AS success_count",
-			"SUM(CASE WHEN "+errorCondition+" THEN 1 ELSE 0 END) AS error_count",
-			"COUNT(*) AS sample_count",
-			"COALESCE(AVG(response_time_ms), 0) AS avg_latency_ms",
-		).
-		Where("created_at >= ? AND provider_token_id IN ? AND model_name IN ?", since, tokenIds, modelNames).
-		Group("provider_token_id, model_name").
-		Scan(&rows).Error; err != nil {
-		return nil, err
-	}
+	for _, tokenBatch := range chunkInts(tokenIds, sqlitePairInChunkSize) {
+		for _, modelBatch := range chunkStrings(modelNames, sqlitePairInChunkSize) {
+			var rows []healthRow
+			if err := DB.Table("usage_logs").
+				Select(
+					"provider_token_id",
+					"model_name",
+					"SUM(CASE WHEN "+successCondition+" THEN 1 ELSE 0 END) AS success_count",
+					"SUM(CASE WHEN "+errorCondition+" THEN 1 ELSE 0 END) AS error_count",
+					"COUNT(*) AS sample_count",
+					"COALESCE(AVG(response_time_ms), 0) AS avg_latency_ms",
+				).
+				Where("created_at >= ? AND provider_token_id IN ? AND model_name IN ?", since, tokenBatch, modelBatch).
+				Group("provider_token_id, model_name").
+				Scan(&rows).Error; err != nil {
+				return nil, err
+			}
 
-	for _, row := range rows {
-		successRate := 0.0
-		failRate := 0.0
-		if row.SampleCount > 0 {
-			successRate = float64(row.SuccessCount) / float64(row.SampleCount)
-			failRate = float64(row.ErrorCount) / float64(row.SampleCount)
-		}
-		statsLookup[routeUsageKey(row.ProviderTokenId, row.ModelName)] = routeHealthStats{
-			SuccessCount: row.SuccessCount,
-			ErrorCount:   row.ErrorCount,
-			SampleCount:  row.SampleCount,
-			AvgLatencyMs: row.AvgLatencyMs,
-			SuccessRate:  successRate,
-			FailRate:     failRate,
+			for _, row := range rows {
+				successRate := 0.0
+				failRate := 0.0
+				if row.SampleCount > 0 {
+					successRate = float64(row.SuccessCount) / float64(row.SampleCount)
+					failRate = float64(row.ErrorCount) / float64(row.SampleCount)
+				}
+				statsLookup[routeUsageKey(row.ProviderTokenId, row.ModelName)] = routeHealthStats{
+					SuccessCount: row.SuccessCount,
+					ErrorCount:   row.ErrorCount,
+					SampleCount:  row.SampleCount,
+					AvgLatencyMs: row.AvgLatencyMs,
+					SuccessRate:  successRate,
+					FailRate:     failRate,
+				}
+			}
 		}
 	}
 	return statsLookup, nil
@@ -1060,12 +1115,14 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 		providerIds = append(providerIds, row.ProviderId)
 	}
 	if len(providerIds) > 0 {
-		var providers []Provider
-		if err := DB.Select("id", "model_alias_mapping").Where("id IN ?", providerIds).Find(&providers).Error; err != nil {
-			return nil, err
-		}
-		for _, p := range providers {
-			aliasDisplayLookupCache[p.Id] = buildProviderModelAliasReverseLookup(ParseProviderAliasMapping(p.ModelAliasMapping))
+		for _, batch := range chunkInts(providerIds, sqliteSingleInChunkSize) {
+			var providers []Provider
+			if err := DB.Select("id", "model_alias_mapping").Where("id IN ?", batch).Find(&providers).Error; err != nil {
+				return nil, err
+			}
+			for _, p := range providers {
+				aliasDisplayLookupCache[p.Id] = buildProviderModelAliasReverseLookup(ParseProviderAliasMapping(p.ModelAliasMapping))
+			}
 		}
 	}
 
