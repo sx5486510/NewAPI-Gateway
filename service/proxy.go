@@ -85,7 +85,7 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 	// 4. Carefully set headers — transparency is KEY
 	// Only forward safe headers, remove all proxy-revealing headers
 	safeHeaders := []string{
-		"Content-Type", "Accept", "Accept-Encoding", "Accept-Language", "User-Agent", "anthropic-beta",
+		"Content-Type", "Accept", "Accept-Language", "User-Agent", "anthropic-beta",
 	}
 	for _, h := range safeHeaders {
 		if v := c.GetHeader(h); v != "" {
