@@ -279,11 +279,13 @@ curl https://your-gateway.com/v1/chat/completions \
    - 基础权重：`base = max(weight + 10, 0)`；
    - 当同层存在有效评分时：`contribution_base = base * (RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor)`；
    - 当同层评分不可用时，退化为 `contribution_base = base`。
-5. **可选健康调节（默认关闭）**：
-   - 开启 `RoutingHealthAdjustmentEnabled=true` 后，根据窗口内成功率/失败率/平均延迟计算 `health_multiplier`；
-   - 最终贡献值：`contribution = contribution_base * health_multiplier`（并受最小/最大倍率约束）。
-6. **同层加权洗牌重试**：
-   - 在同一优先级层按 `contribution` 做“加权随机不放回”生成完整重试顺序；
+5. **可选健康优选（默认开启）**：
+   - 开启 `RoutingHealthAdjustmentEnabled=true` 后，每个渠道模型在每个整点小时初始健康值为 `0`；
+   - 每失败 1 次健康值减 `1`，成功不加不减；
+   - 同一优先级层优先尝试健康值更高的路由（如 `0 > -1 > -2`）。
+6. **同层重试顺序生成**：
+   - 先按健康值从高到低分桶；
+   - 同一健康值桶内再按 `contribution` 做“加权随机不放回”生成完整重试顺序；
    - 当前层全部失败后才降级到下一优先级层；
    - 遇到不可重试错误（如明确上游失败）会提前终止，不再继续降级。
 

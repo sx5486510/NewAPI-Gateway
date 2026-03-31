@@ -138,20 +138,14 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | `RoutingUsageWindowHours` | int | `24` | `1 ~ 720` | 计算 `recent_usage_cost_usd` 的统计窗口（小时） |
 | `RoutingBaseWeightFactor` | float | `0.2` | `0 ~ 10` | 占比贡献中的基础系数 |
 | `RoutingValueScoreFactor` | float | `0.8` | `0 ~ 10` | 占比贡献中的性价比系数 |
-| `RoutingHealthAdjustmentEnabled` | bool | `true` | `true/false` | 是否启用健康调节倍率 |
-| `RoutingHealthWindowHours` | int | `24` | `1 ~ 720` | 健康统计窗口（小时） |
-| `RoutingFailurePenaltyAlpha` | float | `20.0` | `0 ~ 20` | 失败率惩罚系数（越大惩罚越强） |
-| `RoutingHealthRewardBeta` | float | `0` | `0 ~ 2` | 健康奖励系数（越大奖励越强） |
-| `RoutingHealthMinMultiplier` | float | `0.01` | `0 ~ 10` | 健康倍率下限 |
-| `RoutingHealthMaxMultiplier` | float | `1.0` | `0 ~ 10` | 健康倍率上限 |
-| `RoutingHealthMinSamples` | int | `1` | `1 ~ 1000` | 启用健康调节所需最小样本数 |
+| `RoutingHealthAdjustmentEnabled` | bool | `true` | `true/false` | 是否启用按健康值优先选择模型 |
 
 占比贡献公式：
 
 - 基础贡献：`contribution_base = max(weight + 10, 0) * (RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor)`
 - 若同层无有效 `value_score`，回退为 `contribution_base = max(weight + 10, 0)`
-- 最终贡献：`contribution = contribution_base * health_multiplier`
-- 健康调节关闭或样本不足时，`health_multiplier = 1`
+- 健康优选开启时，每个渠道模型按“当前整点小时内失败次数”计算健康值：初始 `0`，每失败 1 次减 `1`
+- 同一优先级层先按健康值从高到低排序；健康值相同的路由再按 `contribution_base` 做加权随机不放回
 
 ## Provider 相关 API（Session，`AdminAuth + NoTokenAuth`）
 

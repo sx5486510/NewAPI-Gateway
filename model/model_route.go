@@ -18,23 +18,11 @@ const (
 	defaultRoutingBaseWeightFactor = 0.2
 	defaultRoutingValueScoreFactor = 0.8
 	defaultRoutingHealthEnabled    = true
-	defaultRoutingHealthWindowHour = 24
-	defaultRoutingFailurePenaltyA  = 6.0
-	defaultRoutingHealthRewardBeta = 0.1
-	defaultRoutingHealthMinMult    = 0.05
-	defaultRoutingHealthMaxMult    = 1.0
-	defaultRoutingHealthMinSamples = 3
 
 	routingUsageWindowHoursOptionKey    = "RoutingUsageWindowHours"
 	routingBaseWeightFactorOptionKey    = "RoutingBaseWeightFactor"
 	routingValueScoreFactorOptionKey    = "RoutingValueScoreFactor"
 	routingHealthEnabledOptionKey       = "RoutingHealthAdjustmentEnabled"
-	routingHealthWindowHoursOptionKey   = "RoutingHealthWindowHours"
-	routingFailurePenaltyAlphaOptionKey = "RoutingFailurePenaltyAlpha"
-	routingHealthRewardBetaOptionKey    = "RoutingHealthRewardBeta"
-	routingHealthMinMultiplierOptionKey = "RoutingHealthMinMultiplier"
-	routingHealthMaxMultiplierOptionKey = "RoutingHealthMaxMultiplier"
-	routingHealthMinSamplesOptionKey    = "RoutingHealthMinSamples"
 
 	sqliteSingleInChunkSize = 800
 	sqlitePairInChunkSize   = 400
@@ -135,20 +123,10 @@ type ModelRouteOverviewItem struct {
 	BaseWeightFactor        float64  `json:"base_weight_factor"`
 	ValueScoreFactor        float64  `json:"value_score_factor"`
 	HealthAdjustmentEnabled bool     `json:"health_adjustment_enabled"`
-	HealthWindowHours       int      `json:"health_window_hours"`
-	FailurePenaltyAlpha     float64  `json:"failure_penalty_alpha"`
-	HealthRewardBeta        float64  `json:"health_reward_beta"`
-	HealthMinMultiplier     float64  `json:"health_min_multiplier"`
-	HealthMaxMultiplier     float64  `json:"health_max_multiplier"`
-	HealthMinSamples        int      `json:"health_min_samples"`
 	HealthValue             int64    `json:"health_value"`
 	HealthSuccessCount      int64    `json:"health_success_count"`
 	HealthErrorCount        int64    `json:"health_error_count"`
-	HealthMultiplier        float64  `json:"health_multiplier"`
 	HealthSampleCount       int64    `json:"health_sample_count"`
-	HealthSuccessRate       *float64 `json:"health_success_rate"`
-	HealthFailRate          *float64 `json:"health_fail_rate"`
-	HealthAvgLatencyMs      *float64 `json:"health_avg_latency_ms"`
 	EffectiveSharePercent   *float64 `json:"effective_share_percent"`
 }
 
@@ -192,36 +170,21 @@ type routeRuntimeMetrics struct {
 	HealthValue        int64
 	HealthSuccessCount int64
 	HealthErrorCount   int64
-	HealthMultiplier   float64
 	HealthSampleCount  int64
-	HealthSuccessRate  float64
-	HealthFailRate     float64
-	HealthAvgLatencyMs float64
 }
 
 type routingTuningConfig struct {
-	UsageWindowHours    int
-	BaseWeightFactor    float64
-	ValueScoreFactor    float64
-	HealthEnabled       bool
-	HealthWindowHours   int
-	FailurePenaltyAlpha float64
-	HealthRewardBeta    float64
-	HealthMinMultiplier float64
-	HealthMaxMultiplier float64
-	HealthMinSamples    int
+	UsageWindowHours int
+	BaseWeightFactor float64
+	ValueScoreFactor float64
+	HealthEnabled    bool
 }
 
 type routeHealthStats struct {
 	SuccessCount int64
 	ErrorCount   int64
 	SampleCount  int64
-	AvgLatencyMs float64
-	SuccessRate  float64
-	FailRate     float64
-	HealthScore  float64
 	HealthValue  int64
-	Multiplier   float64
 }
 
 // SelectProviderToken selects a provider token for a specific priority-retry index.
@@ -563,11 +526,7 @@ func buildRouteRuntimeMetrics(routes []ModelRoute, providers map[int]*Provider, 
 			HealthValue:        healthStats.HealthValue,
 			HealthSuccessCount: healthStats.SuccessCount,
 			HealthErrorCount:   healthStats.ErrorCount,
-			HealthMultiplier:   healthStats.Multiplier,
 			HealthSampleCount:  healthStats.SampleCount,
-			HealthSuccessRate:  healthStats.SuccessRate,
-			HealthFailRate:     healthStats.FailRate,
-			HealthAvgLatencyMs: healthStats.AvgLatencyMs,
 		}
 	}
 
@@ -709,16 +668,10 @@ func computeRouteValueScore(unitCostUSD float64, balanceUSD float64, recentUsage
 
 func loadRoutingTuningConfig() routingTuningConfig {
 	config := routingTuningConfig{
-		UsageWindowHours:    defaultRoutingUsageWindowHours,
-		BaseWeightFactor:    defaultRoutingBaseWeightFactor,
-		ValueScoreFactor:    defaultRoutingValueScoreFactor,
-		HealthEnabled:       defaultRoutingHealthEnabled,
-		HealthWindowHours:   defaultRoutingHealthWindowHour,
-		FailurePenaltyAlpha: defaultRoutingFailurePenaltyA,
-		HealthRewardBeta:    defaultRoutingHealthRewardBeta,
-		HealthMinMultiplier: defaultRoutingHealthMinMult,
-		HealthMaxMultiplier: defaultRoutingHealthMaxMult,
-		HealthMinSamples:    defaultRoutingHealthMinSamples,
+		UsageWindowHours: defaultRoutingUsageWindowHours,
+		BaseWeightFactor: defaultRoutingBaseWeightFactor,
+		ValueScoreFactor: defaultRoutingValueScoreFactor,
+		HealthEnabled:    defaultRoutingHealthEnabled,
 	}
 
 	common.OptionMapRWMutex.RLock()
@@ -746,48 +699,9 @@ func loadRoutingTuningConfig() routingTuningConfig {
 		common.OptionMap[routingHealthEnabledOptionKey],
 		defaultRoutingHealthEnabled,
 	)
-	config.HealthWindowHours = parseOptionIntInRange(
-		common.OptionMap[routingHealthWindowHoursOptionKey],
-		defaultRoutingHealthWindowHour,
-		1,
-		24*30,
-	)
-	config.FailurePenaltyAlpha = parseOptionFloatInRange(
-		common.OptionMap[routingFailurePenaltyAlphaOptionKey],
-		defaultRoutingFailurePenaltyA,
-		0,
-		20,
-	)
-	config.HealthRewardBeta = parseOptionFloatInRange(
-		common.OptionMap[routingHealthRewardBetaOptionKey],
-		defaultRoutingHealthRewardBeta,
-		0,
-		2,
-	)
-	config.HealthMinMultiplier = parseOptionFloatInRange(
-		common.OptionMap[routingHealthMinMultiplierOptionKey],
-		defaultRoutingHealthMinMult,
-		0,
-		10,
-	)
-	config.HealthMaxMultiplier = parseOptionFloatInRange(
-		common.OptionMap[routingHealthMaxMultiplierOptionKey],
-		defaultRoutingHealthMaxMult,
-		0,
-		10,
-	)
-	config.HealthMinSamples = parseOptionIntInRange(
-		common.OptionMap[routingHealthMinSamplesOptionKey],
-		defaultRoutingHealthMinSamples,
-		1,
-		1000,
-	)
 	if config.BaseWeightFactor == 0 && config.ValueScoreFactor == 0 {
 		config.BaseWeightFactor = defaultRoutingBaseWeightFactor
 		config.ValueScoreFactor = defaultRoutingValueScoreFactor
-	}
-	if config.HealthMaxMultiplier < config.HealthMinMultiplier {
-		config.HealthMaxMultiplier = config.HealthMinMultiplier
 	}
 	return config
 }
@@ -925,12 +839,11 @@ func loadRouteHealthStatsByTokenModel(tokenIds []int, modelNames []string) (map[
 	}
 
 	type healthRow struct {
-		ProviderTokenId int     `gorm:"column:provider_token_id"`
-		ModelName       string  `gorm:"column:model_name"`
-		SuccessCount    int64   `gorm:"column:success_count"`
-		ErrorCount      int64   `gorm:"column:error_count"`
-		SampleCount     int64   `gorm:"column:sample_count"`
-		AvgLatencyMs    float64 `gorm:"column:avg_latency_ms"`
+		ProviderTokenId int    `gorm:"column:provider_token_id"`
+		ModelName       string `gorm:"column:model_name"`
+		SuccessCount    int64  `gorm:"column:success_count"`
+		ErrorCount      int64  `gorm:"column:error_count"`
+		SampleCount     int64  `gorm:"column:sample_count"`
 	}
 
 	const successCondition = "(status = 1 AND (error_message IS NULL OR TRIM(error_message) = ''))"
@@ -947,7 +860,6 @@ func loadRouteHealthStatsByTokenModel(tokenIds []int, modelNames []string) (map[
 					"SUM(CASE WHEN "+successCondition+" THEN 1 ELSE 0 END) AS success_count",
 					"SUM(CASE WHEN "+errorCondition+" THEN 1 ELSE 0 END) AS error_count",
 					"COUNT(*) AS sample_count",
-					"COALESCE(AVG(response_time_ms), 0) AS avg_latency_ms",
 				).
 				Where("created_at >= ? AND provider_token_id IN ? AND model_name IN ?", since, tokenBatch, modelBatch).
 				Group("provider_token_id, model_name").
@@ -956,19 +868,10 @@ func loadRouteHealthStatsByTokenModel(tokenIds []int, modelNames []string) (map[
 			}
 
 			for _, row := range rows {
-				successRate := 0.0
-				failRate := 0.0
-				if row.SampleCount > 0 {
-					successRate = float64(row.SuccessCount) / float64(row.SampleCount)
-					failRate = float64(row.ErrorCount) / float64(row.SampleCount)
-				}
 				statsLookup[routeUsageKey(row.ProviderTokenId, row.ModelName)] = routeHealthStats{
 					SuccessCount: row.SuccessCount,
 					ErrorCount:   row.ErrorCount,
 					SampleCount:  row.SampleCount,
-					AvgLatencyMs: row.AvgLatencyMs,
-					SuccessRate:  successRate,
-					FailRate:     failRate,
 					HealthValue:  -row.ErrorCount,
 				}
 			}
@@ -980,19 +883,7 @@ func loadRouteHealthStatsByTokenModel(tokenIds []int, modelNames []string) (map[
 // finalizeRouteHealthStat 根据 usage_logs 聚合结果计算“本小时健康值”。
 // 规则固定为：每个整点小时初始为 0，每失败 1 次减 1，成功不加不减。
 func finalizeRouteHealthStat(stat routeHealthStats, _ routingTuningConfig) routeHealthStats {
-	successRate := 0.0
-	failRate := 0.0
-	if stat.SampleCount > 0 {
-		successRate = float64(stat.SuccessCount) / float64(stat.SampleCount)
-		failRate = float64(stat.ErrorCount) / float64(stat.SampleCount)
-	}
-
-	stat.SuccessRate = successRate
-	stat.FailRate = failRate
 	stat.HealthValue = -stat.ErrorCount
-	stat.HealthScore = float64(stat.HealthValue)
-	// 保留旧字段的中性值，避免影响仍在读取该字段的调用方。
-	stat.Multiplier = 1
 	return stat
 }
 
@@ -1148,13 +1039,6 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			BaseWeightFactor:        config.BaseWeightFactor,
 			ValueScoreFactor:        config.ValueScoreFactor,
 			HealthAdjustmentEnabled: config.HealthEnabled,
-			HealthWindowHours:       1,
-			FailurePenaltyAlpha:     config.FailurePenaltyAlpha,
-			HealthRewardBeta:        config.HealthRewardBeta,
-			HealthMinMultiplier:     config.HealthMinMultiplier,
-			HealthMaxMultiplier:     config.HealthMaxMultiplier,
-			HealthMinSamples:        config.HealthMinSamples,
-			HealthMultiplier:        1,
 		}
 		if reverseLookup, ok := aliasDisplayLookupCache[row.ProviderId]; ok {
 			if sourceModelName, matched := reverseLookup.ResolveByTarget(row.ModelName); matched {
@@ -1236,16 +1120,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 		item.HealthValue = healthStat.HealthValue
 		item.HealthSuccessCount = healthStat.SuccessCount
 		item.HealthErrorCount = healthStat.ErrorCount
-		item.HealthMultiplier = healthStat.Multiplier
 		item.HealthSampleCount = healthStat.SampleCount
-		if healthStat.SampleCount > 0 {
-			successRate := healthStat.SuccessRate
-			failRate := healthStat.FailRate
-			avgLatencyMs := healthStat.AvgLatencyMs
-			item.HealthSuccessRate = &successRate
-			item.HealthFailRate = &failRate
-			item.HealthAvgLatencyMs = &avgLatencyMs
-		}
 	}
 
 	shareSum := make(map[string]float64)

@@ -90,18 +90,16 @@
    - 基础值：`base = max(weight + 10, 0)`；
    - 同层存在有效评分时：`contribution_base = base * (RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor)`；
    - 同层评分不可用时：`contribution_base = base`。
-5. 健康调节（默认关闭）：
+5. 健康优选（默认开启）：
    - 开关：`RoutingHealthAdjustmentEnabled`；
-- 样本窗口：`RoutingHealthWindowHours`（默认 24，健康调节默认启用）；
-   - 仅当样本数达到 `RoutingHealthMinSamples`（默认 1）才生效；
-   - 结合失败率、成功率与平均延迟生成 `health_multiplier`，并限制在 `[RoutingHealthMinMultiplier, RoutingHealthMaxMultiplier]`。
-6. 最终贡献值：`contribution = contribution_base * health_multiplier`（健康调节关闭时倍率为 `1`）。
-7. 同层按贡献值执行“加权随机不放回”生成完整重试顺序，层内全部失败后再降级到下一优先级层。
+   - 每个渠道模型在每个整点小时初始健康值为 `0`；
+   - 每失败 1 次健康值减 `1`，成功不加不减。
+6. 同层先按健康值从高到低排序；健康值相同的路由再按 `contribution_base` 执行“加权随机不放回”生成完整重试顺序，层内全部失败后再降级到下一优先级层。
 
 说明：
 
 - `weight + 10` 仍用于保留低权重路由的基础概率。
-- 路由调参项（价值评分 + 健康调节）均可通过系统选项实时调整。
+- 路由调参项（价值评分 + 健康优选开关）均可通过系统选项实时调整。
 
 ## 透明代理策略
 

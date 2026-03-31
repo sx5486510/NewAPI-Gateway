@@ -71,7 +71,7 @@ make clean    # 清理构建产物
 ### 2. 调整路由策略
 
 1. 优先修改 `model/model_route.go` 的 `BuildRouteAttemptsByPriority` / `computeRouteContribution` / `finalizeRouteHealthStat`。
-2. 补充对应单元测试（建议覆盖优先级分层、价值评分、健康倍率边界）。
+2. 补充对应单元测试（建议覆盖优先级分层、价值评分、整点小时健康值排序）。
 3. 更新 `docs/ARCHITECTURE.md` 的算法说明。
 
 ### 3. 扩展供应商同步字段
