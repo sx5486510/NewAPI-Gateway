@@ -730,23 +730,19 @@ const ModelRoutesTable = () => {
                                 </div>
 
                                 <div className="routes-detail-scroller">
-                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '760px' : '820px'}>
+                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '600px' : '660px'}>
                                     <colgroup>
-                                        <col style={{ width: '22%' }} />
-                                        <col style={{ width: '24%' }} />
-                                        <col style={{ width: '9%' }} />
-                                        <col style={{ width: '9%' }} />
-                                        <col style={{ width: '13%' }} />
-                                        <col style={{ width: '13%' }} />
-                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '30%' }} />
+                                        <col style={{ width: '15%' }} />
+                                        <col style={{ width: '15%' }} />
+                                        <col style={{ width: '28%' }} />
+                                        <col style={{ width: '12%' }} />
                                     </colgroup>
                                     <Thead>
                                         <Tr>
                                             <Th style={stickyHeaderCellStyle}>供应商 / 令牌</Th>
-                                            <Th style={stickyHeaderCellStyle}>费用</Th>
-                                            <Th style={stickyHeaderCellStyle}>优先级</Th>
-                                            <Th style={stickyHeaderCellStyle}>权重</Th>
-                                            <Th style={stickyHeaderCellStyle}>占比</Th>
+                                            <Th style={stickyHeaderCellStyle}>成功数</Th>
+                                            <Th style={stickyHeaderCellStyle}>失败数</Th>
                                             <Th style={stickyHeaderCellStyle}>健康度</Th>
                                             <Th style={stickyHeaderCellStyle}>状态</Th>
                                         </Tr>
@@ -754,14 +750,14 @@ const ModelRoutesTable = () => {
                                     <Tbody>
                                         {selectedGroupedRoutes.length === 0 ? (
                                             <Tr>
-                                                <Td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
+                                                <Td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
                                                     当前模型没有符合条件的路由
                                                 </Td>
                                             </Tr>
                                         ) : selectedGroupedRoutes.map((group) => (
                                             <React.Fragment key={group.priority}>
                                                 <Tr style={{ backgroundColor: 'var(--gray-50)' }}>
-                                                    <Td colSpan={7} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
+                                                    <Td colSpan={5} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                             <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>优先级 {group.priority}</div>
                                                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -773,26 +769,10 @@ const ModelRoutesTable = () => {
                                                 </Tr>
                                                 {group.routes.map((route) => {
                                                     const isDirty = Boolean(drafts[route.id]);
-                                                    const share = Number(route.effective_share_percent);
-                                                    const originalShare = Number(selectedOriginalShareMap[route.id]);
-                                                    const shareDelta = Number.isFinite(share) && Number.isFinite(originalShare)
-                                                        ? share - originalShare
-                                                        : null;
-                                                    const valueScore = Number(route.value_score);
-                                                    const bestValueScore = Number(group.bestValueScore);
-                                                    const isBestValue = route.enabled &&
-                                                        Number.isFinite(valueScore) &&
-                                                        valueScore > 0 &&
-                                                        Number.isFinite(bestValueScore) &&
-                                                        bestValueScore > 0 &&
-                                                        Math.abs(valueScore - bestValueScore) < 1e-9;
                                                     const health = getRouteHealth(route);
                                                     const tokenName = String(route.token_name || '').trim();
                                                     const tokenGroup = String(route.token_group_name || '').trim();
                                                     const displayTokenName = tokenName && tokenName !== tokenGroup ? tokenName : '';
-                                                    const providerBalance = String(route.provider_balance || '').trim();
-                                                    const recentUsageCost = Number(route.recent_usage_cost_usd);
-                                                    const usageWindowHours = Number(route.usage_window_hours);
                                                     const healthMultiplier = Number(route.health_multiplier);
                                                     const healthSampleCount = Number(route.health_sample_count);
                                                     const healthFailRate = Number(route.health_fail_rate);
@@ -808,6 +788,12 @@ const ModelRoutesTable = () => {
                                                         Number.isFinite(healthMultiplier) &&
                                                         healthSampleCount > 0 &&
                                                         Math.abs(healthMultiplier - 1) >= 0.0005;
+                                                    const successCount = healthEnabled && Number.isFinite(healthSampleCount) && Number.isFinite(healthSuccessRate) && healthSampleCount > 0
+                                                        ? Math.round(healthSampleCount * healthSuccessRate)
+                                                        : null;
+                                                    const failCount = healthEnabled && Number.isFinite(healthSampleCount) && Number.isFinite(healthFailRate) && healthSampleCount > 0
+                                                        ? Math.round(healthSampleCount * healthFailRate)
+                                                        : null;
                                                     return (
                                                         <Tr key={route.id} style={isDirty ? { backgroundColor: 'rgba(245, 158, 11, 0.06)' } : undefined}>
                                                             <Td style={cellTopStyle}>
@@ -817,103 +803,22 @@ const ModelRoutesTable = () => {
                                                                         {displayTokenName}
                                                                     </div>
                                                                 )}
-                                                                <div style={{ ...helperTextStyle, marginTop: '0.2rem' }}>
-                                                                    余额: {providerBalance || '-'}
-                                                                </div>
-                                                                <div style={{ ...helperTextStyle, marginTop: '0.16rem' }}>
-                                                                    {Number.isFinite(usageWindowHours) && usageWindowHours > 0 ? `${usageWindowHours}h` : '24h'}使用: {Number.isFinite(recentUsageCost) ? formatPrice(recentUsageCost, 4) : '-'}
-                                                                </div>
                                                                 <div style={{ marginTop: '0.35rem', display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                                                     {tokenGroup ? <Badge color="gray">组: {tokenGroup}</Badge> : <Badge color="gray">未分组</Badge>}
                                                                     <Badge color={health.color}>{health.label}</Badge>
                                                                     {isDirty && <Badge color="yellow">已修改</Badge>}
                                                                 </div>
                                                             </Td>
-                                                            <Td style={cellTopStyle}>
-                                                                {route.billing_type === 'per_call' ? (
-                                                                    <div style={{ lineHeight: 1.35 }}>
-                                                                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>按次 {formatPrice(route.per_call_price)} / 次</div>
-                                                                        <div style={{ ...helperTextStyle, marginTop: '0.2rem' }}>
-                                                                            分组倍率 x{Number(route.group_ratio || 1).toFixed(4).replace(/\.?0+$/, '')}
-                                                                        </div>
-                                                                    </div>
+                                                            <Td style={cellMiddleStyle}>
+                                                                {successCount !== null ? (
+                                                                    <span style={{ color: 'var(--success)', fontWeight: 600 }}>{successCount}</span>
                                                                 ) : (
-                                                                    <div style={{ lineHeight: 1.35 }}>
-                                                                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>输入 {formatPrice(route.prompt_price_per_1m)} / 1M</div>
-                                                                        <div style={{ color: 'var(--text-primary)', marginTop: '0.18rem' }}>输出 {formatPrice(route.completion_price_per_1m)} / 1M</div>
-                                                                        <div style={{ ...helperTextStyle, marginTop: '0.2rem' }}>
-                                                                            分组倍率 x{Number(route.group_ratio || 1).toFixed(4).replace(/\.?0+$/, '')}
-                                                                        </div>
-                                                                    </div>
+                                                                    <span style={{ color: 'var(--text-secondary)' }}>-</span>
                                                                 )}
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>
-                                                                <div className="routes-spinner">
-                                                                    <button
-                                                                        type="button"
-                                                                        aria-label="优先级增加"
-                                                                        style={spinButtonStyle}
-                                                                        onClick={() => updateDraft(route.id, { priority: Number(route.priority || 0) + 1 })}
-                                                                    >
-                                                                        ▲
-                                                                    </button>
-                                                                    <div className="routes-spinner-value">{route.priority}</div>
-                                                                    <button
-                                                                        type="button"
-                                                                        aria-label="优先级减少"
-                                                                        style={spinButtonStyle}
-                                                                        onClick={() => updateDraft(route.id, { priority: Number(route.priority || 0) - 1 })}
-                                                                    >
-                                                                        ▼
-                                                                    </button>
-                                                                </div>
-                                                            </Td>
-                                                            <Td style={cellMiddleStyle}>
-                                                                <div className="routes-spinner">
-                                                                    <button
-                                                                        type="button"
-                                                                        aria-label="权重增加"
-                                                                        style={spinButtonStyle}
-                                                                        onClick={() => updateDraft(route.id, { weight: Number(route.weight || 0) + 1 })}
-                                                                    >
-                                                                        ▲
-                                                                    </button>
-                                                                    <div className="routes-spinner-value">{route.weight}</div>
-                                                                    <button
-                                                                        type="button"
-                                                                        aria-label="权重减少"
-                                                                        style={spinButtonStyle}
-                                                                        onClick={() => updateDraft(route.id, { weight: Number(route.weight || 0) - 1 })}
-                                                                    >
-                                                                        ▼
-                                                                    </button>
-                                                                </div>
-                                                            </Td>
-                                                            <Td style={cellMiddleStyle}>
-                                                                {Number.isFinite(share) ? (
-                                                                    <div className="routes-share-compact">
-                                                                        <div className="routes-share-track">
-                                                                            <div
-                                                                                className="routes-share-fill"
-                                                                                style={{ width: `${Math.min(100, Math.max(0, share))}%` }}
-                                                                            />
-                                                                        </div>
-                                                                        <div className="routes-share-meta">
-                                                                            <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{formatPercent(share)}</span>
-                                                                            {shareDelta !== null && Math.abs(shareDelta) >= 0.1 && (
-                                                                                <span style={{ color: shareDelta > 0 ? 'var(--success)' : 'var(--error)' }}>
-                                                                                    {shareDelta > 0 ? '+' : ''}{shareDelta.toFixed(1)}
-                                                                                </span>
-                                                                            )}
-                                                                            {isBestValue && (
-                                                                                <span style={{ color: 'var(--success)' }}>性价比最优</span>
-                                                                            )}
-                                                                        </div>
-                                                                        <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
-                                                                            性价比（金额） | 评分 {Number.isFinite(valueScore) ? valueScore.toFixed(4) : '-'}
-                                                                            {' '}| {Number.isFinite(usageWindowHours) && usageWindowHours > 0 ? `${usageWindowHours}h` : '24h'}使用 {Number.isFinite(recentUsageCost) ? formatPrice(recentUsageCost, 4) : '-'}
-                                                                        </div>
-                                                                    </div>
+                                                                {failCount !== null ? (
+                                                                    <span style={{ color: failCount > 0 ? 'var(--error)' : 'var(--text-secondary)', fontWeight: failCount > 0 ? 600 : 400 }}>{failCount}</span>
                                                                 ) : (
                                                                     <span style={{ color: 'var(--text-secondary)' }}>-</span>
                                                                 )}
