@@ -19,11 +19,11 @@ const (
 	defaultRoutingValueScoreFactor = 0.8
 	defaultRoutingHealthEnabled    = true
 	defaultRoutingHealthWindowHour = 24
-	defaultRoutingFailurePenaltyA  = 20.0
-	defaultRoutingHealthRewardBeta = 0.0
-	defaultRoutingHealthMinMult    = 0.01
+	defaultRoutingFailurePenaltyA  = 6.0
+	defaultRoutingHealthRewardBeta = 0.1
+	defaultRoutingHealthMinMult    = 0.05
 	defaultRoutingHealthMaxMult    = 1.0
-	defaultRoutingHealthMinSamples = 1
+	defaultRoutingHealthMinSamples = 3
 
 	routingUsageWindowHoursOptionKey    = "RoutingUsageWindowHours"
 	routingBaseWeightFactorOptionKey    = "RoutingBaseWeightFactor"
@@ -939,15 +939,44 @@ func loadRouteHealthStatsByTokenModel(tokenIds []int, modelNames []string, windo
 	return statsLookup, nil
 }
 
+// finalizeRouteHealthStat 将原始健康统计值转换为最终可用于路由分流的“健康倍率”。
+//
+// 输入的 stat 来自最近一段时间窗口内的 usage_logs 聚合结果，通常包含：
+// - SuccessCount: 成功请求数
+// - ErrorCount: 失败请求数
+// - SampleCount: 总样本数
+// - AvgLatencyMs: 平均响应时延
+//
+// 这个函数的目标不是简单判断“好/坏”，而是产出一个可连续调节的倍率：
+// - Multiplier > 1 表示奖励
+// - Multiplier = 1 表示中性
+// - Multiplier < 1 表示惩罚
+//
+// 当前实现的总体思路：
+// 1. 如果健康调节未开启，或者样本数不足，则直接返回倍率 1
+// 2. 归一化失败率和成功率，避免脏数据把计算拉出边界
+// 3. 将平均时延映射为 0~1 的 latencyScore
+// 4. 用 成功率(75%) + 时延得分(25%) 组成 healthScore
+// 5. 用 penalty * reward 得到最终倍率
+// 6. 再用最小/最大倍率做裁剪，避免路由权重出现极端值
 func finalizeRouteHealthStat(stat routeHealthStats, config routingTuningConfig) routeHealthStats {
+	// 默认先按“中性倍率”处理。
+	// 如果后续发现无需健康调节，或者样本不足，直接返回这个值。
 	stat.Multiplier = 1
+
+	// 未开启健康调节：完全不参与惩罚/奖励，直接返回原始统计。
 	if !config.HealthEnabled {
 		return stat
 	}
+
+	// 样本数不足时，不做健康判断。
+	// 这是为了避免刚出现 1~2 个请求时，因为偶然成功/失败就把倍率拉偏。
 	if stat.SampleCount < int64(config.HealthMinSamples) {
 		return stat
 	}
 
+	// 失败率、成功率都强制裁到 [0, 1]。
+	// 理论上聚合结果不该越界，但这里做一次保险，避免异常数据污染最终倍率。
 	failRate := stat.FailRate
 	if failRate < 0 {
 		failRate = 0
@@ -963,6 +992,15 @@ func finalizeRouteHealthStat(stat routeHealthStats, config routingTuningConfig) 
 		successRate = 1
 	}
 
+	// latencyScore 将平均时延映射成 0~1：
+	// - <= 1500ms 视为满分 1
+	// - >= 10000ms 视为最低分 0
+	// - 中间区间按线性插值衰减
+	//
+	// 这个设计的含义是：
+	// 响应很快的模型不会因为时延被扣分；
+	// 响应非常慢的模型会明显拖累健康分；
+	// 中间区间的惩罚是平滑的，而不是跳变的。
 	latencyScore := 1.0
 	if stat.AvgLatencyMs > 0 {
 		const lowMs = 1500.0
@@ -982,12 +1020,42 @@ func finalizeRouteHealthStat(stat routeHealthStats, config routingTuningConfig) 
 		latencyScore = 1
 	}
 
+	// confidence 表示“我们对当前健康判断的信心”。
+	// 样本越多，confidence 越接近 1；样本少时，奖励会被压低。
+	// 当前 50 个样本时达到满信心。
 	confidence := math.Min(1, float64(stat.SampleCount)/50.0)
+
+	// healthScore 是一个 0~1 的综合健康分：
+	// - 成功率占 75%
+	// - 时延得分占 25%
+	//
+	// 也就是说：当前设计更看重“别失败”，其次才是“够不够快”。
 	healthScore := successRate*0.75 + latencyScore*0.25
-	penalty := math.Exp(-config.FailurePenaltyAlpha * failRate)
+
+	// penalty 是故障惩罚项：
+	// - failRate 越高，penalty 越低
+	// - 当前公式是 1 / (1 + alpha * failRate)
+	// - alpha 越大，惩罚越陡峭
+	//
+	// 相比指数衰减，这个形式更平滑，能把 44.4% 和 100% 的失败率拉开，
+	// 避免中高失败率都快速贴到同一个下限。
+	penalty := 1 / (1 + config.FailurePenaltyAlpha*failRate)
+
+	// reward 是健康奖励项：
+	// - reward 基于 healthScore
+	// - 再乘上 confidence，避免样本太少时奖励过度
+	// - beta 越大，奖励越强
 	reward := 1 + config.HealthRewardBeta*healthScore*confidence
+
+	// 最终倍率 = 故障惩罚 * 健康奖励
+	// 这意味着：
+	// - 失败率高时，惩罚优先拉低倍率
+	// - 成功率高且时延好时，奖励会适度抬升倍率
 	multiplier := penalty * reward
 
+	// 使用上下限保护最终倍率：
+	// - 下限避免权重被压到几乎永远选不到
+	// - 上限避免健康奖励过强，导致单一路由过分垄断流量
 	if multiplier < config.HealthMinMultiplier {
 		multiplier = config.HealthMinMultiplier
 	}
@@ -995,6 +1063,7 @@ func finalizeRouteHealthStat(stat routeHealthStats, config routingTuningConfig) 
 		multiplier = config.HealthMaxMultiplier
 	}
 
+	// 把归一化后的指标和最终倍率写回，供总览页面和排序逻辑直接展示/使用。
 	stat.HealthScore = healthScore
 	stat.SuccessRate = successRate
 	stat.FailRate = failRate

@@ -29,11 +29,11 @@ const SystemSetting = () => {
     RoutingValueScoreFactor: '0.8',
     RoutingHealthAdjustmentEnabled: 'true',
     RoutingHealthWindowHours: '24',
-    RoutingFailurePenaltyAlpha: '20.0',
-    RoutingHealthRewardBeta: '0',
-    RoutingHealthMinMultiplier: '0.01',
+    RoutingFailurePenaltyAlpha: '6.0',
+    RoutingHealthRewardBeta: '0.1',
+    RoutingHealthMinMultiplier: '0.05',
     RoutingHealthMaxMultiplier: '1.0',
-    RoutingHealthMinSamples: '1',
+    RoutingHealthMinSamples: '3',
   });
   const [originInputs, setOriginInputs] = useState({});
   const [dbInfo, setDbInfo] = useState({ driver: '', sqlitePath: '' });
@@ -509,7 +509,7 @@ const SystemSetting = () => {
             min='0'
             max='20'
             step='0.1'
-            placeholder='默认 20.0'
+            placeholder='默认 6.0'
           />
           <Input
             label='健康奖励系数 β'
@@ -520,7 +520,7 @@ const SystemSetting = () => {
             min='0'
             max='2'
             step='0.01'
-            placeholder='默认 0'
+            placeholder='默认 0.1'
           />
           <Input
             label='健康最小倍率'
@@ -531,7 +531,7 @@ const SystemSetting = () => {
             min='0'
             max='10'
             step='0.01'
-            placeholder='默认 0.01'
+            placeholder='默认 0.05'
           />
           <Input
             label='健康最大倍率'
@@ -553,7 +553,7 @@ const SystemSetting = () => {
             min='1'
             max='1000'
             step='1'
-            placeholder='默认 1'
+            placeholder='默认 3'
           />
         </div>
         <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>

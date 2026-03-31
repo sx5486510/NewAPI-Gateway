@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCcw, RotateCcw, Save, Search } from 'lucide-react';
 import { API, copy, showError, showSuccess } from '../helpers';
 import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
@@ -582,6 +582,7 @@ const ModelRoutesTable = () => {
                     <option value="cheapest_prompt">按最低输入价</option>
                     <option value="cheapest_call">按最低按次价</option>
                     <option value="dirty_first">按改动优先</option>
+                    <option value="health_first">按故障健康排序</option>
                 </select>
                 <label className="routes-switch" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
                     <input
@@ -758,7 +759,7 @@ const ModelRoutesTable = () => {
                                         ) : selectedGroupedRoutes.map((group) => (
                                             <React.Fragment key={group.priority}>
                                                 <Tr style={{ backgroundColor: 'var(--gray-50)' }}>
-                                                    <Td colSpan={6} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
+                                                    <Td colSpan={7} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                             <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>优先级 {group.priority}</div>
                                                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -910,34 +911,40 @@ const ModelRoutesTable = () => {
                                                                             性价比（金额） | 评分 {Number.isFinite(valueScore) ? valueScore.toFixed(4) : '-'}
                                                                             {' '}| {Number.isFinite(usageWindowHours) && usageWindowHours > 0 ? `${usageWindowHours}h` : '24h'}使用 {Number.isFinite(recentUsageCost) ? formatPrice(recentUsageCost, 4) : '-'}
                                                                         </div>
-                                                                        {healthEnabled && (
-                                                                            <div style={{ ...helperTextStyle, marginTop: '0.18rem', paddingTop: '0.18rem', borderTop: '1px dashed var(--border-color)' }}>
-                                                                                故障健康(Beta) | 健康倍率 {Number.isFinite(healthMultiplier) ? `x${healthMultiplier.toFixed(3)}` : '-'}
-                                                                                {hasHealthSampleThreshold && (
-                                                                                    <span>
-                                                                                        {' '}| 仅当样本 &gt;= {healthMinSamples} 生效
-                                                                                    </span>
-                                                                                )}
-                                                                                {Number.isFinite(healthFailRate) && Number.isFinite(healthSuccessRate) && healthSampleCount > 0 && (
-                                                                                    <span>
-                                                                                        {' '}| 成功率 {(healthSuccessRate * 100).toFixed(1)}% | 失败率 {(healthFailRate * 100).toFixed(1)}% | 样本 {healthSampleCount}
-                                                                                    </span>
-                                                                                )}
-                                                                                {hasHealthSampleThreshold && Number.isFinite(healthSampleCount) && healthSampleCount < healthMinSamples && (
-                                                                                    <span style={{ color: 'var(--warning)' }}>
-                                                                                        {' '}| 样本不足阈值，当前按 x1.000
-                                                                                    </span>
-                                                                                )}
-                                                                                {showHealthEffect && (
-                                                                                    <span style={{ color: healthMultiplier < 1 ? 'var(--error)' : 'var(--success)' }}>
-                                                                                        {' '}| {healthMultiplier < 1 ? '故障惩罚' : '健康奖励'} {healthMultiplier < 1 ? `${((1 - healthMultiplier) * 100).toFixed(1)}%` : `+${((healthMultiplier - 1) * 100).toFixed(1)}%`}
-                                                                                    </span>
-                                                                                )}
+                                                                    </div>
+                                                                ) : (
+                                                                    <span style={{ color: 'var(--text-secondary)' }}>-</span>
+                                                                )}
+                                                            </Td>
+                                                            <Td style={cellTopStyle}>
+                                                                {healthEnabled ? (
+                                                                    <div style={{ lineHeight: 1.35 }}>
+                                                                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                                                                            健康倍率 {Number.isFinite(healthMultiplier) ? `x${healthMultiplier.toFixed(3)}` : '-'}
+                                                                        </div>
+                                                                        {hasHealthSampleThreshold && (
+                                                                            <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
+                                                                                仅当样本 &gt;= {healthMinSamples} 生效
+                                                                            </div>
+                                                                        )}
+                                                                        {Number.isFinite(healthFailRate) && Number.isFinite(healthSuccessRate) && healthSampleCount > 0 && (
+                                                                            <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
+                                                                                成功率 {(healthSuccessRate * 100).toFixed(1)}% | 失败率 {(healthFailRate * 100).toFixed(1)}% | 样本 {healthSampleCount}
+                                                                            </div>
+                                                                        )}
+                                                                        {hasHealthSampleThreshold && Number.isFinite(healthSampleCount) && healthSampleCount < healthMinSamples && (
+                                                                            <div style={{ ...helperTextStyle, marginTop: '0.18rem', color: 'var(--warning)' }}>
+                                                                                样本不足阈值，当前按 x1.000
+                                                                            </div>
+                                                                        )}
+                                                                        {showHealthEffect && (
+                                                                            <div style={{ ...helperTextStyle, marginTop: '0.18rem', color: healthMultiplier < 1 ? 'var(--error)' : 'var(--success)' }}>
+                                                                                {healthMultiplier < 1 ? '故障惩罚' : '健康奖励'} {healthMultiplier < 1 ? `${((1 - healthMultiplier) * 100).toFixed(1)}%` : `+${((healthMultiplier - 1) * 100).toFixed(1)}%`}
                                                                             </div>
                                                                         )}
                                                                     </div>
                                                                 ) : (
-                                                                    <span style={{ color: 'var(--text-secondary)' }}>-</span>
+                                                                    <span style={{ color: 'var(--text-secondary)' }}>未启用</span>
                                                                 )}
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>

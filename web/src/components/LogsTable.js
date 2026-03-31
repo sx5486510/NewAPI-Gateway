@@ -218,10 +218,7 @@ const LogsTable = ({ selfOnly }) => {
     const storageKey = `raw_error_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     localStorage.setItem(storageKey, JSON.stringify(detail));
 
-    const configuredServerAddress = String(localStorage.getItem('server_address') || '').trim();
-    const fallbackBase = 'http://localhost:3030';
-    const base = (configuredServerAddress || fallbackBase).replace(/\/+$/, '');
-    const url = `${base}/log/raw?key=${encodeURIComponent(storageKey)}`;
+    const url = new URL(`/log/raw?key=${encodeURIComponent(storageKey)}`, window.location.origin).toString();
     const win = window.open(url, '_blank');
     if (!win) {
       showError('浏览器拦截了新窗口，请允许弹窗后重试');
