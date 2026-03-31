@@ -299,6 +299,40 @@ func (c *UpstreamClient) GetTokens(page int, pageSize int) ([]UpstreamToken, err
 	return pageInfo.Items, nil
 }
 
+// GetTokenKey fetches the full unmasked key for a token.
+func (c *UpstreamClient) GetTokenKey(tokenId int) (string, error) {
+	body, err := c.doRequest("GET", fmt.Sprintf("/api/token/%d/key", tokenId))
+	if err != nil {
+		return "", err
+	}
+	var resp struct {
+		Success bool            `json:"success"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return "", err
+	}
+	if !resp.Success {
+		return "", fmt.Errorf("upstream get token key failed: %s", resp.Message)
+	}
+
+	// Compatible with both:
+	// 1) {"data":"raw_key"}
+	// 2) {"data":{"key":"raw_key"}}
+	var asString string
+	if err := json.Unmarshal(resp.Data, &asString); err == nil {
+		return asString, nil
+	}
+	var asObject struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal(resp.Data, &asObject); err == nil && asObject.Key != "" {
+		return asObject.Key, nil
+	}
+	return "", fmt.Errorf("upstream get token key failed: unexpected response shape")
+}
+
 // CreateUpstreamToken calls upstream POST /api/token/ to create a new token
 func (c *UpstreamClient) CreateUpstreamToken(name string, group string, unlimitedQuota bool, remainQuota int64, modelLimits string) error {
 	payload := map[string]interface{}{

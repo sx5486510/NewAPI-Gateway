@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -80,6 +81,21 @@ func DeleteProviderTokensNotInIds(providerId int, upstreamIds []int) error {
 		return DB.Where("provider_id = ?", providerId).Delete(&ProviderToken{}).Error
 	}
 	return DB.Where("provider_id = ? AND upstream_token_id NOT IN (?)", providerId, upstreamIds).Delete(&ProviderToken{}).Error
+}
+
+// IsMaskedKey returns true when the upstream token key is still masked.
+func IsMaskedKey(key string) bool {
+	return strings.Contains(key, "**")
+}
+
+// GetProviderTokenByUpstream retrieves an existing token by provider_id + upstream_token_id.
+func GetProviderTokenByUpstream(providerId int, upstreamTokenId int) (*ProviderToken, error) {
+	var token ProviderToken
+	result := DB.Where("provider_id = ? AND upstream_token_id = ?", providerId, upstreamTokenId).First(&token)
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &token, result.Error
 }
 
 // CleanForResponse removes sensitive sk_key before sending to frontend
