@@ -341,21 +341,20 @@ func BuildRouteAttemptsByPriority(modelName string) ([][]RouteAttempt, error) {
 			continue
 		}
 		for i := range attempts {
-			baseContribution := computeRouteContribution(
+			healthMultiplier := 1.0
+			healthSampleCount := int64(0)
+			if metric, ok := metricLookup[attempts[i].Route.Id]; ok {
+				healthMultiplier = metric.HealthMultiplier
+				healthSampleCount = metric.HealthSampleCount
+			}
+			attempts[i].Contribution = computeRouteEffectiveContribution(
 				attempts[i].Route.Weight,
 				attempts[i].ValueScore,
 				maxScore,
-				config.BaseWeightFactor,
-				config.ValueScoreFactor,
+				healthMultiplier,
+				healthSampleCount,
+				config,
 			)
-			healthMultiplier := 1.0
-			if metric, ok := metricLookup[attempts[i].Route.Id]; ok {
-				healthMultiplier = metric.HealthMultiplier
-			}
-			if healthMultiplier <= 0 {
-				healthMultiplier = 0.0001
-			}
-			attempts[i].Contribution = baseContribution * healthMultiplier
 		}
 		plan = append(plan, weightedShuffleAttempts(attempts))
 	}
@@ -817,6 +816,31 @@ func computeRouteContribution(weight int, valueScore float64, maxValueScore floa
 	// Keep a baseline from manual weight while allowing value score to bias traffic.
 	multiplier := baseWeightFactor + normalized*valueScoreFactor
 	return base * multiplier
+}
+
+func computeHealthDrivenContribution(weight int, healthMultiplier float64) float64 {
+	if float64(weight+10) <= 0 {
+		return 0
+	}
+	if healthMultiplier <= 0 {
+		return 0.0001
+	}
+	return healthMultiplier
+}
+
+func computeRouteEffectiveContribution(weight int, valueScore float64, maxValueScore float64, healthMultiplier float64, healthSampleCount int64, config routingTuningConfig) float64 {
+	if config.HealthEnabled && healthSampleCount >= int64(config.HealthMinSamples) {
+		// 当健康样本达到阈值后，改为纯健康驱动，不再叠加基础贡献/性价比分，
+		// 仅保留 weight<=-10 时可将该路由压到 0 的能力。
+		return computeHealthDrivenContribution(weight, healthMultiplier)
+	}
+	return computeRouteContribution(
+		weight,
+		valueScore,
+		maxValueScore,
+		config.BaseWeightFactor,
+		config.ValueScoreFactor,
+	)
 }
 
 func parseBalanceUSD(raw string) float64 {
@@ -1330,16 +1354,14 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 		if item.ValueScore != nil {
 			score = *item.ValueScore
 		}
-		contribution := computeRouteContribution(
+		contribution := computeRouteEffectiveContribution(
 			item.Weight,
 			score,
 			groupMaxScore[key],
-			config.BaseWeightFactor,
-			config.ValueScoreFactor,
+			item.HealthMultiplier,
+			item.HealthSampleCount,
+			config,
 		)
-		if item.HealthMultiplier > 0 {
-			contribution *= item.HealthMultiplier
-		}
 		routeContribution[item.Id] = contribution
 		shareSum[key] += contribution
 	}

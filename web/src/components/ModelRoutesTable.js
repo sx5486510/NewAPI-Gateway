@@ -182,11 +182,12 @@ const computeShareByPriority = (rows) => {
         const key = String(row.priority);
         const maxScore = maxScoreByPriority[key] || 0;
         let contribution = base;
-        if (base > 0 && maxScore > 0) {
+        if (healthAdjustmentEnabled && hasEnoughHealthSamples && base > 0) {
+            contribution = healthMultiplier;
+        } else if (base > 0 && maxScore > 0) {
             const normalized = Math.max(0, Math.min(1, safeScore / maxScore));
             contribution = base * (baseFactor + normalized * valueFactor);
         }
-        contribution *= healthMultiplier;
         contributionById[row.id] = contribution;
         sumByPriority[row.priority] = (sumByPriority[row.priority] || 0) + contribution;
     });

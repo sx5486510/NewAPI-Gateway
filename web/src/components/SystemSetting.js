@@ -437,7 +437,7 @@ const SystemSetting = () => {
       <Card padding="1.5rem">
         <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>路由策略调优（Beta）</h3>
         <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          调整路由占比计算参数。占比贡献公式为：<code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>max(weight+10,0) * (基础系数 + 性价比系数 * 归一化评分)</code>
+          调整路由占比计算参数。未进入健康分流时，占比贡献公式为：<code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>max(weight+10,0) * (基础系数 + 性价比系数 * 归一化评分)</code>；当健康样本达到阈值后，将改为仅按健康倍率参与同层分流，不再叠加基础贡献/性价比分。
         </p>
         <div style={{ marginBottom: '0.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>性价比（金额）参数</div>
         <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
