@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCcw, RotateCcw, Save, Search } from 'lucide-react';
 import { API, copy, showError, showSuccess } from '../helpers';
 import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
@@ -58,32 +58,10 @@ const stickyHeaderCellStyle = {
     boxShadow: 'inset 0 -1px 0 var(--border-color)'
 };
 
-const spinButtonStyle = {
-    border: '1px solid var(--border-color)',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-secondary)',
-    borderRadius: '0.25rem',
-    width: '1.15rem',
-    height: '1.05rem',
-    padding: 0,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    lineHeight: 1,
-    fontSize: '0.66rem',
-    cursor: 'pointer'
-};
-
 const formatPrice = (value, digits = 4) => {
     const amount = Number(value);
     if (!Number.isFinite(amount)) return '-';
     return `$${amount.toFixed(digits)}`;
-};
-
-const formatPercent = (value) => {
-    const percent = Number(value);
-    if (!Number.isFinite(percent)) return '-';
-    return `${percent.toFixed(1)}%`;
 };
 
 const compareNullableNumber = (a, b) => {
@@ -143,67 +121,16 @@ const getRouteHealth = (route) => {
     return { color: 'red', label: 'Token停用' };
 };
 
-const computeShareByPriority = (rows) => {
-    const maxScoreByPriority = {};
-    rows.forEach((row) => {
-        if (!row.enabled) return;
-        const score = Number(row.value_score);
-        const safeScore = Number.isFinite(score) && score > 0 ? score : 0;
-        const key = String(row.priority);
-        maxScoreByPriority[key] = Math.max(maxScoreByPriority[key] || 0, safeScore);
-    });
-
-    const contributionById = {};
-    const sumByPriority = {};
-    rows.forEach((row) => {
-        if (!row.enabled) return;
-        const base = Math.max(0, Number(row.weight || 0) + 10);
-        const score = Number(row.value_score);
-        const safeScore = Number.isFinite(score) && score > 0 ? score : 0;
-        const configuredBaseFactor = Number(row.base_weight_factor);
-        const configuredValueFactor = Number(row.value_score_factor);
-        const baseFactor = Number.isFinite(configuredBaseFactor) && configuredBaseFactor >= 0 ? configuredBaseFactor : 0.2;
-        const valueFactor = Number.isFinite(configuredValueFactor) && configuredValueFactor >= 0 ? configuredValueFactor : 0.8;
-        const configuredHealthMultiplier = Number(row.health_multiplier);
-        const healthAdjustmentEnabled = row.health_adjustment_enabled === true;
-        const healthSampleCount = Number(row.health_sample_count);
-        const healthMinSamples = Number(row.health_min_samples);
-        const hasEnoughHealthSamples = Number.isFinite(healthSampleCount) &&
-            Number.isFinite(healthMinSamples) &&
-            healthMinSamples > 0
-            ? healthSampleCount >= healthMinSamples
-            : true;
-        const healthMultiplier = healthAdjustmentEnabled &&
-            hasEnoughHealthSamples &&
-            Number.isFinite(configuredHealthMultiplier) &&
-            configuredHealthMultiplier > 0
-            ? configuredHealthMultiplier
-            : 1;
-        const key = String(row.priority);
-        const maxScore = maxScoreByPriority[key] || 0;
-        let contribution = base;
-        if (healthAdjustmentEnabled && hasEnoughHealthSamples && base > 0) {
-            contribution = healthMultiplier;
-        } else if (base > 0 && maxScore > 0) {
-            const normalized = Math.max(0, Math.min(1, safeScore / maxScore));
-            contribution = base * (baseFactor + normalized * valueFactor);
-        }
-        contributionById[row.id] = contribution;
-        sumByPriority[row.priority] = (sumByPriority[row.priority] || 0) + contribution;
-    });
-
-    return rows.map((row) => {
-        if (!row.enabled) {
-            return { ...row, effective_share_percent: null };
-        }
-        const contribution = contributionById[row.id] || 0;
-        const total = sumByPriority[row.priority] || 0;
-        if (contribution <= 0 || total <= 0) {
-            return { ...row, effective_share_percent: null };
-        }
-        return { ...row, effective_share_percent: (contribution / total) * 100 };
-    });
-};
+const sortRoutesForDisplay = (rows) => [...rows].sort((a, b) => {
+    const healthA = Number(a.health_value);
+    const healthB = Number(b.health_value);
+    const safeHealthA = Number.isFinite(healthA) ? healthA : 0;
+    const safeHealthB = Number.isFinite(healthB) ? healthB : 0;
+    if (safeHealthB !== safeHealthA) return safeHealthB - safeHealthA;
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    if (a.provider_name !== b.provider_name) return String(a.provider_name).localeCompare(String(b.provider_name), 'zh-Hans-CN');
+    return a.id - b.id;
+});
 
 const ModelRoutesTable = () => {
     const [routes, setRoutes] = useState([]);
@@ -314,11 +241,7 @@ const ModelRoutesTable = () => {
             .map(([modelName, bucket]) => {
                 const modelRoutes = bucket.routes;
                 const aliases = [...bucket.aliases].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
-                const withShare = computeShareByPriority(modelRoutes).sort((a, b) => {
-                    if (b.priority !== a.priority) return b.priority - a.priority;
-                    if (a.provider_name !== b.provider_name) return String(a.provider_name).localeCompare(String(b.provider_name), 'zh-Hans-CN');
-                    return a.id - b.id;
-                });
+                const withShare = sortRoutesForDisplay(modelRoutes);
 
                 const providerCount = new Set(withShare.map((r) => r.provider_id)).size;
                 const enabledCount = withShare.filter((r) => r.enabled).length;
@@ -400,30 +323,10 @@ const ModelRoutesTable = () => {
                 priority: Number(priority),
                 total: items.length,
                 enabled: items.filter((item) => item.enabled).length,
-                bestValueScore: items.reduce((max, item) => {
-                    if (!item.enabled) return max;
-                    const score = Number(item.value_score);
-                    if (!Number.isFinite(score) || score <= 0) return max;
-                    return Math.max(max, score);
-                }, 0),
-                routes: items
+                routes: sortRoutesForDisplay(items)
             }))
             .sort((a, b) => b.priority - a.priority);
     }, [detailChangedOnly, drafts, selectedEntry]);
-
-    const selectedOriginalShareMap = useMemo(() => {
-        if (!selectedEntry) return {};
-        const originalRows = selectedEntry.routes.map((route) => {
-            const original = routeMap[route.id];
-            return original ? { ...original } : { ...route };
-        });
-        const originalWithShare = computeShareByPriority(originalRows);
-        const map = {};
-        originalWithShare.forEach((row) => {
-            map[row.id] = Number(row.effective_share_percent);
-        });
-        return map;
-    }, [routeMap, selectedEntry]);
 
     const updateDraft = useCallback((routeId, patch) => {
         setDrafts((prev) => {
@@ -744,7 +647,7 @@ const ModelRoutesTable = () => {
                                             <Th style={stickyHeaderCellStyle}>供应商 / 令牌</Th>
                                             <Th style={stickyHeaderCellStyle}>成功数</Th>
                                             <Th style={stickyHeaderCellStyle}>失败数</Th>
-                                            <Th style={stickyHeaderCellStyle}>健康度</Th>
+                                            <Th style={stickyHeaderCellStyle}>健康值</Th>
                                             <Th style={stickyHeaderCellStyle}>状态</Th>
                                         </Tr>
                                     </Thead>
@@ -774,27 +677,14 @@ const ModelRoutesTable = () => {
                                                     const tokenName = String(route.token_name || '').trim();
                                                     const tokenGroup = String(route.token_group_name || '').trim();
                                                     const displayTokenName = tokenName && tokenName !== tokenGroup ? tokenName : '';
-                                                    const healthMultiplier = Number(route.health_multiplier);
+                                                    const healthValue = Number(route.health_value);
+                                                    const healthSuccessCount = Number(route.health_success_count);
+                                                    const healthErrorCount = Number(route.health_error_count);
                                                     const healthSampleCount = Number(route.health_sample_count);
-                                                    const healthFailRate = Number(route.health_fail_rate);
-                                                    const healthSuccessRate = Number(route.health_success_rate);
-                                                    const healthMinSamples = Number(route.health_min_samples);
                                                     const healthEnabled = route.health_adjustment_enabled === true;
-                                                    const hasHealthSampleThreshold = Number.isFinite(healthMinSamples) && healthMinSamples > 0;
-                                                    const hasEnoughHealthSamples = hasHealthSampleThreshold && Number.isFinite(healthSampleCount)
-                                                        ? healthSampleCount >= healthMinSamples
-                                                        : !hasHealthSampleThreshold;
-                                                    const showHealthEffect = healthEnabled &&
-                                                        hasEnoughHealthSamples &&
-                                                        Number.isFinite(healthMultiplier) &&
-                                                        healthSampleCount > 0 &&
-                                                        Math.abs(healthMultiplier - 1) >= 0.0005;
-                                                    const successCount = healthEnabled && Number.isFinite(healthSampleCount) && Number.isFinite(healthSuccessRate) && healthSampleCount > 0
-                                                        ? Math.round(healthSampleCount * healthSuccessRate)
-                                                        : null;
-                                                    const failCount = healthEnabled && Number.isFinite(healthSampleCount) && Number.isFinite(healthFailRate) && healthSampleCount > 0
-                                                        ? Math.round(healthSampleCount * healthFailRate)
-                                                        : null;
+                                                    const successCount = Number.isFinite(healthSuccessCount) ? healthSuccessCount : 0;
+                                                    const failCount = Number.isFinite(healthErrorCount) ? healthErrorCount : 0;
+                                                    const safeHealthValue = Number.isFinite(healthValue) ? healthValue : 0;
                                                     return (
                                                         <Tr key={route.id} style={isDirty ? { backgroundColor: 'rgba(245, 158, 11, 0.06)' } : undefined}>
                                                             <Td style={cellTopStyle}>
@@ -811,49 +701,32 @@ const ModelRoutesTable = () => {
                                                                 </div>
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>
-                                                                {successCount !== null ? (
-                                                                    <span style={{ color: 'var(--success)', fontWeight: 600 }}>{successCount}</span>
-                                                                ) : (
-                                                                    <span style={{ color: 'var(--text-secondary)' }}>-</span>
-                                                                )}
+                                                                <span style={{ color: successCount > 0 ? 'var(--success)' : 'var(--text-secondary)', fontWeight: successCount > 0 ? 600 : 400 }}>
+                                                                    {successCount}
+                                                                </span>
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>
-                                                                {failCount !== null ? (
-                                                                    <span style={{ color: failCount > 0 ? 'var(--error)' : 'var(--text-secondary)', fontWeight: failCount > 0 ? 600 : 400 }}>{failCount}</span>
-                                                                ) : (
-                                                                    <span style={{ color: 'var(--text-secondary)' }}>-</span>
-                                                                )}
+                                                                <span style={{ color: failCount > 0 ? 'var(--error)' : 'var(--text-secondary)', fontWeight: failCount > 0 ? 600 : 400 }}>
+                                                                    {failCount}
+                                                                </span>
                                                             </Td>
                                                             <Td style={cellTopStyle}>
-                                                                {healthEnabled ? (
-                                                                    <div style={{ lineHeight: 1.35 }}>
-                                                                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-                                                                            健康倍率 {Number.isFinite(healthMultiplier) ? `x${healthMultiplier.toFixed(3)}` : '-'}
-                                                                        </div>
-                                                                        {hasHealthSampleThreshold && (
-                                                                            <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
-                                                                                仅当样本 &gt;= {healthMinSamples} 生效
-                                                                            </div>
-                                                                        )}
-                                                                        {Number.isFinite(healthFailRate) && Number.isFinite(healthSuccessRate) && healthSampleCount > 0 && (
-                                                                            <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
-                                                                                成功率 {(healthSuccessRate * 100).toFixed(1)}% | 失败率 {(healthFailRate * 100).toFixed(1)}% | 样本 {healthSampleCount}
-                                                                            </div>
-                                                                        )}
-                                                                        {hasHealthSampleThreshold && Number.isFinite(healthSampleCount) && healthSampleCount < healthMinSamples && (
-                                                                            <div style={{ ...helperTextStyle, marginTop: '0.18rem', color: 'var(--warning)' }}>
-                                                                                样本不足阈值，当前按 x1.000
-                                                                            </div>
-                                                                        )}
-                                                                        {showHealthEffect && (
-                                                                            <div style={{ ...helperTextStyle, marginTop: '0.18rem', color: healthMultiplier < 1 ? 'var(--error)' : 'var(--success)' }}>
-                                                                                {healthMultiplier < 1 ? '故障惩罚' : '健康奖励'} {healthMultiplier < 1 ? `${((1 - healthMultiplier) * 100).toFixed(1)}%` : `+${((healthMultiplier - 1) * 100).toFixed(1)}%`}
-                                                                            </div>
-                                                                        )}
+                                                                <div style={{ lineHeight: 1.35 }}>
+                                                                    <div style={{ color: safeHealthValue < 0 ? 'var(--error)' : 'var(--text-primary)', fontWeight: 600 }}>
+                                                                        健康值 {safeHealthValue}
                                                                     </div>
-                                                                ) : (
-                                                                    <span style={{ color: 'var(--text-secondary)' }}>未启用</span>
-                                                                )}
+                                                                    <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
+                                                                        每失败 1 次 -1，成功不加不减
+                                                                    </div>
+                                                                    <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
+                                                                        统计周期：当前整点小时 | 样本 {Number.isFinite(healthSampleCount) ? healthSampleCount : 0}
+                                                                    </div>
+                                                                    {!healthEnabled && (
+                                                                        <div style={{ ...helperTextStyle, marginTop: '0.18rem', color: 'var(--warning)' }}>
+                                                                            当前未参与路由优选
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>
                                                                 <select

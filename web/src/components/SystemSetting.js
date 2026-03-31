@@ -28,12 +28,6 @@ const SystemSetting = () => {
     RoutingBaseWeightFactor: '0.2',
     RoutingValueScoreFactor: '0.8',
     RoutingHealthAdjustmentEnabled: 'true',
-    RoutingHealthWindowHours: '24',
-    RoutingFailurePenaltyAlpha: '6.0',
-    RoutingHealthRewardBeta: '0.1',
-    RoutingHealthMinMultiplier: '0.05',
-    RoutingHealthMaxMultiplier: '1.0',
-    RoutingHealthMinSamples: '3',
   });
   const [originInputs, setOriginInputs] = useState({});
   const [dbInfo, setDbInfo] = useState({ driver: '', sqlitePath: '' });
@@ -121,13 +115,7 @@ const SystemSetting = () => {
       name === 'TurnstileSecretKey' ||
       name === 'RoutingUsageWindowHours' ||
       name === 'RoutingBaseWeightFactor' ||
-      name === 'RoutingValueScoreFactor' ||
-      name === 'RoutingHealthWindowHours' ||
-      name === 'RoutingFailurePenaltyAlpha' ||
-      name === 'RoutingHealthRewardBeta' ||
-      name === 'RoutingHealthMinMultiplier' ||
-      name === 'RoutingHealthMaxMultiplier' ||
-      name === 'RoutingHealthMinSamples'
+      name === 'RoutingValueScoreFactor'
     ) {
       setInputs((inputs) => ({ ...inputs, [name]: value }));
     } else {
@@ -169,7 +157,7 @@ const SystemSetting = () => {
         key: 'Proxy',
         value: proxy
       });
-      const { success, message, data } = res.data;
+      const { success, message } = res.data;
       if (success) {
         showSuccess(message || '代理连接成功！');
       } else {
@@ -231,12 +219,6 @@ const SystemSetting = () => {
     const rawWindow = Number.parseInt(String(inputs.RoutingUsageWindowHours || '').trim(), 10);
     const rawBaseFactor = Number.parseFloat(String(inputs.RoutingBaseWeightFactor || '').trim());
     const rawValueFactor = Number.parseFloat(String(inputs.RoutingValueScoreFactor || '').trim());
-    const rawHealthWindow = Number.parseInt(String(inputs.RoutingHealthWindowHours || '').trim(), 10);
-    const rawPenaltyAlpha = Number.parseFloat(String(inputs.RoutingFailurePenaltyAlpha || '').trim());
-    const rawRewardBeta = Number.parseFloat(String(inputs.RoutingHealthRewardBeta || '').trim());
-    const rawMinMultiplier = Number.parseFloat(String(inputs.RoutingHealthMinMultiplier || '').trim());
-    const rawMaxMultiplier = Number.parseFloat(String(inputs.RoutingHealthMaxMultiplier || '').trim());
-    const rawMinSamples = Number.parseInt(String(inputs.RoutingHealthMinSamples || '').trim(), 10);
 
     if (!Number.isInteger(rawWindow) || rawWindow < 1 || rawWindow > 720) {
       showError('统计窗口必须是 1 到 720 小时');
@@ -250,45 +232,11 @@ const SystemSetting = () => {
       showError('性价比系数必须在 0 到 10 之间');
       return;
     }
-    if (!Number.isInteger(rawHealthWindow) || rawHealthWindow < 1 || rawHealthWindow > 720) {
-      showError('健康统计窗口必须是 1 到 720 小时');
-      return;
-    }
-    if (!Number.isFinite(rawPenaltyAlpha) || rawPenaltyAlpha < 0 || rawPenaltyAlpha > 20) {
-      showError('故障惩罚系数必须在 0 到 20 之间');
-      return;
-    }
-    if (!Number.isFinite(rawRewardBeta) || rawRewardBeta < 0 || rawRewardBeta > 2) {
-      showError('健康奖励系数必须在 0 到 2 之间');
-      return;
-    }
-    if (!Number.isFinite(rawMinMultiplier) || rawMinMultiplier < 0 || rawMinMultiplier > 10) {
-      showError('健康最小倍率必须在 0 到 10 之间');
-      return;
-    }
-    if (!Number.isFinite(rawMaxMultiplier) || rawMaxMultiplier < 0 || rawMaxMultiplier > 10) {
-      showError('健康最大倍率必须在 0 到 10 之间');
-      return;
-    }
-    if (rawMaxMultiplier < rawMinMultiplier) {
-      showError('健康最大倍率不能小于最小倍率');
-      return;
-    }
-    if (!Number.isInteger(rawMinSamples) || rawMinSamples < 1 || rawMinSamples > 1000) {
-      showError('健康最小样本数必须是 1 到 1000 的整数');
-      return;
-    }
 
     const nextWindow = String(rawWindow);
     const nextBaseFactor = String(rawBaseFactor);
     const nextValueFactor = String(rawValueFactor);
     const nextHealthEnabled = inputs.RoutingHealthAdjustmentEnabled === 'true' ? 'true' : 'false';
-    const nextHealthWindow = String(rawHealthWindow);
-    const nextPenaltyAlpha = String(rawPenaltyAlpha);
-    const nextRewardBeta = String(rawRewardBeta);
-    const nextMinMultiplier = String(rawMinMultiplier);
-    const nextMaxMultiplier = String(rawMaxMultiplier);
-    const nextMinSamples = String(rawMinSamples);
 
     if (originInputs['RoutingUsageWindowHours'] !== nextWindow) {
       await updateOption('RoutingUsageWindowHours', nextWindow);
@@ -301,24 +249,6 @@ const SystemSetting = () => {
     }
     if (originInputs['RoutingHealthAdjustmentEnabled'] !== nextHealthEnabled) {
       await updateOption('RoutingHealthAdjustmentEnabled', nextHealthEnabled);
-    }
-    if (originInputs['RoutingHealthWindowHours'] !== nextHealthWindow) {
-      await updateOption('RoutingHealthWindowHours', nextHealthWindow);
-    }
-    if (originInputs['RoutingFailurePenaltyAlpha'] !== nextPenaltyAlpha) {
-      await updateOption('RoutingFailurePenaltyAlpha', nextPenaltyAlpha);
-    }
-    if (originInputs['RoutingHealthRewardBeta'] !== nextRewardBeta) {
-      await updateOption('RoutingHealthRewardBeta', nextRewardBeta);
-    }
-    if (originInputs['RoutingHealthMinMultiplier'] !== nextMinMultiplier) {
-      await updateOption('RoutingHealthMinMultiplier', nextMinMultiplier);
-    }
-    if (originInputs['RoutingHealthMaxMultiplier'] !== nextMaxMultiplier) {
-      await updateOption('RoutingHealthMaxMultiplier', nextMaxMultiplier);
-    }
-    if (originInputs['RoutingHealthMinSamples'] !== nextMinSamples) {
-      await updateOption('RoutingHealthMinSamples', nextMinSamples);
     }
   };
 
@@ -334,14 +264,6 @@ const SystemSetting = () => {
       <label htmlFor={name} style={{ cursor: 'pointer', userSelect: 'none' }}>{label}</label>
     </div>
   );
-
-  const healthMinSamplesHint = (() => {
-    const parsed = Number.parseInt(String(inputs.RoutingHealthMinSamples || '').trim(), 10);
-    if (Number.isInteger(parsed) && parsed > 0) {
-      return parsed;
-    }
-    return 1;
-  })();
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -437,7 +359,7 @@ const SystemSetting = () => {
       <Card padding="1.5rem">
         <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>路由策略调优（Beta）</h3>
         <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          调整路由占比计算参数。未进入健康分流时，占比贡献公式为：<code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>max(weight+10,0) * (基础系数 + 性价比系数 * 归一化评分)</code>；当健康样本达到阈值后，将改为仅按健康倍率参与同层分流，不再叠加基础贡献/性价比分。
+          调整路由占比计算参数。未触发健康优选时，占比贡献公式为：<code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>max(weight+10,0) * (基础系数 + 性价比系数 * 归一化评分)</code>。健康优选开启后，每个渠道模型在每个整点小时初始健康值为 0，每失败 1 次健康值 -1，成功不加不减，按健康值高低决定同优先级下的尝试顺序。
         </p>
         <div style={{ marginBottom: '0.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>性价比（金额）参数</div>
         <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
@@ -483,81 +405,13 @@ const SystemSetting = () => {
         <div style={{ marginBottom: '0.75rem' }}>
           <Checkbox
             checked={inputs.RoutingHealthAdjustmentEnabled === 'true'}
-            label='启用故障惩罚与健康奖励（Beta）'
+            label='启用按健康值优先选择模型'
             name='RoutingHealthAdjustmentEnabled'
             onChange={handleCheckboxChange}
           />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-          <Input
-            label='健康窗口（小时）'
-            type='number'
-            name='RoutingHealthWindowHours'
-            onChange={handleInputChange}
-            value={inputs.RoutingHealthWindowHours}
-            min='1'
-            max='720'
-            step='1'
-            placeholder='默认 24'
-          />
-          <Input
-            label='故障惩罚系数 α'
-            type='number'
-            name='RoutingFailurePenaltyAlpha'
-            onChange={handleInputChange}
-            value={inputs.RoutingFailurePenaltyAlpha}
-            min='0'
-            max='20'
-            step='0.1'
-            placeholder='默认 6.0'
-          />
-          <Input
-            label='健康奖励系数 β'
-            type='number'
-            name='RoutingHealthRewardBeta'
-            onChange={handleInputChange}
-            value={inputs.RoutingHealthRewardBeta}
-            min='0'
-            max='2'
-            step='0.01'
-            placeholder='默认 0.1'
-          />
-          <Input
-            label='健康最小倍率'
-            type='number'
-            name='RoutingHealthMinMultiplier'
-            onChange={handleInputChange}
-            value={inputs.RoutingHealthMinMultiplier}
-            min='0'
-            max='10'
-            step='0.01'
-            placeholder='默认 0.05'
-          />
-          <Input
-            label='健康最大倍率'
-            type='number'
-            name='RoutingHealthMaxMultiplier'
-            onChange={handleInputChange}
-            value={inputs.RoutingHealthMaxMultiplier}
-            min='0'
-            max='10'
-            step='0.01'
-            placeholder='默认 1.0'
-          />
-          <Input
-            label='健康最小样本数'
-            type='number'
-            name='RoutingHealthMinSamples'
-            onChange={handleInputChange}
-            value={inputs.RoutingHealthMinSamples}
-            min='1'
-            max='1000'
-            step='1'
-            placeholder='默认 3'
-          />
-        </div>
         <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          健康调节仅当样本 &gt;= {healthMinSamplesHint} 时生效；不足阈值时按未调节（x1.000）处理。
+          当前规则固定为“按本小时失败次数扣减健康值”，每到下一个整点小时自动重置为 0；这里不再提供惩罚系数、奖励系数、倍率上下限等旧参数配置。
         </p>
         <Button onClick={submitRoutingTuning} variant="secondary" disabled={loading}>保存路由策略参数</Button>
       </Card>
