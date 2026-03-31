@@ -730,14 +730,15 @@ const ModelRoutesTable = () => {
                                 </div>
 
                                 <div className="routes-detail-scroller">
-                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '680px' : '740px'}>
+                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '760px' : '820px'}>
                                     <colgroup>
+                                        <col style={{ width: '22%' }} />
                                         <col style={{ width: '24%' }} />
-                                        <col style={{ width: '28%' }} />
+                                        <col style={{ width: '9%' }} />
+                                        <col style={{ width: '9%' }} />
+                                        <col style={{ width: '13%' }} />
+                                        <col style={{ width: '13%' }} />
                                         <col style={{ width: '10%' }} />
-                                        <col style={{ width: '10%' }} />
-                                        <col style={{ width: '14%' }} />
-                                        <col style={{ width: '14%' }} />
                                     </colgroup>
                                     <Thead>
                                         <Tr>
@@ -746,13 +747,14 @@ const ModelRoutesTable = () => {
                                             <Th style={stickyHeaderCellStyle}>优先级</Th>
                                             <Th style={stickyHeaderCellStyle}>权重</Th>
                                             <Th style={stickyHeaderCellStyle}>占比</Th>
+                                            <Th style={stickyHeaderCellStyle}>健康度</Th>
                                             <Th style={stickyHeaderCellStyle}>状态</Th>
                                         </Tr>
                                     </Thead>
                                     <Tbody>
                                         {selectedGroupedRoutes.length === 0 ? (
                                             <Tr>
-                                                <Td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
+                                                <Td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
                                                     当前模型没有符合条件的路由
                                                 </Td>
                                             </Tr>
