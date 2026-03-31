@@ -25,10 +25,13 @@ type UsageLog struct {
 	ResponseTimeMs        int     `json:"response_time_ms"`
 	FirstTokenMs          int     `json:"first_token_ms"`
 	IsStream              bool    `json:"is_stream"`
+	RequestedStream       bool    `json:"requested_stream"`
+	ResponseIsStream      bool    `json:"response_is_stream"`
 	CostUSD               float64 `json:"cost_usd"`
 	Status                int     `json:"status"`
 	ErrorMessage          string  `json:"error_message" gorm:"type:text"`
 	ClientIp              string  `json:"client_ip" gorm:"type:varchar(64)"`
+	UserAgent             string  `json:"user_agent" gorm:"type:varchar(512)"`
 	RequestId             string  `json:"request_id" gorm:"type:varchar(64);index"`
 	CreatedAt             int64   `json:"created_at" gorm:"index"`
 }
@@ -51,10 +54,13 @@ func (l *UsageLog) Insert() error {
 		"response_time_ms":        l.ResponseTimeMs,
 		"first_token_ms":          l.FirstTokenMs,
 		"is_stream":               l.IsStream,
+		"requested_stream":        l.RequestedStream,
+		"response_is_stream":      l.ResponseIsStream,
 		"cost_usd":                l.CostUSD,
 		"status":                  l.Status,
 		"error_message":           l.ErrorMessage,
 		"client_ip":               l.ClientIp,
+		"user_agent":              l.UserAgent,
 		"request_id":              l.RequestId,
 		"created_at":              l.CreatedAt,
 	}).Error
@@ -91,8 +97,8 @@ func applyUsageLogFilters(db *gorm.DB, query UsageLogQuery) *gorm.DB {
 	if keyword := strings.TrimSpace(query.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
 		db = db.Where(
-			"(model_name LIKE ? OR provider_name LIKE ? OR request_id LIKE ? OR error_message LIKE ? OR client_ip LIKE ?)",
-			like, like, like, like, like,
+			"(model_name LIKE ? OR provider_name LIKE ? OR request_id LIKE ? OR error_message LIKE ? OR client_ip LIKE ? OR user_agent LIKE ?)",
+			like, like, like, like, like, like,
 		)
 	}
 

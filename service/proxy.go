@@ -65,6 +65,7 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		resolvedModel = strings.TrimSpace(c.GetString("request_model"))
 	}
 	bodyBytes = rewriteRequestModel(bodyBytes, resolvedModel)
+	requestedStream := extractRequestedStream(bodyBytes)
 
 	// 2. Construct upstream URL
 	upstreamURL := strings.TrimRight(provider.BaseURL, "/") + c.Request.URL.Path
@@ -130,6 +131,7 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			c,
 			requestId,
 			usageMetrics{ModelName: c.GetString("request_model")},
+			requestedStream,
 			false,
 			0,
 			0,
@@ -145,7 +147,7 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 
 	// 10. Detect if streaming
 	contentType := resp.Header.Get("Content-Type")
-	isStream := strings.Contains(contentType, "text/event-stream")
+	responseIsStream := strings.Contains(contentType, "text/event-stream")
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -158,7 +160,7 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		elapsed := time.Since(startTime).Milliseconds()
 		logUsage(
 			aggToken, provider, token, c, requestId,
-			usage, isStream, 0, int(elapsed), errorMsg,
+			usage, requestedStream, responseIsStream, 0, int(elapsed), errorMsg,
 		)
 		return &ProxyAttemptError{
 			StatusCode: resp.StatusCode,
@@ -179,7 +181,7 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		}
 	}
 
-	if isStream {
+	if responseIsStream {
 		// Stream SSE response
 		c.Writer.Header().Set("Cache-Control", "no-cache")
 		c.Writer.Header().Set("Connection", "keep-alive")
@@ -233,7 +235,7 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		elapsed := time.Since(startTime).Milliseconds()
 		logUsage(
 			aggToken, provider, token, c, requestId,
-			streamUsage, true, firstTokenMs, int(elapsed), errorMsg,
+			streamUsage, requestedStream, true, firstTokenMs, int(elapsed), errorMsg,
 		)
 	} else {
 		// Non-streaming response
@@ -253,7 +255,7 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		}
 		logUsage(
 			aggToken, provider, token, c, requestId,
-			usage, false, 0, int(elapsed), errorMsg,
+			usage, requestedStream, false, 0, int(elapsed), errorMsg,
 		)
 	}
 	return nil
@@ -310,7 +312,7 @@ func getRequestBodyBytes(c *gin.Context) ([]byte, error) {
 }
 
 func logUsage(aggToken *model.AggregatedToken, provider *model.Provider, token *model.ProviderToken,
-	c *gin.Context, requestId string, usage usageMetrics, isStream bool, firstTokenMs int,
+	c *gin.Context, requestId string, usage usageMetrics, requestedStream bool, responseIsStream bool, firstTokenMs int,
 	responseTimeMs int, errorMsg string) {
 
 	status := 1
@@ -346,11 +348,14 @@ func logUsage(aggToken *model.AggregatedToken, provider *model.Provider, token *
 		CacheCreation1hTokens: usage.CacheCreation1hTokens,
 		ResponseTimeMs:        responseTimeMs,
 		FirstTokenMs:          firstTokenMs,
-		IsStream:              isStream,
+		IsStream:              responseIsStream,
+		RequestedStream:       requestedStream,
+		ResponseIsStream:      responseIsStream,
 		CostUSD:               usage.CostUSD,
 		Status:                status,
 		ErrorMessage:          errorMsg,
 		ClientIp:              c.ClientIP(),
+		UserAgent:             strings.TrimSpace(c.GetHeader("User-Agent")),
 		RequestId:             requestId,
 	}
 	go func() {
@@ -358,6 +363,31 @@ func logUsage(aggToken *model.AggregatedToken, provider *model.Provider, token *
 			common.SysLog(fmt.Sprintf("failed to insert usage log: %v", err))
 		}
 	}()
+}
+
+func extractRequestedStream(body []byte) bool {
+	if len(body) == 0 {
+		return false
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return false
+	}
+
+	raw, ok := payload["stream"]
+	if !ok {
+		return false
+	}
+
+	switch v := raw.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	default:
+		return false
+	}
 }
 
 func isAnthropicPath(path string) bool {

@@ -22,13 +22,50 @@ const formatCost = (value) => {
   return `$${amount.toFixed(6)}`;
 };
 
-const formatUseTimeAndFirstToken = (log) => {
-  const useTime = Number(log?.response_time_ms || 0);
+const getRequestedStream = (log) => {
+  if (typeof log?.requested_stream === 'boolean') {
+    return log.requested_stream;
+  }
+  return Boolean(log?.is_stream);
+};
+
+const getResponseIsStream = (log) => {
+  if (typeof log?.response_is_stream === 'boolean') {
+    return log.response_is_stream;
+  }
+  return Boolean(log?.is_stream);
+};
+
+const formatDuration = (value) => {
+  const duration = Number(value || 0);
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return '-';
+  }
+  return `${duration} ms`;
+};
+
+const formatStreamMode = (value) => (value ? '流式' : '非流式');
+
+const formatFirstToken = (log) => {
+  if (!getResponseIsStream(log)) {
+    return '-';
+  }
   const firstToken = Number(log?.first_token_ms || 0);
-  const isStream = Boolean(log?.is_stream);
-  const firstTokenText = isStream ? `${firstToken} ms` : '-';
-  const streamText = isStream ? '流式' : '非流式';
-  return `${useTime} ms / ${firstTokenText} (${streamText})`;
+  if (!Number.isFinite(firstToken) || firstToken <= 0) {
+    return '-';
+  }
+  return `${firstToken} ms`;
+};
+
+const formatUserAgent = (value) => {
+  const text = String(value || '').trim();
+  if (!text) {
+    return '-';
+  }
+  if (text.length <= 72) {
+    return text;
+  }
+  return `${text.slice(0, 69)}...`;
 };
 
 const renderCacheValue = (log) => {
@@ -195,6 +232,11 @@ const LogsTable = ({ selfOnly }) => {
       provider: log?.provider_name || '',
       model: log?.model_name || '',
       status: log?.status,
+      requested_stream: getRequestedStream(log),
+      response_is_stream: getResponseIsStream(log),
+      response_time_ms: Number(log?.response_time_ms || 0),
+      first_token_ms: Number(log?.first_token_ms || 0),
+      user_agent: String(log?.user_agent || ''),
       created_at: formatTime(log?.created_at),
       raw_error_message: raw
     };
@@ -335,30 +377,46 @@ const LogsTable = ({ selfOnly }) => {
                 </div>
               </div>
 
-              <div className='log-meta-grid'>
-                <div>
-                  <span className='meta-label'>用时/首字（是否为流式）</span>
-                  <span className='meta-value'>{formatUseTimeAndFirstToken(log)}</span>
+              <div className='log-meta-inline'>
+                <div className='log-meta-pill'>
+                  <span className='meta-pill-label'>耗时</span>
+                  <span className='meta-pill-value'>{formatDuration(log.response_time_ms)}</span>
                 </div>
-                <div>
-                  <span className='meta-label'>输入</span>
-                  <span className='meta-value'>{Number(log.prompt_tokens || 0)}</span>
+                <div className='log-meta-pill'>
+                  <span className='meta-pill-label'>首字</span>
+                  <span className='meta-pill-value'>{formatFirstToken(log)}</span>
                 </div>
-                <div>
-                  <span className='meta-label'>输出</span>
-                  <span className='meta-value'>{Number(log.completion_tokens || 0)}</span>
+                <div className='log-meta-pill'>
+                  <span className='meta-pill-label'>请求</span>
+                  <span className='meta-pill-value'>{formatStreamMode(getRequestedStream(log))}</span>
                 </div>
-                <div>
-                  <span className='meta-label'>缓存</span>
-                  <span className='meta-value'>{renderCacheValue(log)}</span>
+                <div className='log-meta-pill'>
+                  <span className='meta-pill-label'>响应</span>
+                  <span className='meta-pill-value'>{formatStreamMode(getResponseIsStream(log))}</span>
                 </div>
-                <div>
-                  <span className='meta-label'>花费</span>
-                  <span className='meta-value'>{formatCost(log.cost_usd)}</span>
+                <div className='log-meta-pill'>
+                  <span className='meta-pill-label'>输入</span>
+                  <span className='meta-pill-value'>{Number(log.prompt_tokens || 0)}</span>
                 </div>
-                <div>
-                  <span className='meta-label'>Request ID</span>
-                  <span className='meta-value'>{log.request_id || '-'}</span>
+                <div className='log-meta-pill'>
+                  <span className='meta-pill-label'>输出</span>
+                  <span className='meta-pill-value'>{Number(log.completion_tokens || 0)}</span>
+                </div>
+                <div className='log-meta-pill'>
+                  <span className='meta-pill-label'>缓存</span>
+                  <span className='meta-pill-value'>{renderCacheValue(log)}</span>
+                </div>
+                <div className='log-meta-pill'>
+                  <span className='meta-pill-label'>花费</span>
+                  <span className='meta-pill-value'>{formatCost(log.cost_usd)}</span>
+                </div>
+                <div className='log-meta-pill log-meta-pill-wide' title={String(log.user_agent || '').trim() || '-'}>
+                  <span className='meta-pill-label'>User-Agent</span>
+                  <span className='meta-pill-value log-user-agent'>{formatUserAgent(log.user_agent)}</span>
+                </div>
+                <div className='log-meta-pill log-meta-pill-wide'>
+                  <span className='meta-pill-label'>Request ID</span>
+                  <span className='meta-pill-value'>{log.request_id || '-'}</span>
                 </div>
               </div>
 
