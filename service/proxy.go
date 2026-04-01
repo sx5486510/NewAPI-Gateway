@@ -566,8 +566,14 @@ func extractErrorKeyInfo(errorMsg string) (httpStatus int, errorType string, ups
 	}
 
 	// Extract upstream host from error message (e.g., "elysiver.h-e.top" from Cloudflare page)
-	if strings.Contains(errorMsg, " | ") {
-		parts := strings.Split(errorMsg, " | ")
+	// Only look at the error part, before "request body:"
+	errorOnly := errorMsg
+	if idx := strings.Index(errorMsg, "\nrequest body:"); idx >= 0 {
+		errorOnly = errorMsg[:idx]
+	}
+
+	if strings.Contains(errorOnly, " | ") {
+		parts := strings.Split(errorOnly, " | ")
 		for _, part := range parts {
 			if strings.Contains(part, "://") {
 				// Extract host from URL
@@ -585,9 +591,9 @@ func extractErrorKeyInfo(errorMsg string) (httpStatus int, errorType string, ups
 	}
 
 	// Also check for Cloudflare error pages
-	if strings.Contains(errorMsg, "Cloudflare") && strings.Contains(errorMsg, "Ray ID") {
-		if idx := strings.Index(errorMsg, " | "); idx > 0 {
-			afterPipe := errorMsg[idx+3:]
+	if strings.Contains(errorOnly, "Cloudflare") && strings.Contains(errorOnly, "Ray ID") {
+		if idx := strings.Index(errorOnly, " | "); idx > 0 {
+			afterPipe := errorOnly[idx+3:]
 			if idx := strings.Index(afterPipe, " | "); idx > 0 {
 				upstreamHost = afterPipe[:idx]
 			}
