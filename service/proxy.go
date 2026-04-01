@@ -53,6 +53,8 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 	// 1. Read original request body
 	bodyBytes, err := getRequestBodyBytes(c)
 	if err != nil {
+		errorMsg := buildErrorMessage("failed to read request body: "+err.Error(), c, nil)
+		logProxyErrorTrace(c, requestId, provider, token, errorMsg)
 		return &ProxyAttemptError{
 			StatusCode: http.StatusBadRequest,
 			Message:    "failed to read request body",
@@ -76,6 +78,8 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 	// 3. Create upstream request
 	req, err := http.NewRequest(c.Request.Method, upstreamURL, bytes.NewReader(bodyBytes))
 	if err != nil {
+		errorMsg := buildErrorMessage("failed to create upstream request: "+err.Error(), c, bodyBytes)
+		logProxyErrorTrace(c, requestId, provider, token, errorMsg)
 		return &ProxyAttemptError{
 			StatusCode: http.StatusInternalServerError,
 			Message:    "failed to create upstream request",
@@ -248,14 +252,9 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		if usage.ModelName == "" {
 			usage.ModelName = c.GetString("request_model")
 		}
-		errorMsg := ""
-		if resp.StatusCode >= 400 {
-			errorMsg = buildErrorMessage(string(respBody), c, bodyBytes)
-			logProxyErrorTrace(c, requestId, provider, token, errorMsg)
-		}
 		logUsage(
 			aggToken, provider, token, c, requestId,
-			usage, requestedStream, false, 0, int(elapsed), errorMsg,
+			usage, requestedStream, false, 0, int(elapsed), "",
 		)
 	}
 	return nil
