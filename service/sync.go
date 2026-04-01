@@ -59,7 +59,9 @@ func SyncProvider(provider *model.Provider) error {
 // getModelTimeoutDays returns the number of days after which a model is considered stale
 func getModelTimeoutDays() int {
 	const defaultHours = 1 // 1 hour
-	if val := model.GetOption("ModelSyncTimeoutHours"); val != "" {
+	common.OptionMapRWMutex.RLock()
+	defer common.OptionMapRWMutex.RUnlock()
+	if val := common.OptionMap["ModelSyncTimeoutHours"]; val != "" {
 		if hours, err := strconv.Atoi(val); err == nil && hours > 0 {
 			return hours
 		}
