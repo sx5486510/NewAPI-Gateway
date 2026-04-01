@@ -480,13 +480,87 @@ func requestBodyForErrorLog(c *gin.Context, bodyBytes []byte) string {
 	return fmt.Sprintf("(non-json omitted) content_type=%s body_size=%d", contentType, len(bodyBytes))
 }
 
+func extractErrorKeyInfo(errorMsg string) (httpStatus int, errorType string, upstreamHost string) {
+	// Extract HTTP status code (e.g., "upstream status 502" -> 502)
+	if strings.Contains(errorMsg, "upstream status ") {
+		parts := strings.Split(errorMsg, "upstream status ")
+		if len(parts) > 1 {
+			var status int
+			fmt.Sscanf(parts[1], "%d", &status)
+			if status > 0 {
+				httpStatus = status
+			}
+		}
+	}
+
+	// Determine error type from status code or message
+	switch httpStatus {
+	case 502:
+		errorType = "BAD_GATEWAY"
+	case 504:
+		errorType = "GATEWAY_TIMEOUT"
+	case 401:
+		errorType = "UNAUTHORIZED"
+	case 429:
+		errorType = "RATE_LIMIT"
+	case 500:
+		errorType = "INTERNAL_ERROR"
+	default:
+		if httpStatus >= 400 && httpStatus < 500 {
+			errorType = fmt.Sprintf("CLIENT_ERROR_%d", httpStatus)
+		} else if httpStatus >= 500 {
+			errorType = fmt.Sprintf("SERVER_ERROR_%d", httpStatus)
+		} else if strings.Contains(errorMsg, "timeout") || strings.Contains(errorMsg, "Timeout") {
+			errorType = "TIMEOUT"
+		} else if strings.Contains(errorMsg, "connection") || strings.Contains(errorMsg, "Connection") {
+			errorType = "CONNECTION_ERROR"
+		} else {
+			errorType = "UNKNOWN"
+		}
+	}
+
+	// Extract upstream host from error message (e.g., "elysiver.h-e.top" from Cloudflare page)
+	if strings.Contains(errorMsg, " | ") {
+		parts := strings.Split(errorMsg, " | ")
+		for _, part := range parts {
+			if strings.Contains(part, "://") {
+				// Extract host from URL
+				if idx := strings.Index(part, "://"); idx > 0 {
+					hostPart := part[idx+3:]
+					if idx := strings.Index(hostPart, "/"); idx > 0 {
+						upstreamHost = hostPart[:idx]
+					} else {
+						upstreamHost = hostPart
+					}
+				}
+				break
+			}
+		}
+	}
+
+	// Also check for Cloudflare error pages
+	if strings.Contains(errorMsg, "Cloudflare") && strings.Contains(errorMsg, "Ray ID") {
+		if idx := strings.Index(errorMsg, " | "); idx > 0 {
+			afterPipe := errorMsg[idx+3:]
+			if idx := strings.Index(afterPipe, " | "); idx > 0 {
+				upstreamHost = afterPipe[:idx]
+			}
+		}
+	}
+
+	return httpStatus, errorType, upstreamHost
+}
+
 func logProxyErrorTrace(c *gin.Context, requestId string, provider *model.Provider, token *model.ProviderToken, errorMsg string) {
 	compactError := strings.ReplaceAll(strings.ReplaceAll(errorMsg, "\n", " "), "\r", " ")
 	if len(compactError) > 1200 {
 		compactError = compactError[:1200] + "...(truncated)"
 	}
+
+	httpStatus, errorType, upstreamHost := extractErrorKeyInfo(errorMsg)
+
 	common.SysError(fmt.Sprintf(
-		"[proxy-error] request_id=%s method=%s path=%s provider=%s provider_id=%d provider_token_id=%d model=%s client_ip=%s detail=%s",
+		"[proxy-error] request_id=%s method=%s path=%s provider=%s provider_id=%d provider_token_id=%d model=%s client_ip=%s status=%d error_type=%s upstream_host=%s detail=%s",
 		requestId,
 		c.Request.Method,
 		c.Request.URL.Path,
@@ -495,6 +569,9 @@ func logProxyErrorTrace(c *gin.Context, requestId string, provider *model.Provid
 		token.Id,
 		c.GetString("request_model"),
 		c.ClientIP(),
+		httpStatus,
+		errorType,
+		upstreamHost,
 		compactError,
 	))
 }
