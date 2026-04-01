@@ -513,15 +513,53 @@ func extractErrorKeyInfo(errorMsg string) (httpStatus int, errorType string, ups
 					jsonStr = jsonStr[:jsonEnd]
 				}
 
-				// Try to parse and extract error.code
+				// Try to parse and extract error info
 				var errResp map[string]interface{}
 				if err := json.Unmarshal([]byte(jsonStr), &errResp); err == nil {
-					// Look for error.code or error.type
+					// Look for error.message first (most detailed)
 					if errField, ok := errResp["error"].(map[string]interface{}); ok {
-						if code, ok := errField["code"].(string); ok && code != "" {
-							errorType = code
-						} else if typ, ok := errField["type"].(string); ok && typ != "" {
-							errorType = typ
+						// Try to extract detailed error from message field
+						if message, ok := errField["message"].(string); ok && message != "" {
+							// Check if message contains nested JSON like: "Upstream error 429: {\"error\":\"Rate limit exceeded\"}"
+							if strings.Contains(message, "{") && strings.Contains(message, "}") {
+								nestedStart := strings.Index(message, "{")
+								nestedEnd := strings.LastIndex(message, "}")
+								if nestedStart >= 0 && nestedEnd > nestedStart {
+									nestedJSON := message[nestedStart : nestedEnd+1]
+									var nestedResp map[string]interface{}
+									if err := json.Unmarshal([]byte(nestedJSON), &nestedResp); err == nil {
+										// Extract from nested error structure
+										if nestedErr, ok := nestedResp["error"].(string); ok && nestedErr != "" {
+											errorType = nestedErr
+										} else if nestedErrField, ok := nestedResp["error"].(map[string]interface{}); ok {
+											if code, ok := nestedErrField["code"].(string); ok && code != "" {
+												errorType = code
+											} else if code, ok := nestedErrField["error"].(string); ok && code != "" {
+												errorType = code
+											} else if msg, ok := nestedErrField["message"].(string); ok && msg != "" {
+												errorType = msg
+											}
+										}
+									}
+								}
+							}
+							// If still no error type but message exists, use first 50 chars of message
+							if errorType == "" && len(message) > 0 {
+								// Truncate long messages
+								if len(message) > 50 {
+									errorType = message[:50] + "..."
+								} else {
+									errorType = message
+								}
+							}
+						}
+						// Fallback to error.code or error.type if message didn't give us anything useful
+						if errorType == "" || (len(errorType) > 50 && strings.Contains(errorType, "...")) {
+							if code, ok := errField["code"].(string); ok && code != "" {
+								errorType = code
+							} else if typ, ok := errField["type"].(string); ok && typ != "" {
+								errorType = typ
+							}
 						}
 					}
 					// Also check for direct code/type fields
