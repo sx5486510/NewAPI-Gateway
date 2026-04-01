@@ -498,29 +498,70 @@ func extractErrorKeyInfo(errorMsg string) (httpStatus int, errorType string, ups
 		}
 	}
 
-	// Determine error type from status code or message
-	switch httpStatus {
-	case 502:
-		errorType = "BAD_GATEWAY"
-	case 504:
-		errorType = "GATEWAY_TIMEOUT"
-	case 401:
-		errorType = "UNAUTHORIZED"
-	case 429:
-		errorType = "RATE_LIMIT"
-	case 500:
-		errorType = "INTERNAL_ERROR"
-	default:
-		if httpStatus >= 400 && httpStatus < 500 {
-			errorType = fmt.Sprintf("CLIENT_ERROR_%d", httpStatus)
-		} else if httpStatus >= 500 {
-			errorType = fmt.Sprintf("SERVER_ERROR_%d", httpStatus)
-		} else if strings.Contains(errorMsg, "timeout") || strings.Contains(errorMsg, "Timeout") {
-			errorType = "TIMEOUT"
-		} else if strings.Contains(errorMsg, "connection") || strings.Contains(errorMsg, "Connection") {
-			errorType = "CONNECTION_ERROR"
-		} else {
-			errorType = "UNKNOWN"
+	// Try to extract API error code from JSON response
+	// Format: "upstream status 503: {\"error\":{\"code\":\"model_not_found\",...}}"
+	if strings.Contains(errorMsg, "upstream status ") {
+		parts := strings.SplitN(errorMsg, "upstream status ", 2)
+		if len(parts) > 1 {
+			// Find the JSON part after the status code
+			jsonStart := strings.Index(parts[1], "{")
+			if jsonStart >= 0 {
+				// Extract JSON (stop at "request body:" or end)
+				jsonEnd := strings.Index(parts[1][jsonStart:], "\nrequest body:")
+				jsonStr := parts[1][jsonStart:]
+				if jsonEnd >= 0 {
+					jsonStr = jsonStr[:jsonEnd]
+				}
+
+				// Try to parse and extract error.code
+				var errResp map[string]interface{}
+				if err := json.Unmarshal([]byte(jsonStr), &errResp); err == nil {
+					// Look for error.code or error.type
+					if errField, ok := errResp["error"].(map[string]interface{}); ok {
+						if code, ok := errField["code"].(string); ok && code != "" {
+							errorType = code
+						} else if typ, ok := errField["type"].(string); ok && typ != "" {
+							errorType = typ
+						}
+					}
+					// Also check for direct code/type fields
+					if errorType == "" {
+						if code, ok := errResp["code"].(string); ok && code != "" {
+							errorType = code
+						} else if typ, ok := errResp["type"].(string); ok && typ != "" {
+							errorType = typ
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback: determine error type from status code if not found in JSON
+	if errorType == "" {
+		switch httpStatus {
+		case 502:
+			errorType = "BAD_GATEWAY"
+		case 504:
+			errorType = "GATEWAY_TIMEOUT"
+		case 401:
+			errorType = "UNAUTHORIZED"
+		case 429:
+			errorType = "RATE_LIMIT"
+		case 500:
+			errorType = "INTERNAL_ERROR"
+		default:
+			if httpStatus >= 400 && httpStatus < 500 {
+				errorType = fmt.Sprintf("CLIENT_ERROR_%d", httpStatus)
+			} else if httpStatus >= 500 {
+				errorType = fmt.Sprintf("SERVER_ERROR_%d", httpStatus)
+			} else if strings.Contains(errorMsg, "timeout") || strings.Contains(errorMsg, "Timeout") {
+				errorType = "TIMEOUT"
+			} else if strings.Contains(errorMsg, "connection") || strings.Contains(errorMsg, "Connection") {
+				errorType = "CONNECTION_ERROR"
+			} else {
+				errorType = "UNKNOWN"
+			}
 		}
 	}
 
