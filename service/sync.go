@@ -58,23 +58,23 @@ func SyncProvider(provider *model.Provider) error {
 
 // getModelTimeoutDays returns the number of days after which a model is considered stale
 func getModelTimeoutDays() int {
-	const defaultDays = 7
-	if val := model.GetOption("ModelSyncTimeoutDays"); val != "" {
-		if days, err := strconv.Atoi(val); err == nil && days > 0 {
-			return days
+	const defaultHours = 1 // 1 hour
+	if val := model.GetOption("ModelSyncTimeoutHours"); val != "" {
+		if hours, err := strconv.Atoi(val); err == nil && hours > 0 {
+			return hours
 		}
 	}
-	return defaultDays
+	return defaultHours
 }
 
 // cleanupStaleModels removes models that haven't been synced for a long time
 func cleanupStaleModels(provider *model.Provider) {
-	timeoutDays := getModelTimeoutDays()
-	if timeoutDays <= 0 {
+	timeoutHours := getModelTimeoutDays()
+	if timeoutHours <= 0 {
 		return // disable cleanup
 	}
 
-	cutoffTime := time.Now().Add(-time.Duration(timeoutDays) * 24 * time.Hour).Unix()
+	cutoffTime := time.Now().Add(-time.Duration(timeoutHours) * time.Hour).Unix()
 
 	// Get all models for this provider
 	pricingList, err := model.GetModelPricingByProvider(provider.Id)
@@ -86,11 +86,11 @@ func cleanupStaleModels(provider *model.Provider) {
 	for _, pricing := range pricingList {
 		if pricing.LastSynced < cutoffTime {
 			common.SysLog(fmt.Sprintf(
-				"removing stale model %s for provider %s (last_synced: %s, timeout: %d days)",
+				"removing stale model %s for provider %s (last_synced: %s, timeout: %d hours)",
 				pricing.ModelName,
 				provider.Name,
-				time.Unix(pricing.LastSynced, 0).Format("2006-01-02"),
-				timeoutDays,
+				time.Unix(pricing.LastSynced, 0).Format("2006-01-02 15:04:05"),
+				timeoutHours,
 			))
 			if err := model.DeleteModelPricing(pricing.Id); err == nil {
 				staleCount++
@@ -100,10 +100,10 @@ func cleanupStaleModels(provider *model.Provider) {
 
 	if staleCount > 0 {
 		common.SysLog(fmt.Sprintf(
-			"cleaned up %d stale models for provider %s (timeout: %d days)",
+			"cleaned up %d stale models for provider %s (timeout: %d hours)",
 			staleCount,
 			provider.Name,
-			timeoutDays,
+			timeoutHours,
 		))
 	}
 }
