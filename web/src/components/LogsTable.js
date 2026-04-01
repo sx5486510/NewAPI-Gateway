@@ -68,6 +68,28 @@ const formatUserAgent = (value) => {
   return `${text.slice(0, 69)}...`;
 };
 
+const formatErrorSummary = (log) => {
+  if (!log || log.status === 1) {
+    return null;
+  }
+
+  const parts = [];
+
+  if (log.error_http_status) {
+    parts.push(`${log.error_http_status}`);
+  }
+
+  if (log.error_type) {
+    parts.push(log.error_type);
+  }
+
+  if (log.upstream_host) {
+    parts.push(`@${log.upstream_host}`);
+  }
+
+  return parts.length > 0 ? parts.join(' · ') : null;
+};
+
 const renderCacheValue = (log) => {
   const cacheTokens = Number(log?.cache_tokens || 0);
   const creationTokens = Number(log?.cache_creation_tokens || 0);
@@ -368,10 +390,17 @@ const LogsTable = ({ selfOnly }) => {
                       成功
                     </Badge>
                   ) : (
-                    <Badge color='red'>
-                      <XCircle size={12} style={{ marginRight: '0.25rem' }} />
-                      失败
-                    </Badge>
+                    <>
+                      <Badge color='red'>
+                        <XCircle size={12} style={{ marginRight: '0.25rem' }} />
+                        失败
+                      </Badge>
+                      {formatErrorSummary(log) && (
+                        <Badge color='orange' style={{ marginLeft: '0.5rem' }}>
+                          {formatErrorSummary(log)}
+                        </Badge>
+                      )}
+                    </>
                   )}
                   <span className='log-time'>{formatTime(log.created_at)}</span>
                 </div>

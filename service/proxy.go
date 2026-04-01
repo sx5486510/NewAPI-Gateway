@@ -319,6 +319,9 @@ func logUsage(aggToken *model.AggregatedToken, provider *model.Provider, token *
 		status = 0
 	}
 
+	// Extract error key information
+	httpStatus, errorType, upstreamHost := extractErrorKeyInfo(errorMsg)
+
 	// Try to extract model from request path or body
 	if usage.ModelName == "" {
 		usage.ModelName = c.GetString("request_model")
@@ -353,6 +356,9 @@ func logUsage(aggToken *model.AggregatedToken, provider *model.Provider, token *
 		CostUSD:               usage.CostUSD,
 		Status:                status,
 		ErrorMessage:          errorMsg,
+		ErrorHttpStatus:       httpStatus,
+		ErrorType:             errorType,
+		UpstreamHost:          upstreamHost,
 		ClientIp:              c.ClientIP(),
 		UserAgent:             strings.TrimSpace(c.GetHeader("User-Agent")),
 		RequestId:             requestId,

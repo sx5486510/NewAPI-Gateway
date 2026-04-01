@@ -30,6 +30,9 @@ type UsageLog struct {
 	CostUSD               float64 `json:"cost_usd"`
 	Status                int     `json:"status"`
 	ErrorMessage          string  `json:"error_message" gorm:"type:text"`
+	ErrorHttpStatus       int     `json:"error_http_status" gorm:"type:int"`
+	ErrorType             string  `json:"error_type" gorm:"type:varchar(64)"`
+	UpstreamHost          string  `json:"upstream_host" gorm:"type:varchar(255)"`
 	ClientIp              string  `json:"client_ip" gorm:"type:varchar(64)"`
 	UserAgent             string  `json:"user_agent" gorm:"type:varchar(512)"`
 	RequestId             string  `json:"request_id" gorm:"type:varchar(64);index"`
@@ -59,6 +62,9 @@ func (l *UsageLog) Insert() error {
 		"cost_usd":                l.CostUSD,
 		"status":                  l.Status,
 		"error_message":           l.ErrorMessage,
+		"error_http_status":       l.ErrorHttpStatus,
+		"error_type":              l.ErrorType,
+		"upstream_host":           l.UpstreamHost,
 		"client_ip":               l.ClientIp,
 		"user_agent":              l.UserAgent,
 		"request_id":              l.RequestId,
