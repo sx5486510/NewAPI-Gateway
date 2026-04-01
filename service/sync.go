@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -53,6 +54,58 @@ func SyncProvider(provider *model.Provider) error {
 	}
 
 	return nil
+}
+
+// getModelTimeoutDays returns the number of days after which a model is considered stale
+func getModelTimeoutDays() int {
+	const defaultDays = 7
+	if val := model.GetOption("ModelSyncTimeoutDays"); val != "" {
+		if days, err := strconv.Atoi(val); err == nil && days > 0 {
+			return days
+		}
+	}
+	return defaultDays
+}
+
+// cleanupStaleModels removes models that haven't been synced for a long time
+func cleanupStaleModels(provider *model.Provider) {
+	timeoutDays := getModelTimeoutDays()
+	if timeoutDays <= 0 {
+		return // disable cleanup
+	}
+
+	cutoffTime := time.Now().Add(-time.Duration(timeoutDays) * 24 * time.Hour).Unix()
+
+	// Get all models for this provider
+	pricingList, err := model.GetModelPricingByProvider(provider.Id)
+	if err != nil {
+		return
+	}
+
+	staleCount := 0
+	for _, pricing := range pricingList {
+		if pricing.LastSynced < cutoffTime {
+			common.SysLog(fmt.Sprintf(
+				"removing stale model %s for provider %s (last_synced: %s, timeout: %d days)",
+				pricing.ModelName,
+				provider.Name,
+				time.Unix(pricing.LastSynced, 0).Format("2006-01-02"),
+				timeoutDays,
+			))
+			if err := model.DeleteModelPricing(pricing.Id); err == nil {
+				staleCount++
+			}
+		}
+	}
+
+	if staleCount > 0 {
+		common.SysLog(fmt.Sprintf(
+			"cleaned up %d stale models for provider %s (timeout: %d days)",
+			staleCount,
+			provider.Name,
+			timeoutDays,
+		))
+	}
 }
 
 type openAIModelsResponse struct {
@@ -152,6 +205,9 @@ func upsertKeyOnlyToken(provider *model.Provider, apiKey string) error {
 }
 
 func syncKeyOnlyPricing(provider *model.Provider, models []string) error {
+	// Clean up stale models before syncing
+	cleanupStaleModels(provider)
+
 	if err := model.DeletePricingForProvider(provider.Id); err != nil {
 		return err
 	}
@@ -179,6 +235,9 @@ func syncKeyOnlyPricing(provider *model.Provider, models []string) error {
 }
 
 func syncPricing(client *UpstreamClient, provider *model.Provider) error {
+	// Clean up stale models before syncing
+	cleanupStaleModels(provider)
+
 	pricingPayload, err := client.GetPricing()
 	if err != nil {
 		return err
