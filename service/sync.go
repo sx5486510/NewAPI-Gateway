@@ -185,6 +185,27 @@ func syncPricing(client *UpstreamClient, provider *model.Provider) error {
 	}
 	pricingList := pricingPayload.Data
 
+	// 1. Collect upstream model names
+	upstreamModels := make(map[string]bool)
+	for _, p := range pricingList {
+		upstreamModels[p.ModelName] = true
+	}
+
+	// 2. Remove deprecated models (exist locally but not upstream)
+	existing, err := model.GetModelPricingByProvider(provider.Id)
+	if err == nil {
+		for _, existingPricing := range existing {
+			if !upstreamModels[existingPricing.ModelName] {
+				common.SysLog(fmt.Sprintf(
+					"removing deprecated model %s for provider %s",
+					existingPricing.ModelName, provider.Name,
+				))
+				model.DeleteModelPricing(existingPricing.Id)
+			}
+		}
+	}
+
+	// 3. Upsert new pricing data
 	for _, p := range pricingList {
 		enableGroupsJSON, _ := json.Marshal(p.EnableGroups)
 		supportedEndpointTypesJSON, _ := json.Marshal(p.SupportedEndpointTypes)

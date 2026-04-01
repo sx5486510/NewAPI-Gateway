@@ -68,3 +68,8 @@ func GetAllModelPricing() ([]*ModelPricing, error) {
 func DeletePricingForProvider(providerId int) error {
 	return DB.Where("provider_id = ?", providerId).Delete(&ModelPricing{}).Error
 }
+
+// DeleteModelPricing removes a single pricing record
+func DeleteModelPricing(id int) error {
+	return DB.Delete(&ModelPricing{}, id).Error
+}
