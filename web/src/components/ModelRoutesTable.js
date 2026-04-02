@@ -285,6 +285,9 @@ const ModelRoutesTable = () => {
             } else if (sortMode === 'dirty_first') {
                 if (b.dirtyRows !== a.dirtyRows) return b.dirtyRows - a.dirtyRows;
                 if (b.routeCount !== a.routeCount) return b.routeCount - a.routeCount;
+            } else if (sortMode === 'provider_count') {
+                if (b.providerCount !== a.providerCount) return b.providerCount - a.providerCount;
+                if (b.routeCount !== a.routeCount) return b.routeCount - a.routeCount;
             }
             return a.modelName.localeCompare(b.modelName, 'zh-Hans-CN');
         });
@@ -483,6 +486,7 @@ const ModelRoutesTable = () => {
                 </select>
                 <select className="routes-inline-select" value={sortMode} onChange={(e) => setSortMode(e.target.value)} style={selectStyle}>
                     <option value="name">按模型名排序</option>
+                    <option value="provider_count">{'\u6309\u4f9b\u5e94\u5546\u6570\u6392\u5e8f'}</option>
                     <option value="cheapest_prompt">按最低输入价</option>
                     <option value="cheapest_call">按最低按次价</option>
                     <option value="dirty_first">按改动优先</option>
