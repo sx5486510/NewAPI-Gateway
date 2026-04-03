@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -295,31 +296,131 @@ func syncPricing(client *UpstreamClient, provider *model.Provider) error {
 	return nil
 }
 
-func syncTokens(client *UpstreamClient, provider *model.Provider) error {
-	// Fetch all tokens (paginate)
+func fetchAllUpstreamTokens(client *UpstreamClient) ([]UpstreamToken, error) {
 	var allTokens []UpstreamToken
-	page := 1
-	pageSize := 100
-	for {
+	for page := 1; ; page++ {
+		const pageSize = 100
 		tokens, err := client.GetTokens(page, pageSize)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		allTokens = append(allTokens, tokens...)
 		if len(tokens) < pageSize {
 			break
 		}
-		page++
+	}
+	return allTokens, nil
+}
+
+func normalizeTokenGroupName(raw string) string {
+	groupName := strings.TrimSpace(raw)
+	if groupName == "" {
+		return "default"
+	}
+	return groupName
+}
+
+func collectRequiredTokenGroups(pricingList []*model.ModelPricing) []string {
+	groupSet := make(map[string]bool)
+	for _, pricing := range pricingList {
+		var groups []string
+		if err := json.Unmarshal([]byte(pricing.EnableGroups), &groups); err != nil {
+			continue
+		}
+		for _, groupName := range groups {
+			groupSet[normalizeTokenGroupName(groupName)] = true
+		}
 	}
 
-	// Upsert each token
+	requiredGroups := make([]string, 0, len(groupSet))
+	for groupName := range groupSet {
+		requiredGroups = append(requiredGroups, groupName)
+	}
+	sort.Strings(requiredGroups)
+	return requiredGroups
+}
+
+func getRequiredTokenGroups(providerId int) ([]string, error) {
+	pricingList, err := model.GetModelPricingByProvider(providerId)
+	if err != nil {
+		return nil, err
+	}
+	return collectRequiredTokenGroups(pricingList), nil
+}
+
+func getMissingTokenGroups(requiredGroups []string, tokens []UpstreamToken) []string {
+	existingGroups := make(map[string]bool)
+	for _, token := range tokens {
+		existingGroups[normalizeTokenGroupName(token.Group)] = true
+	}
+
+	missingGroups := make([]string, 0)
+	for _, groupName := range requiredGroups {
+		if existingGroups[groupName] {
+			continue
+		}
+		missingGroups = append(missingGroups, groupName)
+	}
+	sort.Strings(missingGroups)
+	return missingGroups
+}
+
+func buildAutoGroupTokenName(groupName string) string {
+	return fmt.Sprintf("auto-sync-%s", groupName)
+}
+
+func ensureRequiredGroupTokens(client *UpstreamClient, provider *model.Provider, tokens []UpstreamToken) ([]UpstreamToken, error) {
+	requiredGroups, err := getRequiredTokenGroups(provider.Id)
+	if err != nil {
+		return tokens, err
+	}
+
+	missingGroups := getMissingTokenGroups(requiredGroups, tokens)
+	if len(missingGroups) == 0 {
+		return tokens, nil
+	}
+
+	createdGroups := make([]string, 0, len(missingGroups))
+	failedGroups := make([]string, 0)
+	for _, groupName := range missingGroups {
+		if err := client.CreateUpstreamToken(buildAutoGroupTokenName(groupName), groupName, true, 0, ""); err != nil {
+			common.SysLog(fmt.Sprintf("auto create token failed for provider %s group %s: %v", provider.Name, groupName, err))
+			failedGroups = append(failedGroups, groupName)
+			continue
+		}
+		createdGroups = append(createdGroups, groupName)
+	}
+
+	if len(createdGroups) > 0 {
+		common.SysLog(fmt.Sprintf("auto created %d missing group tokens for provider %s: %s", len(createdGroups), provider.Name, strings.Join(createdGroups, ", ")))
+		refreshedTokens, err := fetchAllUpstreamTokens(client)
+		if err != nil {
+			if len(failedGroups) > 0 {
+				return tokens, fmt.Errorf("re-fetch tokens after auto-creating groups %s failed: %w; token creation also failed for groups %s", strings.Join(createdGroups, ", "), err, strings.Join(failedGroups, ", "))
+			}
+			return tokens, fmt.Errorf("re-fetch tokens after auto-creating groups %s failed: %w", strings.Join(createdGroups, ", "), err)
+		}
+		tokens = refreshedTokens
+	}
+
+	if len(failedGroups) > 0 {
+		return tokens, fmt.Errorf("auto create upstream token failed for groups: %s", strings.Join(failedGroups, ", "))
+	}
+	return tokens, nil
+}
+
+func syncTokens(client *UpstreamClient, provider *model.Provider) error {
+	allTokens, err := fetchAllUpstreamTokens(client)
+	if err != nil {
+		return err
+	}
+
+	allTokens, ensureErr := ensureRequiredGroupTokens(client, provider, allTokens)
+
 	var upstreamIds []int
 	for _, t := range allTokens {
 		upstreamIds = append(upstreamIds, t.Id)
-		groupName := strings.TrimSpace(t.Group)
-		if groupName == "" {
-			groupName = "default"
-		}
+		groupName := normalizeTokenGroupName(t.Group)
 		rawKey := t.Key
 		if model.IsMaskedKey(rawKey) {
 			fullKey, err := client.GetTokenKey(t.Id)
@@ -354,12 +455,14 @@ func syncTokens(client *UpstreamClient, provider *model.Provider) error {
 		}
 	}
 
-	// Delete tokens that no longer exist upstream
 	if err := model.DeleteProviderTokensNotInIds(provider.Id, upstreamIds); err != nil {
 		common.SysLog(fmt.Sprintf("cleanup old tokens failed for provider %s: %v", provider.Name, err))
 	}
 
 	common.SysLog(fmt.Sprintf("synced %d tokens for provider %s", len(allTokens), provider.Name))
+	if ensureErr != nil {
+		return ensureErr
+	}
 	return nil
 }
 
@@ -395,7 +498,8 @@ func RebuildProviderRoutes(providerId int) error {
 			continue
 		}
 		for _, g := range groups {
-			groupModels[g] = append(groupModels[g], p.ModelName)
+			groupName := normalizeTokenGroupName(g)
+			groupModels[groupName] = append(groupModels[groupName], p.ModelName)
 		}
 	}
 
@@ -403,7 +507,7 @@ func RebuildProviderRoutes(providerId int) error {
 	var routes []model.ModelRoute
 	routeSet := make(map[string]bool) // deduplicate
 	for _, token := range tokens {
-		models, ok := groupModels[token.GroupName]
+		models, ok := groupModels[normalizeTokenGroupName(token.GroupName)]
 		if !ok {
 			continue
 		}

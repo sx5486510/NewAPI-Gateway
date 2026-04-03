@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var (
@@ -25,8 +26,15 @@ func printHelp() {
 	fmt.Println("Usage: NewAPI-Gateway [--port <port>] [--log-dir <log directory>] [--version] [--help]")
 }
 
+func runningUnderGoTest() bool {
+	binaryName := strings.ToLower(filepath.Base(os.Args[0]))
+	return strings.HasSuffix(binaryName, ".test") || strings.HasSuffix(binaryName, ".test.exe")
+}
+
 func init() {
-	flag.Parse()
+	if !runningUnderGoTest() && !flag.Parsed() {
+		flag.Parse()
+	}
 
 	if *PrintVersion {
 		fmt.Println(Version)
