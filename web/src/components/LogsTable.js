@@ -313,7 +313,7 @@ const LogsTable = ({ selfOnly }) => {
       <div className='logs-filter-bar'>
         <Input
           icon={Search}
-          placeholder='搜索模型 / 供应商 / request id / error'
+          placeholder='搜索模型 / 供应商 / IP / request id / error'
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           style={{ marginBottom: 0, flex: 1, minWidth: '220px' }}
@@ -439,6 +439,12 @@ const LogsTable = ({ selfOnly }) => {
                   <span className='meta-pill-label'>花费</span>
                   <span className='meta-pill-value'>{formatCost(log.cost_usd)}</span>
                 </div>
+                {!selfOnly && (
+                  <div className='log-meta-pill'>
+                    <span className='meta-pill-label'>客户端 IP</span>
+                    <span className='meta-pill-value'>{String(log.client_ip || '').trim() || '-'}</span>
+                  </div>
+                )}
                 <div className='log-meta-pill log-meta-pill-wide' title={String(log.user_agent || '').trim() || '-'}>
                   <span className='meta-pill-label'>User-Agent</span>
                   <span className='meta-pill-value log-user-agent'>{formatUserAgent(log.user_agent)}</span>

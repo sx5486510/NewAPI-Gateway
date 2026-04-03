@@ -157,7 +157,6 @@ func ExportProviders(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": items})
 }
 
-
 func ImportProviders(c *gin.Context) {
 	parseModelAliasMapping := func(raw json.RawMessage) (string, error) {
 		if len(raw) == 0 || string(raw) == "null" {
@@ -267,7 +266,6 @@ func ImportProviders(c *gin.Context) {
 	msg := fmt.Sprintf("?????? %d ?????? %d ??", imported, skipped)
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": msg})
 }
-
 
 func CreateProvider(c *gin.Context) {
 	var provider model.Provider
@@ -548,6 +546,11 @@ func UpdateProviderToken(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的 Token ID"})
 		return
 	}
+	existingToken, err := model.GetProviderTokenById(tokenId)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "Token 不存在"})
+		return
+	}
 	var token model.ProviderToken
 	if err := json.NewDecoder(c.Request.Body).Decode(&token); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
@@ -557,6 +560,16 @@ func UpdateProviderToken(c *gin.Context) {
 	if err := token.Update(); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
+	}
+	providerIds := []int{existingToken.ProviderId}
+	if token.ProviderId > 0 && token.ProviderId != existingToken.ProviderId {
+		providerIds = append(providerIds, token.ProviderId)
+	}
+	for _, providerId := range providerIds {
+		if err := service.RebuildProviderRoutes(providerId); err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "Token 已更新，但重建路由失败: " + err.Error()})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
