@@ -246,6 +246,7 @@ func syncPricing(client *UpstreamClient, provider *model.Provider) error {
 		return err
 	}
 	pricingList := pricingPayload.Data
+	usableGroupSet := buildUsableGroupSet(pricingPayload.UsableGroup)
 
 	// 1. Collect upstream model names
 	upstreamModels := make(map[string]bool)
@@ -267,9 +268,11 @@ func syncPricing(client *UpstreamClient, provider *model.Provider) error {
 		}
 	}
 
-	// 3. Upsert new pricing data
+	// 3. Always overwrite local pricing config from upstream, even for existing models.
+	now := time.Now().Unix()
 	for _, p := range pricingList {
-		enableGroupsJSON, _ := json.Marshal(p.EnableGroups)
+		filteredEnableGroups := filterPricingEnableGroups(p.EnableGroups, usableGroupSet)
+		enableGroupsJSON, _ := json.Marshal(filteredEnableGroups)
 		supportedEndpointTypesJSON, _ := json.Marshal(p.SupportedEndpointTypes)
 		mp := &model.ModelPricing{
 			ModelName:              p.ModelName,
@@ -280,14 +283,15 @@ func syncPricing(client *UpstreamClient, provider *model.Provider) error {
 			ModelPrice:             p.ModelPrice,
 			EnableGroups:           string(enableGroupsJSON),
 			SupportedEndpointTypes: string(supportedEndpointTypesJSON),
-			LastSynced:             time.Now().Unix(),
+			LastSynced:             now,
 		}
 		if err := model.UpsertModelPricing(mp); err != nil {
 			common.SysLog(fmt.Sprintf("upsert pricing failed for model %s: %v", p.ModelName, err))
 		}
 	}
 
-	groupRatioJSON, _ := json.Marshal(pricingPayload.GroupRatio)
+	filteredGroupRatio := filterGroupRatio(pricingPayload.GroupRatio, usableGroupSet)
+	groupRatioJSON, _ := json.Marshal(filteredGroupRatio)
 	provider.UpdatePricingGroupRatio(string(groupRatioJSON))
 	supportedEndpointJSON, _ := json.Marshal(pricingPayload.SupportedEndpoint)
 	provider.UpdatePricingSupportedEndpoint(string(supportedEndpointJSON))
@@ -318,6 +322,62 @@ func normalizeTokenGroupName(raw string) string {
 		return "default"
 	}
 	return groupName
+}
+
+func buildUsableGroupSet(usableGroups map[string]string) map[string]bool {
+	if len(usableGroups) == 0 {
+		return nil
+	}
+	groupSet := make(map[string]bool, len(usableGroups))
+	for groupName := range usableGroups {
+		groupSet[normalizeTokenGroupName(groupName)] = true
+	}
+	return groupSet
+}
+
+func filterPricingEnableGroups(groups []string, usableGroupSet map[string]bool) []string {
+	if len(usableGroupSet) == 0 {
+		filtered := make([]string, 0, len(groups))
+		for _, groupName := range groups {
+			filtered = append(filtered, normalizeTokenGroupName(groupName))
+		}
+		return filtered
+	}
+
+	filtered := make([]string, 0, len(groups))
+	seen := make(map[string]bool)
+	for _, groupName := range groups {
+		normalized := normalizeTokenGroupName(groupName)
+		if !usableGroupSet[normalized] || seen[normalized] {
+			continue
+		}
+		seen[normalized] = true
+		filtered = append(filtered, normalized)
+	}
+	return filtered
+}
+
+func filterGroupRatio(groupRatio map[string]float64, usableGroupSet map[string]bool) map[string]float64 {
+	if len(groupRatio) == 0 {
+		return map[string]float64{}
+	}
+	if len(usableGroupSet) == 0 {
+		filtered := make(map[string]float64, len(groupRatio))
+		for groupName, ratio := range groupRatio {
+			filtered[normalizeTokenGroupName(groupName)] = ratio
+		}
+		return filtered
+	}
+
+	filtered := make(map[string]float64)
+	for groupName, ratio := range groupRatio {
+		normalized := normalizeTokenGroupName(groupName)
+		if !usableGroupSet[normalized] {
+			continue
+		}
+		filtered[normalized] = ratio
+	}
+	return filtered
 }
 
 func collectRequiredTokenGroups(pricingList []*model.ModelPricing) []string {

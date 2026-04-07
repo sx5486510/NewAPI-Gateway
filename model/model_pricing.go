@@ -25,7 +25,15 @@ func upsertModelPricingWithDB(db *gorm.DB, p *ModelPricing) error {
 	result := db.Where("model_name = ? AND provider_id = ?", p.ModelName, p.ProviderId).First(&existing)
 	if result.RowsAffected > 0 {
 		p.Id = existing.Id
-		return db.Model(&existing).Updates(p).Error
+		return db.Model(&existing).Updates(map[string]interface{}{
+			"quota_type":               p.QuotaType,
+			"model_ratio":              p.ModelRatio,
+			"completion_ratio":         p.CompletionRatio,
+			"model_price":              p.ModelPrice,
+			"enable_groups":            p.EnableGroups,
+			"supported_endpoint_types": p.SupportedEndpointTypes,
+			"last_synced":              p.LastSynced,
+		}).Error
 	}
 	p.LastSynced = time.Now().Unix()
 	return db.Create(p).Error

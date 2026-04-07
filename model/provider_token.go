@@ -65,12 +65,23 @@ func UpsertProviderToken(pt *ProviderToken) error {
 	var existing ProviderToken
 	result := DB.Where("provider_id = ? AND upstream_token_id = ?", pt.ProviderId, pt.UpstreamTokenId).First(&existing)
 	if result.RowsAffected > 0 {
-		// Update existing
 		pt.Id = existing.Id
 		pt.CreatedAt = existing.CreatedAt
-		return DB.Model(&existing).Updates(pt).Error
+		return DB.Model(&existing).Updates(map[string]interface{}{
+			"sk_key":            pt.SkKey,
+			"name":              pt.Name,
+			"group_name":        pt.GroupName,
+			"status":            pt.Status,
+			"priority":          pt.Priority,
+			"weight":            pt.Weight,
+			"remain_quota":      pt.RemainQuota,
+			"unlimited_quota":   pt.UnlimitedQuota,
+			"used_quota":        pt.UsedQuota,
+			"model_limits":      pt.ModelLimits,
+			"last_synced":       pt.LastSynced,
+			"upstream_token_id": pt.UpstreamTokenId,
+		}).Error
 	}
-	// Create new
 	pt.CreatedAt = time.Now().Unix()
 	return DB.Create(pt).Error
 }
