@@ -429,6 +429,22 @@ func getMissingTokenGroups(requiredGroups []string, tokens []UpstreamToken) []st
 	return missingGroups
 }
 
+func getUnusableTokens(requiredGroups []string, tokens []UpstreamToken) []UpstreamToken {
+	requiredGroupSet := make(map[string]bool, len(requiredGroups))
+	for _, groupName := range requiredGroups {
+		requiredGroupSet[groupName] = true
+	}
+
+	unusableTokens := make([]UpstreamToken, 0)
+	for _, token := range tokens {
+		if requiredGroupSet[normalizeTokenGroupName(token.Group)] {
+			continue
+		}
+		unusableTokens = append(unusableTokens, token)
+	}
+	return unusableTokens
+}
+
 func buildAutoGroupTokenName(groupName string) string {
 	return fmt.Sprintf("auto-sync-%s", groupName)
 }
@@ -439,8 +455,34 @@ func ensureRequiredGroupTokens(client *UpstreamClient, provider *model.Provider,
 		return tokens, err
 	}
 
+	unusableTokens := getUnusableTokens(requiredGroups, tokens)
+	failedDeletes := make([]string, 0)
+	deletedTokenIds := make(map[int]bool, len(unusableTokens))
+	for _, token := range unusableTokens {
+		if err := client.DeleteUpstreamToken(token.Id); err != nil {
+			common.SysLog(fmt.Sprintf("delete unusable token failed for provider %s token %d group %s: %v", provider.Name, token.Id, normalizeTokenGroupName(token.Group), err))
+			failedDeletes = append(failedDeletes, fmt.Sprintf("%d(%s)", token.Id, normalizeTokenGroupName(token.Group)))
+			continue
+		}
+		deletedTokenIds[token.Id] = true
+	}
+	if len(deletedTokenIds) > 0 {
+		filteredTokens := make([]UpstreamToken, 0, len(tokens)-len(deletedTokenIds))
+		for _, token := range tokens {
+			if deletedTokenIds[token.Id] {
+				continue
+			}
+			filteredTokens = append(filteredTokens, token)
+		}
+		tokens = filteredTokens
+		common.SysLog(fmt.Sprintf("deleted %d unusable upstream tokens for provider %s", len(deletedTokenIds), provider.Name))
+	}
+
 	missingGroups := getMissingTokenGroups(requiredGroups, tokens)
 	if len(missingGroups) == 0 {
+		if len(failedDeletes) > 0 {
+			return tokens, fmt.Errorf("delete unusable upstream token failed for: %s", strings.Join(failedDeletes, ", "))
+		}
 		return tokens, nil
 	}
 
@@ -459,16 +501,30 @@ func ensureRequiredGroupTokens(client *UpstreamClient, provider *model.Provider,
 		common.SysLog(fmt.Sprintf("auto created %d missing group tokens for provider %s: %s", len(createdGroups), provider.Name, strings.Join(createdGroups, ", ")))
 		refreshedTokens, err := fetchAllUpstreamTokens(client)
 		if err != nil {
-			if len(failedGroups) > 0 {
-				return tokens, fmt.Errorf("re-fetch tokens after auto-creating groups %s failed: %w; token creation also failed for groups %s", strings.Join(createdGroups, ", "), err, strings.Join(failedGroups, ", "))
+			if len(failedDeletes) > 0 || len(failedGroups) > 0 {
+				parts := make([]string, 0, 2)
+				if len(failedDeletes) > 0 {
+					parts = append(parts, fmt.Sprintf("token deletion also failed for %s", strings.Join(failedDeletes, ", ")))
+				}
+				if len(failedGroups) > 0 {
+					parts = append(parts, fmt.Sprintf("token creation also failed for groups %s", strings.Join(failedGroups, ", ")))
+				}
+				return tokens, fmt.Errorf("re-fetch tokens after syncing groups %s failed: %w; %s", strings.Join(createdGroups, ", "), err, strings.Join(parts, "; "))
 			}
 			return tokens, fmt.Errorf("re-fetch tokens after auto-creating groups %s failed: %w", strings.Join(createdGroups, ", "), err)
 		}
 		tokens = refreshedTokens
 	}
 
+	errorParts := make([]string, 0, 2)
+	if len(failedDeletes) > 0 {
+		errorParts = append(errorParts, fmt.Sprintf("delete unusable upstream token failed for: %s", strings.Join(failedDeletes, ", ")))
+	}
 	if len(failedGroups) > 0 {
-		return tokens, fmt.Errorf("auto create upstream token failed for groups: %s", strings.Join(failedGroups, ", "))
+		errorParts = append(errorParts, fmt.Sprintf("auto create upstream token failed for groups: %s", strings.Join(failedGroups, ", ")))
+	}
+	if len(errorParts) > 0 {
+		return tokens, fmt.Errorf(strings.Join(errorParts, "; "))
 	}
 	return tokens, nil
 }
