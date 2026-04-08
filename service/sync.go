@@ -17,6 +17,10 @@ import (
 func SyncProvider(provider *model.Provider) error {
 	if provider.IsKeyOnly() {
 		if err := syncKeyOnlyProvider(provider); err != nil {
+			clearErr := clearProviderSyncState(provider)
+			if clearErr != nil {
+				return fmt.Errorf("sync key-only provider failed: %w; clear provider sync state failed: %v", err, clearErr)
+			}
 			return err
 		}
 		provider.UpdateLastSyncedTime()
@@ -533,6 +537,19 @@ func syncBalance(client *UpstreamClient, provider *model.Provider) error {
 	}
 	balanceUSD := float64(userSelf.Balance) / 500000.0
 	provider.UpdateBalance(fmt.Sprintf("$%.2f", balanceUSD))
+	return nil
+}
+
+func clearProviderSyncState(provider *model.Provider) error {
+	if err := model.DeletePricingForProvider(provider.Id); err != nil {
+		return err
+	}
+	if err := model.RebuildRoutesForProvider(provider.Id, nil); err != nil {
+		return err
+	}
+	provider.UpdatePricingGroupRatio("{}")
+	provider.UpdatePricingSupportedEndpoint("{}")
+	common.SysLog(fmt.Sprintf("cleared pricing and route state for provider %s after sync failure", provider.Name))
 	return nil
 }
 
