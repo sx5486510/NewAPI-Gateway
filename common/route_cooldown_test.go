@@ -311,3 +311,36 @@ func TestRouteCooldownManager_TokenFailurePrefersLargerMinimum(t *testing.T) {
 	}
 }
 
+func TestRouteCooldownManager_GetRouteCooldownStatusReturnsEmptyWhenDisabled(t *testing.T) {
+	clock := time.Date(2026, 4, 9, 0, 0, 0, 0, time.UTC)
+	nowFn := func() time.Time { return clock }
+	enabled := true
+
+	cfgFn := func() RouteCooldownConfig {
+		return RouteCooldownConfig{
+			Enabled:               enabled,
+			BaseSeconds:           30,
+			Multiplier:            2,
+			MaxSeconds:            1800,
+			DecayMinutes:          10,
+			JitterRatio:           0,
+			HalfOpenMaxInFlight:   1,
+			UnsupportedModelHours: 24,
+			TokenBaseSeconds:      600,
+			TokenMaxSeconds:       7200,
+		}
+	}
+
+	mgr := newRouteCooldownManager(cfgFn, nowFn, func() float64 { return 0.5 })
+	mgr.RecordRouteFailure(21, "gpt-5")
+	enabled = false
+
+	status := mgr.GetRouteCooldownStatus(21, "gpt-5")
+	if status == nil {
+		t.Fatalf("expected status object")
+	}
+	if status.InCooldown || status.Reason != "" || status.RemainingSecs != 0 || status.HalfOpen || status.HalfOpenInflight != 0 {
+		t.Fatalf("expected empty cooldown status when disabled, got %+v", *status)
+	}
+}
+

@@ -121,6 +121,93 @@ const getRouteHealth = (route) => {
     return { color: 'red', label: 'Token停用' };
 };
 
+const formatCooldownTime = (seconds) => {
+    if (seconds <= 0) return '';
+    if (seconds < 60) return `${seconds}秒`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}分${seconds % 60 > 0 ? (seconds % 60) + '秒' : ''}`;
+    return `${Math.floor(seconds / 3600)}小时${Math.floor((seconds % 3600) / 60) > 0 ? Math.floor((seconds % 3600) / 60) + '分' : ''}`;
+};
+
+const getCooldownReasonLabel = (reason) => {
+    switch (reason) {
+        case 'route':
+            return '路由冷却';
+        case 'token':
+            return 'Token冷却';
+        case 'unsupported':
+            return '模型不支持';
+        default:
+            return '';
+    }
+};
+
+const getCooldownReasonColor = (reason) => {
+    switch (reason) {
+        case 'route':
+            return 'orange';
+        case 'token':
+            return 'red';
+        case 'unsupported':
+            return 'purple';
+        default:
+            return 'gray';
+    }
+};
+
+const renderCooldownStatus = (route) => {
+    const inCooldown = route.cooldown_in_cooldown;
+    const reason = route.cooldown_reason;
+    const remainingSecs = route.cooldown_remaining_secs;
+    const halfOpen = route.cooldown_half_open;
+    const halfOpenInflight = route.cooldown_half_open_inflight;
+
+    // Normal state - no cooldown
+    if (!inCooldown && !halfOpen) {
+        return (
+            <div style={{ lineHeight: 1.35 }}>
+                <div style={{ color: 'var(--success)', fontWeight: 500 }}>
+                    正常
+                </div>
+            </div>
+        );
+    }
+
+    // Half-open state
+    if (halfOpen) {
+        return (
+            <div style={{ lineHeight: 1.35 }}>
+                <div style={{ color: 'var(--warning)', fontWeight: 600 }}>
+                    半开状态
+                </div>
+                <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
+                    {halfOpenInflight > 0 ? '探测请求进行中' : '等待探测请求'}
+                </div>
+                <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
+                    在途: {halfOpenInflight} 个
+                </div>
+            </div>
+        );
+    }
+
+    // In cooldown state
+    const reasonLabel = getCooldownReasonLabel(reason);
+    const reasonColor = getCooldownReasonColor(reason);
+    const timeLabel = formatCooldownTime(remainingSecs);
+
+    return (
+        <div style={{ lineHeight: 1.35 }}>
+            <div style={{ color: 'var(--error)', fontWeight: 600 }}>
+                <Badge color={reasonColor}>{reasonLabel}</Badge>
+            </div>
+            {timeLabel && (
+                <div style={{ ...helperTextStyle, marginTop: '0.18rem', color: 'var(--error)' }}>
+                    剩余: {timeLabel}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const sortRoutesForDisplay = (rows) => [...rows].sort((a, b) => {
     const healthA = Number(a.health_value);
     const healthB = Number(b.health_value);
@@ -638,13 +725,14 @@ const ModelRoutesTable = () => {
                                 </div>
 
                                 <div className="routes-detail-scroller">
-                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '600px' : '660px'}>
+                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '800px' : '900px'}>
                                     <colgroup>
-                                        <col style={{ width: '30%' }} />
-                                        <col style={{ width: '15%' }} />
-                                        <col style={{ width: '15%' }} />
-                                        <col style={{ width: '28%' }} />
-                                        <col style={{ width: '12%' }} />
+                                        <col style={{ width: '22%' }} />
+                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '20%' }} />
+                                        <col style={{ width: '18%' }} />
+                                        <col style={{ width: '20%' }} />
                                     </colgroup>
                                     <Thead>
                                         <Tr>
@@ -652,20 +740,21 @@ const ModelRoutesTable = () => {
                                             <Th style={stickyHeaderCellStyle}>成功数</Th>
                                             <Th style={stickyHeaderCellStyle}>失败数</Th>
                                             <Th style={stickyHeaderCellStyle}>健康值</Th>
+                                            <Th style={stickyHeaderCellStyle}>冷却状态</Th>
                                             <Th style={stickyHeaderCellStyle}>状态</Th>
                                         </Tr>
                                     </Thead>
                                     <Tbody>
                                         {selectedGroupedRoutes.length === 0 ? (
                                             <Tr>
-                                                <Td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
+                                                <Td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
                                                     当前模型没有符合条件的路由
                                                 </Td>
                                             </Tr>
                                         ) : selectedGroupedRoutes.map((group) => (
                                             <React.Fragment key={group.priority}>
                                                 <Tr style={{ backgroundColor: 'var(--gray-50)' }}>
-                                                    <Td colSpan={5} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
+                                                    <Td colSpan={6} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                             <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>优先级 {group.priority}</div>
                                                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -731,6 +820,9 @@ const ModelRoutesTable = () => {
                                                                         </div>
                                                                     )}
                                                                 </div>
+                                                            </Td>
+                                                            <Td style={cellTopStyle}>
+                                                                {renderCooldownStatus(route)}
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>
                                                                 <select

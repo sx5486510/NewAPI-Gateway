@@ -128,6 +128,12 @@ type ModelRouteOverviewItem struct {
 	HealthErrorCount        int64    `json:"health_error_count"`
 	HealthSampleCount       int64    `json:"health_sample_count"`
 	EffectiveSharePercent   *float64 `json:"effective_share_percent"`
+	// Cooldown status fields
+	CooldownInCooldown     bool     `json:"cooldown_in_cooldown"`
+	CooldownReason          string   `json:"cooldown_reason"`
+	CooldownRemainingSecs   int      `json:"cooldown_remaining_secs"`
+	CooldownHalfOpen        bool     `json:"cooldown_half_open"`
+	CooldownHalfOpenInflight int     `json:"cooldown_half_open_inflight"`
 }
 
 type modelRouteOverviewRow struct {
@@ -1169,6 +1175,16 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 		}
 		percent := contribution / total * 100
 		item.EffectiveSharePercent = &percent
+	}
+
+	// Fill cooldown status for each route
+	for _, item := range items {
+		cooldownStatus := common.GlobalRouteCooldown.GetRouteCooldownStatus(item.ProviderTokenId, item.ModelName)
+		item.CooldownInCooldown = cooldownStatus.InCooldown
+		item.CooldownReason = cooldownStatus.Reason
+		item.CooldownRemainingSecs = cooldownStatus.RemainingSecs
+		item.CooldownHalfOpen = cooldownStatus.HalfOpen
+		item.CooldownHalfOpenInflight = cooldownStatus.HalfOpenInflight
 	}
 
 	return items, nil

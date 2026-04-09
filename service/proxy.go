@@ -435,7 +435,6 @@ func logUsage(aggToken *model.AggregatedToken, provider *model.Provider, token *
 		ProviderName:          provider.Name,
 		ProviderTokenId:       token.Id,
 		ModelName:             usage.ModelName,
-		PromptTokens:          usage.PromptTokens,
 		CompletionTokens:      usage.CompletionTokens,
 		CacheTokens:           usage.CacheTokens,
 		CacheCreationTokens:   usage.CacheCreationTokens,

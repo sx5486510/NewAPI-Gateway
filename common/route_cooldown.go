@@ -618,3 +618,118 @@ func parseOptionFloatInRange(raw string, fallback float64, min float64, max floa
 	}
 	return value
 }
+
+// RouteCooldownStatus represents the cooldown status of a route for API response
+type RouteCooldownStatus struct {
+	InCooldown     bool   `json:"in_cooldown"`      // Whether the route is currently in cooldown
+	Reason         string `json:"reason"`          // Reason for cooldown: "", "route", "token", "unsupported"
+	RemainingSecs  int    `json:"remaining_secs"`  // Remaining cooldown time in seconds
+	HalfOpen       bool   `json:"half_open"`       // Whether in half-open state
+	HalfOpenInflight int  `json:"half_open_inflight"` // Number of in-flight requests in half-open state
+}
+
+// GetRouteCooldownStatus returns the current cooldown status for a route
+func (m *RouteCooldownManager) GetRouteCooldownStatus(providerTokenId int, modelName string) *RouteCooldownStatus {
+	cfg := m.configProvider()
+	result := &RouteCooldownStatus{}
+	if !cfg.Enabled {
+		return result
+	}
+
+	normalizedModel := normalizeCooldownModelName(modelName)
+	now := m.now()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check unsupported model first (highest priority, blocks everything)
+	if until, ok := m.unsupported[routeCooldownKey{providerTokenId: providerTokenId, modelName: normalizedModel}]; ok {
+		if !now.Before(until) {
+			delete(m.unsupported, routeCooldownKey{providerTokenId: providerTokenId, modelName: normalizedModel})
+		} else {
+			result.InCooldown = true
+			result.Reason = "unsupported"
+			result.RemainingSecs = int(until.Sub(now).Seconds())
+			if result.RemainingSecs < 0 {
+				result.RemainingSecs = 0
+			}
+			return result
+		}
+	}
+
+	// Check token-level cooldown
+	if state, ok := m.tokenStates[providerTokenId]; ok {
+		m.applyTokenDecayLocked(state, now, cfg)
+		if now.Before(state.cooldownUntil) {
+			result.InCooldown = true
+			result.Reason = "token"
+			result.RemainingSecs = int(state.cooldownUntil.Sub(now).Seconds())
+			if result.RemainingSecs < 0 {
+				result.RemainingSecs = 0
+			}
+			return result
+		}
+		if state.consecutiveFailures <= 0 && !now.Before(state.cooldownUntil) {
+			delete(m.tokenStates, providerTokenId)
+		}
+	}
+
+	// Check route-level cooldown
+	key := routeCooldownKey{providerTokenId: providerTokenId, modelName: normalizedModel}
+	if state, ok := m.routeStates[key]; ok {
+		m.applyRouteDecayLocked(state, now, cfg)
+		if now.Before(state.cooldownUntil) {
+			result.InCooldown = true
+			result.Reason = "route"
+			result.RemainingSecs = int(state.cooldownUntil.Sub(now).Seconds())
+			if result.RemainingSecs < 0 {
+				result.RemainingSecs = 0
+			}
+			result.HalfOpenInflight = state.halfOpenInFlight
+			return result
+		}
+
+		// Check half-open state (cooldown expired but still has failures)
+		halfOpen := state.consecutiveFailures > 0 && state.cooldownUntil.After(state.lastFailureTime)
+		if halfOpen {
+			result.HalfOpen = true
+			result.HalfOpenInflight = state.halfOpenInFlight
+			result.RemainingSecs = 0
+		}
+
+		if state.consecutiveFailures <= 0 && !now.Before(state.cooldownUntil) {
+			delete(m.routeStates, key)
+		}
+	}
+
+	return result
+}
+
+// GetTokenCooldownStatus returns the current cooldown status for a token (all routes)
+func (m *RouteCooldownManager) GetTokenCooldownStatus(providerTokenId int) (inCooldown bool, reason string, remainingSecs int) {
+	cfg := m.configProvider()
+	now := m.now()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state, ok := m.tokenStates[providerTokenId]
+	if !ok {
+		return false, "", 0
+	}
+
+	m.applyTokenDecayLocked(state, now, cfg)
+	if now.Before(state.cooldownUntil) {
+		remainingSecs = int(state.cooldownUntil.Sub(now).Seconds())
+		if remainingSecs < 0 {
+			remainingSecs = 0
+		}
+		return true, "token", remainingSecs
+	}
+
+	if state.consecutiveFailures <= 0 && !now.Before(state.cooldownUntil) {
+		delete(m.tokenStates, providerTokenId)
+	}
+
+	return false, "", 0
+}
