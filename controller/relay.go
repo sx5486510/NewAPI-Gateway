@@ -1,9 +1,11 @@
 package controller
 
 import (
+	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/model"
 	"NewAPI-Gateway/service"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -15,18 +17,18 @@ func Relay(c *gin.Context) {
 	aggToken := c.MustGet("agg_token").(*model.AggregatedToken)
 
 	// 1. Extract model from request body
-	modelName := extractModelFromBody(c)
-	if modelName == "" {
-		modelName = "unknown"
+	originalModel := extractModelFromBody(c)
+	if originalModel == "" {
+		originalModel = "unknown"
 	}
-	c.Set("request_model_original", modelName)
-	c.Set("request_model", modelName)
+	c.Set("request_model_original", originalModel)
+	c.Set("request_model", originalModel)
 
 	// 2. Check model whitelist
-	if !aggToken.IsModelAllowed(modelName) {
+	if !aggToken.IsModelAllowed(originalModel) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": gin.H{
-				"message": "model not allowed: " + modelName,
+				"message": "model not allowed: " + originalModel,
 				"type":    "permission_error",
 				"code":    "model_not_allowed",
 			},
@@ -34,52 +36,80 @@ func Relay(c *gin.Context) {
 		return
 	}
 
-	// 3. Build retry plan: retry all routes within one priority first, then downgrade.
-	plan, err := model.BuildRouteAttemptsByPriority(modelName)
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": gin.H{
-				"message": "no available provider for model: " + modelName,
-				"type":    "server_error",
-				"code":    "service_unavailable",
-			},
-		})
-		return
+	modelsToTry := []string{originalModel}
+	if chain, _, ok := common.GetModelFallbackChain(originalModel); ok && len(chain) > 0 {
+		modelsToTry = append(modelsToTry, chain...)
 	}
 
 	var lastErr *service.ProxyAttemptError
-	for _, priorityGroup := range plan {
-		for _, attempt := range priorityGroup {
-			if attempt.Route.ModelName != "" {
-				c.Set("request_model_resolved", attempt.Route.ModelName)
-				c.Set("request_model", attempt.Route.ModelName)
-			}
+	for idx, routingModel := range modelsToTry {
+		if idx > 0 && !aggToken.IsModelAllowed(routingModel) {
+			continue
+		}
 
-			if proxyErr := service.ProxyToUpstream(c, attempt.Token, attempt.Provider); proxyErr == nil {
-				return
-			} else {
-				lastErr = proxyErr
-				if !proxyErr.Retryable {
-					statusCode := proxyErr.StatusCode
-					if statusCode <= 0 {
-						statusCode = http.StatusBadGateway
-					}
-					c.JSON(statusCode, gin.H{
-						"error": gin.H{
-							"message": proxyErr.Message,
-							"type":    "server_error",
-							"code":    "upstream_request_failed",
-						},
-					})
+		// 3. Build retry plan: retry all routes within one priority first, then downgrade.
+		plan, err := model.BuildRouteAttemptsByPriority(routingModel)
+		if err != nil {
+			continue
+		}
+
+		if idx > 0 {
+			common.SysLog(fmt.Sprintf("[relay-fallback] original_model=%s fallback_model=%s", originalModel, routingModel))
+		}
+
+		sawNonCooldownFailure := false
+		for _, priorityGroup := range plan {
+			for _, attempt := range priorityGroup {
+				if attempt.Route.ModelName != "" {
+					c.Set("request_model_resolved", attempt.Route.ModelName)
+					c.Set("request_model", attempt.Route.ModelName)
+				}
+
+				if proxyErr := service.ProxyToUpstream(c, attempt.Token, attempt.Provider); proxyErr == nil {
 					return
+				} else {
+					lastErr = proxyErr
+					if proxyErr.CooldownRejected {
+						continue
+					}
+					if !proxyErr.Retryable {
+						statusCode := proxyErr.StatusCode
+						if statusCode <= 0 {
+							statusCode = http.StatusBadGateway
+						}
+						if len(proxyErr.UpstreamBody) > 0 {
+							contentType := proxyErr.UpstreamContentType
+							if contentType == "" {
+								contentType = "application/json"
+							}
+							c.Data(statusCode, contentType, proxyErr.UpstreamBody)
+						} else {
+							c.JSON(statusCode, gin.H{
+								"error": gin.H{
+									"message": proxyErr.Message,
+									"type":    "server_error",
+									"code":    "upstream_request_failed",
+								},
+							})
+						}
+						return
+					}
+					sawNonCooldownFailure = true
 				}
 			}
 		}
+
+		if idx == 0 && sawNonCooldownFailure {
+			break
+		}
 	}
 
-	message := "no available provider for model: " + modelName
+	message := "no available provider for model: " + originalModel
 	if lastErr != nil && lastErr.Message != "" {
-		message = "all providers failed for model: " + modelName
+		message = "all providers failed for model: " + originalModel
+	}
+	if lastErr != nil && lastErr.RetryAfterSeconds > 0 {
+		c.Header("Retry-After", fmt.Sprintf("%d", lastErr.RetryAfterSeconds))
 	}
 	c.JSON(http.StatusServiceUnavailable, gin.H{
 		"error": gin.H{

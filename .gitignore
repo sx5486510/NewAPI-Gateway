@@ -16,6 +16,7 @@ server.key
 /.gocache
 .claude/
 .smoke/
+.worktrees/
 *.htm
 *_files/
 deploy/*.zip

@@ -232,6 +232,17 @@ func BuildRouteAttemptsByPriority(modelName string) ([][]RouteAttempt, error) {
 	if len(candidateRoutes) == 0 {
 		return nil, errors.New("无可用的模型路由: " + requestedModel)
 	}
+
+	filteredRoutes := make([]ModelRoute, 0, len(candidateRoutes))
+	for _, route := range candidateRoutes {
+		if common.GlobalRouteCooldown.IsRouteSelectable(route.ProviderTokenId, route.ModelName) {
+			filteredRoutes = append(filteredRoutes, route)
+		}
+	}
+	candidateRoutes = filteredRoutes
+	if len(candidateRoutes) == 0 {
+		return nil, errors.New("无可用的模型路由: " + requestedModel)
+	}
 	config := loadRoutingTuningConfig()
 
 	providerIds := make([]int, 0)
