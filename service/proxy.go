@@ -5,13 +5,17 @@ import (
 	"NewAPI-Gateway/model"
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +37,17 @@ type ProxyAttemptError struct {
 	StatusCode int
 	Message    string
 	Retryable  bool
+
+	// CooldownRejected indicates the attempt was rejected locally due to cooldown/half-open gating,
+	// and no upstream request was sent.
+	CooldownRejected bool
+	RetryAfterSeconds int
+
+	// Upstream error details (when available).
+	UpstreamBody        []byte
+	UpstreamContentType string
+	UpstreamErrorCode   string
+	UpstreamErrorType   string
 }
 
 func (e *ProxyAttemptError) Error() string {
@@ -50,6 +65,29 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 	// Get user info from context
 	aggToken := c.MustGet("agg_token").(*model.AggregatedToken)
 
+	resolvedModel := strings.TrimSpace(c.GetString("request_model_resolved"))
+	if resolvedModel == "" {
+		resolvedModel = strings.TrimSpace(c.GetString("request_model"))
+	}
+
+	permit, retryAfter, ok := common.GlobalRouteCooldown.TryAcquireRouteAttempt(token.Id, resolvedModel)
+	if !ok {
+		retryAfterSeconds := int(math.Ceil(retryAfter.Seconds()))
+		if retryAfterSeconds < 0 {
+			retryAfterSeconds = 0
+		}
+		return &ProxyAttemptError{
+			StatusCode:        0,
+			Message:           "route in cooldown",
+			Retryable:         true,
+			CooldownRejected:  true,
+			RetryAfterSeconds: retryAfterSeconds,
+		}
+	}
+	if permit != nil {
+		defer permit.Release()
+	}
+
 	// 1. Read original request body
 	bodyBytes, err := getRequestBodyBytes(c)
 	if err != nil {
@@ -62,10 +100,6 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		}
 	}
 
-	resolvedModel := strings.TrimSpace(c.GetString("request_model_resolved"))
-	if resolvedModel == "" {
-		resolvedModel = strings.TrimSpace(c.GetString("request_model"))
-	}
 	bodyBytes = rewriteRequestModel(bodyBytes, resolvedModel)
 	requestedStream := extractRequestedStream(bodyBytes)
 
@@ -141,6 +175,15 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			0,
 			errorMsg,
 		)
+		if isClientCanceledError(err, c) {
+			return &ProxyAttemptError{
+				StatusCode: 499,
+				Message:    "client canceled",
+				Retryable:  false,
+			}
+		}
+
+		common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
 		return &ProxyAttemptError{
 			StatusCode: http.StatusBadGateway,
 			Message:    "upstream request failed: " + err.Error(),
@@ -166,10 +209,33 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			aggToken, provider, token, c, requestId,
 			usage, requestedStream, responseIsStream, 0, int(elapsed), errorMsg,
 		)
+
+		upstreamErr := extractUpstreamErrorInfo(respBody)
+		retryAfterSeconds := parseRetryAfterSeconds(resp.Header.Get("Retry-After"))
+
+		if shouldMarkUnsupportedModel(resp.StatusCode, upstreamErr) {
+			common.GlobalRouteCooldown.MarkUnsupportedModel(token.Id, resolvedModel)
+		}
+		if shouldTriggerTokenCooldown(resp.StatusCode, upstreamErr) {
+			common.GlobalRouteCooldown.RecordTokenFailureWithMinimum(token.Id, retryAfterSeconds)
+		}
+		if shouldTriggerRouteCooldown(resp.StatusCode, upstreamErr) {
+			common.GlobalRouteCooldown.RecordRouteFailureWithMinimum(token.Id, resolvedModel, retryAfterSeconds)
+		}
+
+		retryable := true
+		if isNonRetryableInvalidRequest(resp.StatusCode, upstreamErr) {
+			retryable = false
+		}
 		return &ProxyAttemptError{
-			StatusCode: resp.StatusCode,
-			Message:    errorMsg,
-			Retryable:  true,
+			StatusCode:          resp.StatusCode,
+			Message:             "upstream request failed",
+			Retryable:           retryable,
+			RetryAfterSeconds:   retryAfterSeconds,
+			UpstreamBody:        respBody,
+			UpstreamContentType: resp.Header.Get("Content-Type"),
+			UpstreamErrorCode:   upstreamErr.Code,
+			UpstreamErrorType:   upstreamErr.Type,
 		}
 	}
 
@@ -241,11 +307,37 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			aggToken, provider, token, c, requestId,
 			streamUsage, requestedStream, true, firstTokenMs, int(elapsed), errorMsg,
 		)
+		if errorMsg != "" {
+			common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
+		} else {
+			common.GlobalRouteCooldown.RecordRouteSuccess(token.Id, resolvedModel)
+		}
 	} else {
 		// Non-streaming response
+		respBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			errorMsg := buildErrorMessage("failed to read upstream response body: "+readErr.Error(), c, bodyBytes)
+			logProxyErrorTrace(c, requestId, provider, token, errorMsg)
+			elapsed := time.Since(startTime).Milliseconds()
+			logUsage(
+				aggToken, provider, token, c, requestId,
+				usageMetrics{ModelName: c.GetString("request_model")},
+				requestedStream,
+				false,
+				0,
+				int(elapsed),
+				errorMsg,
+			)
+			common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
+			return &ProxyAttemptError{
+				StatusCode: http.StatusBadGateway,
+				Message:    "upstream response read failed: " + readErr.Error(),
+				Retryable:  true,
+			}
+		}
+
 		c.Status(resp.StatusCode)
-		respBody, _ := io.ReadAll(resp.Body)
-		c.Writer.Write(respBody)
+		_, _ = c.Writer.Write(respBody)
 
 		elapsed := time.Since(startTime).Milliseconds()
 		usage := extractUsageAndModelFromJSON(respBody)
@@ -256,6 +348,7 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			aggToken, provider, token, c, requestId,
 			usage, requestedStream, false, 0, int(elapsed), "",
 		)
+		common.GlobalRouteCooldown.RecordRouteSuccess(token.Id, resolvedModel)
 	}
 	return nil
 }
@@ -483,6 +576,154 @@ func requestBodyForErrorLog(c *gin.Context, bodyBytes []byte) string {
 		return strings.TrimSpace(string(bodyBytes))
 	}
 	return fmt.Sprintf("(non-json omitted) content_type=%s body_size=%d", contentType, len(bodyBytes))
+}
+
+type upstreamErrorInfo struct {
+	Code    string
+	Type    string
+	Message string
+}
+
+func extractUpstreamErrorInfo(body []byte) upstreamErrorInfo {
+	if len(body) == 0 {
+		return upstreamErrorInfo{}
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return upstreamErrorInfo{}
+	}
+
+	info := upstreamErrorInfo{}
+	if errField, ok := payload["error"]; ok {
+		switch v := errField.(type) {
+		case string:
+			info.Message = strings.TrimSpace(v)
+		case map[string]interface{}:
+			if code, ok := v["code"].(string); ok {
+				info.Code = strings.TrimSpace(code)
+			}
+			if typ, ok := v["type"].(string); ok {
+				info.Type = strings.TrimSpace(typ)
+			}
+			if msg, ok := v["message"].(string); ok {
+				info.Message = strings.TrimSpace(msg)
+			}
+			if info.Code == "" {
+				if code, ok := v["error"].(string); ok {
+					info.Code = strings.TrimSpace(code)
+				}
+			}
+		}
+	}
+
+	if info.Code == "" {
+		if code, ok := payload["code"].(string); ok {
+			info.Code = strings.TrimSpace(code)
+		}
+	}
+	if info.Type == "" {
+		if typ, ok := payload["type"].(string); ok {
+			info.Type = strings.TrimSpace(typ)
+		}
+	}
+	if info.Message == "" {
+		if msg, ok := payload["message"].(string); ok {
+			info.Message = strings.TrimSpace(msg)
+		}
+	}
+	return info
+}
+
+func parseRetryAfterSeconds(raw string) int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0
+	}
+	seconds, err := strconv.Atoi(raw)
+	if err != nil || seconds < 0 {
+		return 0
+	}
+	return seconds
+}
+
+func shouldMarkUnsupportedModel(statusCode int, upstreamErr upstreamErrorInfo) bool {
+	if statusCode < 400 || statusCode >= 500 {
+		return false
+	}
+	code := strings.ToLower(strings.TrimSpace(upstreamErr.Code))
+	typ := strings.ToLower(strings.TrimSpace(upstreamErr.Type))
+	msg := strings.ToLower(strings.TrimSpace(upstreamErr.Message))
+	if strings.Contains(code, "model_not_found") || strings.Contains(typ, "model_not_found") {
+		return true
+	}
+	if strings.Contains(code, "permission_denied") || strings.Contains(typ, "permission_denied") {
+		return true
+	}
+	if strings.Contains(msg, "model not found") || strings.Contains(msg, "no such model") {
+		return true
+	}
+	return false
+}
+
+func shouldTriggerTokenCooldown(statusCode int, upstreamErr upstreamErrorInfo) bool {
+	if statusCode < 400 || statusCode >= 500 {
+		return false
+	}
+	if shouldMarkUnsupportedModel(statusCode, upstreamErr) {
+		return false
+	}
+	return true
+}
+
+func shouldTriggerRouteCooldown(statusCode int, upstreamErr upstreamErrorInfo) bool {
+	if statusCode >= 500 {
+		return true
+	}
+	if statusCode == 408 {
+		return true
+	}
+	return false
+}
+
+func isNonRetryableInvalidRequest(statusCode int, upstreamErr upstreamErrorInfo) bool {
+	switch statusCode {
+	case 413, 422:
+		return true
+	case 400:
+		code := strings.ToLower(strings.TrimSpace(upstreamErr.Code))
+		typ := strings.ToLower(strings.TrimSpace(upstreamErr.Type))
+		msg := strings.ToLower(strings.TrimSpace(upstreamErr.Message))
+		if strings.Contains(code, "invalid_request") || strings.Contains(typ, "invalid_request") {
+			return true
+		}
+		if strings.Contains(code, "invalid_parameter") || strings.Contains(typ, "invalid_parameter") {
+			return true
+		}
+		if strings.Contains(msg, "invalid") && !strings.Contains(msg, "rate limit") && !strings.Contains(msg, "quota") {
+			return true
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+func isClientCanceledError(err error, c *gin.Context) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	if c != nil && c.Request != nil {
+		if errors.Is(c.Request.Context().Err(), context.Canceled) {
+			return true
+		}
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "context canceled") {
+		return true
+	}
+	return false
 }
 
 func extractErrorKeyInfo(errorMsg string) (httpStatus int, errorType string, upstreamHost string) {
