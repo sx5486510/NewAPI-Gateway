@@ -7,6 +7,7 @@ const RawErrorView = () => {
   }, []);
   const [content, setContent] = useState('');
   const [requestId, setRequestId] = useState('');
+  const [errorHighlight, setErrorHighlight] = useState(null);
 
   useEffect(() => {
     if (!key) {
@@ -25,6 +26,14 @@ const RawErrorView = () => {
     try {
       const parsed = JSON.parse(raw);
       setRequestId(parsed?.request_id || '');
+
+      // Extract new_api_error message for highlighting
+      if (parsed?.upstream_error?.error?.type === 'new_api_error') {
+        const errorMsg = parsed.upstream_error.error.message || '';
+        const errorCode = parsed.upstream_error.error.code || '';
+        setErrorHighlight({ message: errorMsg, code: errorCode });
+      }
+
       setContent(JSON.stringify(parsed, null, 2));
     } catch (e) {
       setContent(raw);
@@ -36,6 +45,33 @@ const RawErrorView = () => {
       <div style={{ marginBottom: '12px', fontSize: '13px', color: '#93c5fd' }}>
         request_id: {requestId || '-'} | key: {key || '-'}
       </div>
+
+      {errorHighlight && (
+        <div
+          style={{
+            marginBottom: '16px',
+            padding: '12px 16px',
+            background: '#7f1d1d',
+            border: '1px solid #991b1b',
+            borderRadius: '8px',
+            fontSize: '14px',
+            lineHeight: 1.6
+          }}
+        >
+          <div style={{ fontWeight: '600', color: '#fca5a5', marginBottom: '6px' }}>
+            NewAPI Gateway Error
+          </div>
+          <div style={{ color: '#fecaca' }}>
+            {errorHighlight.message}
+          </div>
+          {errorHighlight.code && (
+            <div style={{ marginTop: '6px', fontSize: '12px', color: '#fca5a5', opacity: 0.8 }}>
+              Code: {errorHighlight.code}
+            </div>
+          )}
+        </div>
+      )}
+
       <pre
         style={{
           margin: 0,
