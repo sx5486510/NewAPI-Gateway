@@ -282,39 +282,30 @@ const LogsTable = ({ selfOnly }) => {
     const storageKey = `raw_error_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     const detailStr = JSON.stringify(detail);
 
+    // Proactive cleanup: remove old raw_error_* keys BEFORE storing
+    const cleanupStorage = (storage) => {
+      const keysToRemove = [];
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i);
+        if (key && key.startsWith('raw_error_')) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(k => storage.removeItem(k));
+    };
+
     try {
-      // Try sessionStorage first (larger quota, auto-cleanup on tab close)
+      // Clean sessionStorage first to prevent quota issues
+      cleanupStorage(sessionStorage);
       sessionStorage.setItem(storageKey, detailStr);
     } catch (e) {
-      // sessionStorage failed, clear old raw_error_* keys from sessionStorage
+      // sessionStorage failed even after cleanup, try localStorage
       try {
-        const keysToRemove = [];
-        for (let i = 0; i < sessionStorage.length; i++) {
-          const key = sessionStorage.key(i);
-          if (key && key.startsWith('raw_error_')) {
-            keysToRemove.push(key);
-          }
-        }
-        keysToRemove.forEach(k => sessionStorage.removeItem(k));
-
-        // Retry sessionStorage after cleanup
-        sessionStorage.setItem(storageKey, detailStr);
+        cleanupStorage(localStorage);
+        localStorage.setItem(storageKey, detailStr);
       } catch (e2) {
-        // sessionStorage still failed, try localStorage with aggressive cleanup
-        try {
-          const keysToRemove = [];
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && key.startsWith('raw_error_')) {
-              keysToRemove.push(key);
-            }
-          }
-          keysToRemove.forEach(k => localStorage.removeItem(k));
-          localStorage.setItem(storageKey, detailStr);
-        } catch (e3) {
-          showError('错误详情过大，无法存储。请尝试刷新页面后重试。');
-          return;
-        }
+        showError('错误详情过大，无法存储。请尝试刷新页面后重试。');
+        return;
       }
     }
 
