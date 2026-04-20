@@ -13,7 +13,11 @@ const RawErrorView = () => {
       setContent('缺少 key 参数');
       return;
     }
-    const raw = localStorage.getItem(key);
+    // Try sessionStorage first, fallback to localStorage
+    let raw = sessionStorage.getItem(key);
+    if (!raw) {
+      raw = localStorage.getItem(key);
+    }
     if (!raw) {
       setContent('未找到对应错误详情，可能已过期或跨域打开导致不可见。');
       return;

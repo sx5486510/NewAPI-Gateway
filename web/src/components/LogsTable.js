@@ -280,7 +280,27 @@ const LogsTable = ({ selfOnly }) => {
   const openErrorRawView = (log) => {
     const detail = parseErrorDetail(log);
     const storageKey = `raw_error_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-    localStorage.setItem(storageKey, JSON.stringify(detail));
+
+    try {
+      // Try sessionStorage first (larger quota, auto-cleanup on tab close)
+      sessionStorage.setItem(storageKey, JSON.stringify(detail));
+    } catch (e) {
+      // Fallback: try localStorage after clearing old raw_error_* keys
+      try {
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('raw_error_')) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+        localStorage.setItem(storageKey, JSON.stringify(detail));
+      } catch (e2) {
+        showError('错误详情过大，无法存储。请尝试刷新页面后重试。');
+        return;
+      }
+    }
 
     const url = new URL(`/log/raw?key=${encodeURIComponent(storageKey)}`, window.location.origin).toString();
     const win = window.open(url, '_blank');
