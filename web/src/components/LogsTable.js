@@ -280,25 +280,41 @@ const LogsTable = ({ selfOnly }) => {
   const openErrorRawView = (log) => {
     const detail = parseErrorDetail(log);
     const storageKey = `raw_error_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const detailStr = JSON.stringify(detail);
 
     try {
       // Try sessionStorage first (larger quota, auto-cleanup on tab close)
-      sessionStorage.setItem(storageKey, JSON.stringify(detail));
+      sessionStorage.setItem(storageKey, detailStr);
     } catch (e) {
-      // Fallback: try localStorage after clearing old raw_error_* keys
+      // sessionStorage failed, clear old raw_error_* keys from sessionStorage
       try {
         const keysToRemove = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
+        for (let i = 0; i < sessionStorage.length; i++) {
+          const key = sessionStorage.key(i);
           if (key && key.startsWith('raw_error_')) {
             keysToRemove.push(key);
           }
         }
-        keysToRemove.forEach(k => localStorage.removeItem(k));
-        localStorage.setItem(storageKey, JSON.stringify(detail));
+        keysToRemove.forEach(k => sessionStorage.removeItem(k));
+
+        // Retry sessionStorage after cleanup
+        sessionStorage.setItem(storageKey, detailStr);
       } catch (e2) {
-        showError('错误详情过大，无法存储。请尝试刷新页面后重试。');
-        return;
+        // sessionStorage still failed, try localStorage with aggressive cleanup
+        try {
+          const keysToRemove = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('raw_error_')) {
+              keysToRemove.push(key);
+            }
+          }
+          keysToRemove.forEach(k => localStorage.removeItem(k));
+          localStorage.setItem(storageKey, detailStr);
+        } catch (e3) {
+          showError('错误详情过大，无法存储。请尝试刷新页面后重试。');
+          return;
+        }
       }
     }
 
