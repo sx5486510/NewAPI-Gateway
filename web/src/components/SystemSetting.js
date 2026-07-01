@@ -28,6 +28,7 @@ const SystemSetting = () => {
     RoutingBaseWeightFactor: '0.2',
     RoutingValueScoreFactor: '0.8',
     RoutingHealthAdjustmentEnabled: 'true',
+    LLMTraceEnabled: 'false',
   });
   const [originInputs, setOriginInputs] = useState({});
   const [dbInfo, setDbInfo] = useState({ driver: '', sqlitePath: '' });
@@ -83,6 +84,7 @@ const SystemSetting = () => {
       case 'TurnstileCheckEnabled':
       case 'RegisterEnabled':
       case 'RoutingHealthAdjustmentEnabled':
+      case 'LLMTraceEnabled':
         value = inputs[key] === 'true' ? 'false' : 'true';
         break;
       default:
@@ -312,6 +314,16 @@ const SystemSetting = () => {
             </Button>
           </div>
         </div>
+
+        <div style={{ borderTop: '1px solid var(--border-color)', margin: '1.5rem 0' }}></div>
+
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '1rem' }}>审计设置</h3>
+        <Checkbox
+          checked={inputs.LLMTraceEnabled === 'true'}
+          label='启用 LLM 上下文审计'
+          name='LLMTraceEnabled'
+          onChange={handleCheckboxChange}
+        />
 
         <div style={{ borderTop: '1px solid var(--border-color)', margin: '1.5rem 0' }}></div>
 
