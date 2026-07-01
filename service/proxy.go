@@ -40,7 +40,7 @@ type ProxyAttemptError struct {
 
 	// CooldownRejected indicates the attempt was rejected locally due to cooldown/half-open gating,
 	// and no upstream request was sent.
-	CooldownRejected bool
+	CooldownRejected  bool
 	RetryAfterSeconds int
 
 	// Upstream error details (when available).
@@ -175,6 +175,20 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			0,
 			errorMsg,
 		)
+		captureLLMTrace(llmTraceInput{
+			AggToken:        aggToken,
+			Provider:        provider,
+			Token:           token,
+			Context:         c,
+			RequestId:       requestId,
+			ModelName:       c.GetString("request_model"),
+			Method:          c.Request.Method,
+			Path:            c.Request.URL.Path,
+			StatusCode:      http.StatusBadGateway,
+			RequestedStream: requestedStream,
+			RequestBody:     bodyBytes,
+			ErrorMessage:    errorMsg,
+		})
 		if isClientCanceledError(err, c) {
 			return &ProxyAttemptError{
 				StatusCode: 499,
@@ -209,6 +223,22 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			aggToken, provider, token, c, requestId,
 			usage, requestedStream, responseIsStream, 0, int(elapsed), errorMsg,
 		)
+		captureLLMTrace(llmTraceInput{
+			AggToken:         aggToken,
+			Provider:         provider,
+			Token:            token,
+			Context:          c,
+			RequestId:        requestId,
+			ModelName:        usage.ModelName,
+			Method:           c.Request.Method,
+			Path:             c.Request.URL.Path,
+			StatusCode:       resp.StatusCode,
+			RequestedStream:  requestedStream,
+			ResponseIsStream: responseIsStream,
+			RequestBody:      bodyBytes,
+			ResponseBody:     respBody,
+			ErrorMessage:     errorMsg,
+		})
 
 		upstreamErr := extractUpstreamErrorInfo(respBody)
 		retryAfterSeconds := parseRetryAfterSeconds(resp.Header.Get("Retry-After"))
@@ -260,9 +290,11 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		streamUsage := usageMetrics{}
+		streamCapture := newTraceStreamCapture()
 		firstTokenMs := 0
 		for scanner.Scan() {
 			line := scanner.Text()
+			streamCapture.appendLine(line)
 			fmt.Fprintf(c.Writer, "%s\n", line)
 			currentUsage, hasData := extractUsageAndModelFromSSELine(line)
 			if hasData && firstTokenMs == 0 {
@@ -307,6 +339,22 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			aggToken, provider, token, c, requestId,
 			streamUsage, requestedStream, true, firstTokenMs, int(elapsed), errorMsg,
 		)
+		captureLLMTrace(llmTraceInput{
+			AggToken:         aggToken,
+			Provider:         provider,
+			Token:            token,
+			Context:          c,
+			RequestId:        requestId,
+			ModelName:        streamUsage.ModelName,
+			Method:           c.Request.Method,
+			Path:             c.Request.URL.Path,
+			StatusCode:       resp.StatusCode,
+			RequestedStream:  requestedStream,
+			ResponseIsStream: true,
+			RequestBody:      bodyBytes,
+			ResponseBody:     []byte(streamCapture.String()),
+			ErrorMessage:     errorMsg,
+		})
 		if errorMsg != "" {
 			common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
 		} else {
@@ -328,6 +376,20 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 				int(elapsed),
 				errorMsg,
 			)
+			captureLLMTrace(llmTraceInput{
+				AggToken:        aggToken,
+				Provider:        provider,
+				Token:           token,
+				Context:         c,
+				RequestId:       requestId,
+				ModelName:       c.GetString("request_model"),
+				Method:          c.Request.Method,
+				Path:            c.Request.URL.Path,
+				StatusCode:      http.StatusBadGateway,
+				RequestedStream: requestedStream,
+				RequestBody:     bodyBytes,
+				ErrorMessage:    errorMsg,
+			})
 			common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
 			return &ProxyAttemptError{
 				StatusCode: http.StatusBadGateway,
@@ -348,6 +410,21 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			aggToken, provider, token, c, requestId,
 			usage, requestedStream, false, 0, int(elapsed), "",
 		)
+		captureLLMTrace(llmTraceInput{
+			AggToken:         aggToken,
+			Provider:         provider,
+			Token:            token,
+			Context:          c,
+			RequestId:        requestId,
+			ModelName:        usage.ModelName,
+			Method:           c.Request.Method,
+			Path:             c.Request.URL.Path,
+			StatusCode:       resp.StatusCode,
+			RequestedStream:  requestedStream,
+			ResponseIsStream: false,
+			RequestBody:      bodyBytes,
+			ResponseBody:     respBody,
+		})
 		common.GlobalRouteCooldown.RecordRouteSuccess(token.Id, resolvedModel)
 	}
 	return nil

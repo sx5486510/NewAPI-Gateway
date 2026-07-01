@@ -111,6 +111,42 @@ func TestTraceStreamCaptureRespectsEnabledFlag(t *testing.T) {
 	}
 }
 
+func TestCaptureLLMTraceStoresErrorMetadata(t *testing.T) {
+	setupServiceTraceTestDB(t)
+	common.LLMTraceEnabled = true
+	defer func() { common.LLMTraceEnabled = false }()
+
+	ctx, _ := gin.CreateTestContext(nil)
+	ctx.Request = httptestRequest("POST", "/v1/messages", "agent")
+	captureLLMTrace(llmTraceInput{
+		AggToken:         &model.AggregatedToken{Id: 1, UserId: 2},
+		Provider:         &model.Provider{Id: 3, Name: "anthropic"},
+		Token:            &model.ProviderToken{Id: 4},
+		Context:          ctx,
+		RequestId:        "req-error",
+		ModelName:        "claude-3-5",
+		Method:           "POST",
+		Path:             "/v1/messages",
+		StatusCode:       429,
+		RequestedStream:  true,
+		ResponseIsStream: false,
+		RequestBody:      []byte(`{"model":"claude-3-5"}`),
+		ResponseBody:     []byte(`{"error":{"type":"rate_limit_error"}}`),
+		ErrorMessage:     "upstream status 429",
+	})
+
+	var trace model.LLMTrace
+	if err := model.DB.First(&trace, "request_id = ?", "req-error").Error; err != nil {
+		t.Fatalf("find trace: %v", err)
+	}
+	if trace.StatusCode != 429 || trace.ErrorMessage != "upstream status 429" {
+		t.Fatalf("unexpected error metadata: status=%d error=%q", trace.StatusCode, trace.ErrorMessage)
+	}
+	if !trace.RequestedStream || trace.ResponseIsStream {
+		t.Fatalf("unexpected stream flags")
+	}
+}
+
 func httptestRequest(method string, path string, userAgent string) *http.Request {
 	req := httptest.NewRequest(method, path, nil)
 	req.Header.Set("User-Agent", userAgent)
