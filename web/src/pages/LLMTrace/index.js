@@ -7,24 +7,13 @@ import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
+import { formatTraceContent } from './formatTraceContent';
 
 const formatTime = (ts) => {
   if (!ts) {
     return '-';
   }
   return new Date(ts * 1000).toLocaleString();
-};
-
-const formatBody = (value) => {
-  const text = String(value || '');
-  if (!text.trim()) {
-    return '-';
-  }
-  try {
-    return JSON.stringify(JSON.parse(text), null, 2);
-  } catch (e) {
-    return text;
-  }
 };
 
 const LLMTrace = () => {
@@ -207,16 +196,16 @@ const LLMTrace = () => {
           <div style={{ display: 'grid', gap: '1rem' }}>
             <section>
               <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>请求</h3>
-              <pre className='log-json-detail'>{formatBody(selectedTrace.request_body)}</pre>
+              <pre className='log-json-detail'>{formatTraceContent(selectedTrace.request_body)}</pre>
             </section>
             <section>
               <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>响应</h3>
-              <pre className='log-json-detail'>{formatBody(selectedTrace.response_body)}</pre>
+              <pre className='log-json-detail'>{formatTraceContent(selectedTrace.response_body)}</pre>
             </section>
             {selectedTrace.error_message && (
               <section>
                 <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>错误</h3>
-                <pre className='log-json-detail'>{selectedTrace.error_message}</pre>
+                <pre className='log-json-detail'>{formatTraceContent(selectedTrace.error_message)}</pre>
               </section>
             )}
           </div>
