@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 #
 # Configure Caddy TLS reverse proxy for an already deployed NewAPI-Gateway service.
 #
@@ -22,26 +22,54 @@ CERT_FILE=""
 KEY_FILE=""
 CADDY_GITHUB_URL="https://github.com/caddyserver/caddy/releases/download/v2.11.1/caddy_2.11.1_linux_amd64.tar.gz"
 
+usage() {
+  echo "Usage:"
+  echo "  sudo bash deploy-with-caddy.sh --domain gateway.example.com --app-port 3030 --cert-file /etc/ssl/newapi/fullchain.pem --key-file /etc/ssl/newapi/privkey.pem"
+  echo ""
+  echo "Example:"
+  echo "  sudo mkdir -p /etc/ssl/newapi && sudo unzip -o gateway.example.com_nginx.zip -d /etc/ssl/newapi && sudo chmod 600 /etc/ssl/newapi/*"
+  echo "  sudo bash deploy-with-caddy.sh --domain gateway.example.com --app-port 3030 --cert-file /etc/ssl/newapi/gateway.example.com_bundle.crt --key-file /etc/ssl/newapi/gateway.example.com.key"
+}
+
+require_value() {
+  local option="$1"
+  local value="${2:-}"
+  if [ -z "${value}" ] || [[ "${value}" == --* ]]; then
+    echo -e "${RED}Error: Missing value for ${option}.${NC}"
+    usage
+    exit 1
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --domain)
+      require_value "$1" "${2:-}"
       DOMAIN="$2"
       shift 2
       ;;
     --app-port)
+      require_value "$1" "${2:-}"
       APP_PORT="$2"
       shift 2
       ;;
     --cert-file)
+      require_value "$1" "${2:-}"
       CERT_FILE="$2"
       shift 2
       ;;
     --key-file)
+      require_value "$1" "${2:-}"
       KEY_FILE="$2"
       shift 2
       ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
     *)
       echo -e "${RED}Unknown argument: $1${NC}"
+      usage
       exit 1
       ;;
   esac
@@ -55,12 +83,7 @@ fi
 if [ -z "$CERT_FILE" ] || [ -z "$KEY_FILE" ]; then
   echo -e "${RED}Error: certificate is required. Please provide both --cert-file and --key-file.${NC}"
   echo ""
-  echo "Usage:"
-  echo "  sudo bash deploy-with-caddy.sh --domain ${DOMAIN} --app-port ${APP_PORT} --cert-file /etc/ssl/newapi/fullchain.pem --key-file /etc/ssl/newapi/privkey.pem"
-  echo ""
-  echo "Example:"
-  echo "sudo mkdir -p /etc/ssl/newapi && sudo unzip -o gateway.example.com_nginx.zip -d /etc/ssl/newapi && sudo chmod 600 /etc/ssl/newapi/*"
-  echo "  sudo bash deploy-with-caddy.sh --domain gateway.example.com --app-port 3030 --cert-file /etc/ssl/newapi/gateway.example.com_bundle.crt --key-file /etc/ssl/newapi/gateway.example.com.key"
+  usage
   exit 1
 fi
 if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then

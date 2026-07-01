@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 #
 # NewAPI-Gateway CentOS one-click deploy script
 # Clones from GitHub and deploys on CentOS server.
@@ -33,6 +33,17 @@ SESSION_SECRET_FILE="${INSTALL_DIR}/.session_secret"
 REPO_URL="https://github.com/sx5486510/NewAPI-Gateway.git"
 BRANCH="main"
 ENABLE_HTTPS=false
+BRANCH_SET=false
+
+usage() {
+    echo "Usage: sudo bash deploy-on-centos.sh [branch] [--http|--https]"
+    echo ""
+    echo "Examples:"
+    echo "  sudo bash deploy-on-centos.sh"
+    echo "  sudo bash deploy-on-centos.sh develop"
+    echo "  sudo bash deploy-on-centos.sh --https"
+    echo "  sudo bash deploy-on-centos.sh develop --https"
+}
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -45,10 +56,23 @@ while [[ $# -gt 0 ]]; do
             ENABLE_HTTPS=false
             shift
             ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -*)
+            echo -e "${RED}Error: unknown argument: $1${NC}"
+            usage
+            exit 1
+            ;;
         *)
-            if [[ $1 != -* ]]; then
-                BRANCH="$1"
+            if [ "$BRANCH_SET" = true ]; then
+                echo -e "${RED}Error: Only one branch argument is allowed.${NC}"
+                usage
+                exit 1
             fi
+            BRANCH="$1"
+            BRANCH_SET=true
             shift
             ;;
     esac
@@ -72,7 +96,7 @@ echo ""
 # Require root
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}Error: please run as root.${NC}"
-    echo "Usage: sudo bash deploy-on-centos.sh [branch] [--https]"
+    usage
     exit 1
 fi
 
