@@ -3,6 +3,7 @@ package service
 import (
 	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/model"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -71,6 +72,15 @@ func captureLLMTrace(input llmTraceInput) {
 		return
 	}
 
+	// Perform security audit
+	auditResult := AuditLLMContent(string(input.RequestBody), string(input.ResponseBody))
+	riskTagsJSON := "[]"
+	if len(auditResult.RiskTags) > 0 {
+		if jsonBytes, err := json.Marshal(auditResult.RiskTags); err == nil {
+			riskTagsJSON = string(jsonBytes)
+		}
+	}
+
 	trace := &model.LLMTrace{
 		RequestId:         input.RequestId,
 		UserId:            input.AggToken.UserId,
@@ -89,6 +99,9 @@ func captureLLMTrace(input llmTraceInput) {
 		ErrorMessage:      input.ErrorMessage,
 		ClientIp:          input.Context.ClientIP(),
 		UserAgent:         strings.TrimSpace(input.Context.GetHeader("User-Agent")),
+		RiskLevel:         auditResult.RiskLevel,
+		RiskTags:          riskTagsJSON,
+		AutoReviewed:      true,
 	}
 	if err := trace.Insert(); err != nil {
 		common.SysLog(fmt.Sprintf("failed to insert llm trace: %v", err))

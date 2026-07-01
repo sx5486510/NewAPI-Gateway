@@ -38,6 +38,28 @@ func runMigrations(db *gorm.DB) error {
 		}
 	}
 
+	// Add security audit columns to llm_trace table if they don't exist
+	if !db.Migrator().HasColumn(&LLMTrace{}, "risk_level") {
+		common.SysLog("Adding risk_level column to llm_trace table")
+		if err := db.Migrator().AddColumn(&LLMTrace{}, "risk_level"); err != nil {
+			return fmt.Errorf("failed to add risk_level column: %w", err)
+		}
+	}
+
+	if !db.Migrator().HasColumn(&LLMTrace{}, "risk_tags") {
+		common.SysLog("Adding risk_tags column to llm_trace table")
+		if err := db.Migrator().AddColumn(&LLMTrace{}, "risk_tags"); err != nil {
+			return fmt.Errorf("failed to add risk_tags column: %w", err)
+		}
+	}
+
+	if !db.Migrator().HasColumn(&LLMTrace{}, "auto_reviewed") {
+		common.SysLog("Adding auto_reviewed column to llm_trace table")
+		if err := db.Migrator().AddColumn(&LLMTrace{}, "auto_reviewed"); err != nil {
+			return fmt.Errorf("failed to add auto_reviewed column: %w", err)
+		}
+	}
+
 	return nil
 }
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Eye, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { AlertTriangle, Eye, RefreshCw, Search, Shield, Trash2 } from 'lucide-react';
 import { API, showError, showSuccess } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import Badge from '../../components/ui/Badge';
@@ -16,12 +16,69 @@ const formatTime = (ts) => {
   return new Date(ts * 1000).toLocaleString();
 };
 
+const getRiskLevelColor = (level) => {
+  switch (level) {
+    case 'critical':
+      return 'red';
+    case 'high':
+      return 'orange';
+    case 'medium':
+      return 'yellow';
+    case 'low':
+      return 'blue';
+    case 'safe':
+      return 'green';
+    default:
+      return 'gray';
+  }
+};
+
+const getRiskLevelText = (level) => {
+  switch (level) {
+    case 'critical':
+      return '严重';
+    case 'high':
+      return '高危';
+    case 'medium':
+      return '中危';
+    case 'low':
+      return '低危';
+    case 'safe':
+      return '安全';
+    default:
+      return '未知';
+  }
+};
+
+const getRiskTagText = (tag) => {
+  const tagMap = {
+    prompt_injection: '提示词注入',
+    instruction_override: '指令覆盖',
+    dangerous_file_operation: '危险文件操作',
+    command_execution: '命令执行',
+    network_attack: '网络攻击',
+    sql_operation: 'SQL操作',
+    api_key_leak: 'API密钥泄露',
+    credit_card: '信用卡信息',
+    multiple_emails: '批量邮箱',
+    multiple_phones: '批量手机号',
+    private_key_leak: '私钥泄露',
+    db_connection_string: '数据库连接串',
+    id_card_number: '身份证号',
+    excessive_tool_calls: '过量工具调用',
+    suspicious_tool_call: '可疑工具调用',
+    repeated_tool_errors: '重复工具错误',
+  };
+  return tagMap[tag] || tag;
+};
+
 const LLMTrace = () => {
   const [traces, setTraces] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [keyword, setKeyword] = useState('');
   const [status, setStatus] = useState('all');
+  const [riskLevel, setRiskLevel] = useState('all');
   const [loading, setLoading] = useState(false);
   const [selectedTrace, setSelectedTrace] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -39,6 +96,9 @@ const LLMTrace = () => {
       if (status !== 'all') {
         params.set('status', status);
       }
+      if (riskLevel !== 'all') {
+        params.set('risk_level', riskLevel);
+      }
       const res = await API.get(`/api/llm-trace/?${params.toString()}`);
       const { success, data, message } = res.data;
       if (!success) {
@@ -52,11 +112,11 @@ const LLMTrace = () => {
     } finally {
       setLoading(false);
     }
-  }, [keyword, page, status]);
+  }, [keyword, page, status, riskLevel]);
 
   useEffect(() => {
     setPage(0);
-  }, [keyword, status]);
+  }, [keyword, status, riskLevel]);
 
   useEffect(() => {
     loadTraces();
@@ -128,6 +188,14 @@ const LLMTrace = () => {
             <option value='success'>成功</option>
             <option value='error'>失败</option>
           </select>
+          <select className='filter-select' value={riskLevel} onChange={(e) => setRiskLevel(e.target.value)}>
+            <option value='all'>全部风险</option>
+            <option value='safe'>安全</option>
+            <option value='low'>低危</option>
+            <option value='medium'>中危</option>
+            <option value='high'>高危</option>
+            <option value='critical'>严重</option>
+          </select>
         </div>
 
         {loading ? (
@@ -136,47 +204,76 @@ const LLMTrace = () => {
           <div className='logs-empty'>没有审计记录</div>
         ) : (
           <div className='logs-card-list'>
-            {traces.map((trace) => (
-              <div key={trace.id} className='log-card'>
-                <div className='log-card-top'>
-                  <div className='log-card-main'>
-                    <code className='log-model-code'>{trace.model_name || 'unknown-model'}</code>
-                    <span className='log-provider'>@ {trace.provider_name || '-'}</span>
-                  </div>
-                  <div className='log-card-state'>
-                    <Badge color={Number(trace.status_code) >= 400 || trace.error_message ? 'red' : 'green'}>
-                      {Number(trace.status_code) || '-'}
-                    </Badge>
-                    <span className='log-time'>{formatTime(trace.created_at)}</span>
-                  </div>
-                </div>
+            {traces.map((trace) => {
+              const riskTags = trace.risk_tags ? JSON.parse(trace.risk_tags) : [];
+              const hasRisk = trace.risk_level && trace.risk_level !== 'safe' && trace.risk_level !== 'unknown';
 
-                <div className='log-meta-inline'>
-                  <div className='log-meta-pill'>
-                    <span className='meta-pill-label'>Request ID</span>
-                    <span className='meta-pill-value'>{trace.request_id || '-'}</span>
+              return (
+                <div key={trace.id} className='log-card'>
+                  <div className='log-card-top'>
+                    <div className='log-card-main'>
+                      <code className='log-model-code'>{trace.model_name || 'unknown-model'}</code>
+                      <span className='log-provider'>@ {trace.provider_name || '-'}</span>
+                      {hasRisk && (
+                        <AlertTriangle size={16} style={{ color: '#f59e0b', marginLeft: '0.5rem' }} />
+                      )}
+                    </div>
+                    <div className='log-card-state'>
+                      <Badge color={Number(trace.status_code) >= 400 || trace.error_message ? 'red' : 'green'}>
+                        {Number(trace.status_code) || '-'}
+                      </Badge>
+                      <span className='log-time'>{formatTime(trace.created_at)}</span>
+                    </div>
                   </div>
-                  <div className='log-meta-pill'>
-                    <span className='meta-pill-label'>路径</span>
-                    <span className='meta-pill-value'>{trace.path || '-'}</span>
-                  </div>
-                  <div className='log-meta-pill'>
-                    <span className='meta-pill-label'>请求</span>
-                    <span className='meta-pill-value'>{trace.requested_stream ? '流式' : '非流式'}</span>
-                  </div>
-                  <div className='log-meta-pill'>
-                    <span className='meta-pill-label'>响应</span>
-                    <span className='meta-pill-value'>{trace.response_is_stream ? '流式' : '非流式'}</span>
-                  </div>
-                </div>
 
-                <div className='log-card-actions'>
-                  <Button size='sm' variant='secondary' icon={Eye} onClick={() => openTrace(trace)} disabled={detailLoading}>
-                    查看上下文
-                  </Button>
+                  <div className='log-meta-inline'>
+                    <div className='log-meta-pill'>
+                      <span className='meta-pill-label'>Request ID</span>
+                      <span className='meta-pill-value'>{trace.request_id || '-'}</span>
+                    </div>
+                    <div className='log-meta-pill'>
+                      <span className='meta-pill-label'>路径</span>
+                      <span className='meta-pill-value'>{trace.path || '-'}</span>
+                    </div>
+                    <div className='log-meta-pill'>
+                      <span className='meta-pill-label'>请求</span>
+                      <span className='meta-pill-value'>{trace.requested_stream ? '流式' : '非流式'}</span>
+                    </div>
+                    <div className='log-meta-pill'>
+                      <span className='meta-pill-label'>响应</span>
+                      <span className='meta-pill-value'>{trace.response_is_stream ? '流式' : '非流式'}</span>
+                    </div>
+                  </div>
+
+                  {trace.auto_reviewed && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <Shield size={14} style={{ color: '#6b7280' }} />
+                        <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>安全审计:</span>
+                      </div>
+                      <Badge color={getRiskLevelColor(trace.risk_level)}>
+                        {getRiskLevelText(trace.risk_level)}
+                      </Badge>
+                      {riskTags.length > 0 && (
+                        <>
+                          {riskTags.map((tag, idx) => (
+                            <Badge key={idx} color='gray' style={{ fontSize: '0.7rem' }}>
+                              {getRiskTagText(tag)}
+                            </Badge>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  <div className='log-card-actions'>
+                    <Button size='sm' variant='secondary' icon={Eye} onClick={() => openTrace(trace)} disabled={detailLoading}>
+                      查看上下文
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -194,6 +291,32 @@ const LLMTrace = () => {
       <Modal isOpen={isDetailOpen} onClose={() => setSelectedTrace(null)} title='LLM 上下文详情'>
         {selectedTrace && (
           <div style={{ display: 'grid', gap: '1rem' }}>
+            {selectedTrace.auto_reviewed && (
+              <section>
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Shield size={18} />
+                  安全审计结果
+                </h3>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '0.75rem', background: '#f9fafb', borderRadius: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>风险等级:</span>
+                    <Badge color={getRiskLevelColor(selectedTrace.risk_level)}>
+                      {getRiskLevelText(selectedTrace.risk_level)}
+                    </Badge>
+                  </div>
+                  {selectedTrace.risk_tags && JSON.parse(selectedTrace.risk_tags).length > 0 && (
+                    <>
+                      <span style={{ fontSize: '0.875rem', fontWeight: 600, marginLeft: '1rem' }}>检测到的风险:</span>
+                      {JSON.parse(selectedTrace.risk_tags).map((tag, idx) => (
+                        <Badge key={idx} color='orange'>
+                          {getRiskTagText(tag)}
+                        </Badge>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </section>
+            )}
             <section>
               <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>请求</h3>
               <pre className='log-json-detail'>{formatTraceContent(selectedTrace.request_body)}</pre>

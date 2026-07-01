@@ -28,6 +28,10 @@ type LLMTrace struct {
 	ClientIp          string `json:"client_ip" gorm:"type:varchar(64)"`
 	UserAgent         string `json:"user_agent" gorm:"type:varchar(512)"`
 	CreatedAt         int64  `json:"created_at" gorm:"index"`
+	// Security audit fields
+	RiskLevel    string `json:"risk_level" gorm:"type:varchar(32);index;default:'unknown'"` // safe, low, medium, high, critical, unknown
+	RiskTags     string `json:"risk_tags" gorm:"type:text"`                                  // JSON array of detected risk tags
+	AutoReviewed bool   `json:"auto_reviewed" gorm:"index;default:false"`                    // Whether auto security scan completed
 }
 
 type LLMTraceQuery struct {
@@ -37,6 +41,7 @@ type LLMTraceQuery struct {
 	ProviderName string
 	ModelName    string
 	Status       string
+	RiskLevel    string // Filter by risk level: safe, low, medium, high, critical
 }
 
 func (t *LLMTrace) Insert() error {
@@ -52,6 +57,9 @@ func applyLLMTraceFilters(db *gorm.DB, query LLMTraceQuery) *gorm.DB {
 	}
 	if modelName := strings.TrimSpace(query.ModelName); modelName != "" {
 		db = db.Where("model_name = ?", modelName)
+	}
+	if riskLevel := strings.TrimSpace(query.RiskLevel); riskLevel != "" && riskLevel != "all" {
+		db = db.Where("risk_level = ?", riskLevel)
 	}
 	if keyword := strings.TrimSpace(query.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
@@ -89,7 +97,7 @@ func QueryLLMTraces(query LLMTraceQuery) ([]*LLMTrace, int64, error) {
 
 	var traces []*LLMTrace
 	err := baseQuery.
-		Select("id", "request_id", "user_id", "aggregated_token_id", "provider_id", "provider_name", "provider_token_id", "model_name", "method", "path", "status_code", "requested_stream", "response_is_stream", "error_message", "client_ip", "user_agent", "created_at").
+		Select("id", "request_id", "user_id", "aggregated_token_id", "provider_id", "provider_name", "provider_token_id", "model_name", "method", "path", "status_code", "requested_stream", "response_is_stream", "error_message", "client_ip", "user_agent", "created_at", "risk_level", "risk_tags", "auto_reviewed").
 		Order("id desc").
 		Limit(query.Limit).
 		Offset(query.Offset).

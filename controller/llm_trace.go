@@ -26,6 +26,7 @@ func parseLLMTraceQuery(c *gin.Context) (int, int, model.LLMTraceQuery) {
 		ProviderName: strings.TrimSpace(c.Query("provider")),
 		ModelName:    strings.TrimSpace(c.Query("model")),
 		Status:       strings.TrimSpace(c.DefaultQuery("status", "all")),
+		RiskLevel:    strings.TrimSpace(c.DefaultQuery("risk_level", "all")),
 	}
 	return p, pageSize, query
 }
