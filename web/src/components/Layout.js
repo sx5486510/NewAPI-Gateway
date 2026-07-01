@@ -9,6 +9,7 @@ import {
     Key,
     GitBranch,
     FileText,
+    ClipboardList,
     Users,
     Settings,
     LogOut,
@@ -33,6 +34,7 @@ const Layout = ({ children }) => {
         { name: '令牌', path: '/token', icon: Key },
         { name: '路由', path: '/routes', icon: GitBranch, admin: true },
         { name: '日志', path: '/log', icon: FileText, admin: true },
+        { name: '审计', path: '/llm-trace', icon: ClipboardList, admin: true },
         { name: '用户', path: '/user', icon: Users, admin: true },
         { name: '设置', path: '/setting', icon: Settings },
     ];

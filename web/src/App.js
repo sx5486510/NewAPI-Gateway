@@ -23,6 +23,7 @@ const ProviderDetail = lazy(() => import('./pages/Provider/ProviderDetail'));
 const Token = lazy(() => import('./pages/Token'));
 const RoutesPage = lazy(() => import('./pages/Routes'));
 const Log = lazy(() => import('./pages/Log'));
+const LLMTrace = lazy(() => import('./pages/LLMTrace'));
 const RawErrorView = lazy(() => import('./pages/Log/RawErrorView'));
 const About = lazy(() => import('./pages/About'));
 
@@ -120,6 +121,7 @@ function App() {
         <Route path='/token' element={<Token />} />
         <Route path='/routes' element={<RoutesPage />} />
         <Route path='/log' element={<Log />} />
+        <Route path='/llm-trace' element={<LLMTrace />} />
         <Route path='/user' element={<User />} />
         <Route path='/user/edit/:id' element={<EditUser />} />
         <Route path='/user/edit' element={<EditUser />} />
