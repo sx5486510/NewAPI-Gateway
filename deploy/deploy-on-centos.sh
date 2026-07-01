@@ -29,6 +29,7 @@ BINARY_NAME="gateway-aggregator"
 PORT=3030
 LOG_DIR="${INSTALL_DIR}/logs"
 DATA_DIR="${INSTALL_DIR}/data"
+SESSION_SECRET_FILE="${INSTALL_DIR}/.session_secret"
 REPO_URL="https://github.com/sx5486510/NewAPI-Gateway.git"
 BRANCH="main"
 ENABLE_HTTPS=false
@@ -166,14 +167,12 @@ echo ""
 echo -e "${YELLOW}[4/9] Build frontend...${NC}"
 cd "${SOURCE_DIR}/web"
 echo "Installing npm dependencies..."
-npm install --silent
-if [ $? -ne 0 ]; then
+if ! npm install --silent; then
     echo -e "${RED}npm install failed, retry with mirror...${NC}"
     npm install --registry=https://registry.npmmirror.com
 fi
 echo "Building frontend..."
-npm run build
-if [ $? -ne 0 ]; then
+if ! npm run build; then
     echo -e "${RED}Error: frontend build failed.${NC}"
     exit 1
 fi
@@ -184,16 +183,16 @@ echo ""
 # Build Go program
 echo -e "${YELLOW}[5/9] Build backend...${NC}"
 echo "Downloading Go modules..."
-go mod download
-if [ $? -ne 0 ]; then
+if ! go mod download; then
     echo -e "${RED}go mod download failed, retry with proxy...${NC}"
     GOPROXY=https://goproxy.cn,direct go mod download
 fi
 
 echo "Building..."
 # Enable CGO for SQLite
-CGO_ENABLED=1 go build -ldflags "-s -w" -o "${INSTALL_DIR}/bin/${BINARY_NAME}"
-if [ $? -ne 0 ]; then
+TMP_BINARY=$(mktemp "${INSTALL_DIR}/bin/${BINARY_NAME}.tmp.XXXXXX")
+if ! CGO_ENABLED=1 go build -ldflags "-s -w" -o "${TMP_BINARY}"; then
+    rm -f "${TMP_BINARY}"
     echo -e "${RED}Error: go build failed.${NC}"
     exit 1
 fi
@@ -202,15 +201,25 @@ echo ""
 
 # Permissions
 echo -e "${YELLOW}[6/9] Set permissions...${NC}"
-chmod +x "${INSTALL_DIR}/bin/${BINARY_NAME}"
+chmod +x "${TMP_BINARY}"
 chown -R root:root "${INSTALL_DIR}"
 echo -e "${GREEN}Permissions set.${NC}"
 echo ""
 
 # Generate session secret
-echo -e "${YELLOW}[7/9] Generate SESSION_SECRET...${NC}"
-SESSION_SECRET=$(openssl rand -hex 32)
-echo -e "${GREEN}SESSION_SECRET generated.${NC}"
+echo -e "${YELLOW}[7/9] Load SESSION_SECRET...${NC}"
+if [ -f "${SESSION_SECRET_FILE}" ]; then
+    SESSION_SECRET=$(tr -d '\r\n' < "${SESSION_SECRET_FILE}")
+fi
+
+if [ -z "${SESSION_SECRET:-}" ]; then
+    SESSION_SECRET=$(openssl rand -hex 32)
+    printf '%s\n' "${SESSION_SECRET}" > "${SESSION_SECRET_FILE}"
+    chmod 600 "${SESSION_SECRET_FILE}"
+    echo -e "${GREEN}SESSION_SECRET generated and saved.${NC}"
+else
+    echo -e "${GREEN}SESSION_SECRET loaded from ${SESSION_SECRET_FILE}.${NC}"
+fi
 echo ""
 
 # Stop old service if exists
@@ -218,6 +227,9 @@ if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
     echo -e "${YELLOW}Stopping existing service...${NC}"
     systemctl stop "${SERVICE_NAME}"
 fi
+
+mv -f "${TMP_BINARY}" "${INSTALL_DIR}/bin/${BINARY_NAME}"
+chmod +x "${INSTALL_DIR}/bin/${BINARY_NAME}"
 
 # Create systemd service
 echo -e "${YELLOW}[8/9] Create systemd service...${NC}"
