@@ -109,6 +109,8 @@ type ModelRouteOverviewItem struct {
 	TokenName               string   `json:"token_name"`
 	TokenGroupName          string   `json:"token_group_name"`
 	TokenStatus             int      `json:"token_status"`
+	TokenAllowCodex         bool     `json:"token_allow_codex"`
+	TokenAllowCC            bool     `json:"token_allow_cc"`
 	Enabled                 bool     `json:"enabled"`
 	Priority                int      `json:"priority"`
 	Weight                  int      `json:"weight"`
@@ -147,6 +149,8 @@ type modelRouteOverviewRow struct {
 	TokenName         string  `gorm:"column:token_name"`
 	TokenGroupName    string  `gorm:"column:token_group_name"`
 	TokenStatus       int     `gorm:"column:token_status"`
+	TokenAllowCodex   bool    `gorm:"column:token_allow_codex"`
+	TokenAllowCC      bool    `gorm:"column:token_allow_cc"`
 	Enabled           bool    `gorm:"column:enabled"`
 	Priority          int     `gorm:"column:priority"`
 	Weight            int     `gorm:"column:weight"`
@@ -201,7 +205,7 @@ func SelectProviderToken(modelName string, retry int) (*ProviderToken, *Provider
 		return nil, nil, "", errors.New("无效的模型名称")
 	}
 
-	plan, err := BuildRouteAttemptsByPriority(requestedModel)
+	plan, err := BuildRouteAttemptsByPriority(requestedModel, "")
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -225,7 +229,8 @@ func SelectProviderToken(modelName string, retry int) (*ProviderToken, *Provider
 
 // BuildRouteAttemptsByPriority returns one retry group for compatibility with
 // existing callers. Stored priority and weight no longer affect routing.
-func BuildRouteAttemptsByPriority(modelName string) ([][]RouteAttempt, error) {
+// It filters routes based on client type restrictions.
+func BuildRouteAttemptsByPriority(modelName string, clientType string) ([][]RouteAttempt, error) {
 	requestedModel := strings.TrimSpace(modelName)
 	if requestedModel == "" {
 		return nil, errors.New("无效的模型名称")
@@ -295,6 +300,10 @@ func BuildRouteAttemptsByPriority(modelName string) ([][]RouteAttempt, error) {
 			continue
 		}
 		if provider.Status != common.UserStatusEnabled || token.Status != common.UserStatusEnabled {
+			continue
+		}
+		// Filter by client type restrictions
+		if !token.IsClientAllowed(clientType) {
 			continue
 		}
 		metric := metricLookup[route.Id]
@@ -946,6 +955,8 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			"COALESCE(pt.name, '') AS token_name",
 			"COALESCE(pt.group_name, '') AS token_group_name",
 			"COALESCE(pt.status, 0) AS token_status",
+			"COALESCE(pt.allow_codex, 0) AS token_allow_codex",
+			"COALESCE(pt.allow_cc, 0) AS token_allow_cc",
 			"mr.enabled",
 			"mr.priority",
 			"mr.weight",
@@ -1020,6 +1031,8 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			TokenName:               row.TokenName,
 			TokenGroupName:          row.TokenGroupName,
 			TokenStatus:             row.TokenStatus,
+			TokenAllowCodex:         row.TokenAllowCodex,
+			TokenAllowCC:            row.TokenAllowCC,
 			Enabled:                 row.Enabled,
 			Priority:                row.Priority,
 			Weight:                  row.Weight,

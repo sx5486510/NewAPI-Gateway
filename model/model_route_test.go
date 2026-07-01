@@ -81,7 +81,7 @@ func TestBuildRouteAttemptsIgnoresPriorityTiers(t *testing.T) {
 	insertRouteCandidate(t, 1, 101, 100, 10)
 	insertRouteCandidate(t, 2, 102, 0, 10)
 
-	plan, err := BuildRouteAttemptsByPriority("gpt-test")
+	plan, err := BuildRouteAttemptsByPriority("gpt-test", "")
 	if err != nil {
 		t.Fatalf("build route attempts: %v", err)
 	}

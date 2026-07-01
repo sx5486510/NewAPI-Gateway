@@ -20,6 +20,8 @@ type ProviderToken struct {
 	UnlimitedQuota  bool   `json:"unlimited_quota"`
 	UsedQuota       int64  `json:"used_quota"`
 	ModelLimits     string `json:"model_limits" gorm:"type:varchar(2048)"`
+	AllowCodex      bool   `json:"allow_codex" gorm:"default:false"`
+	AllowCC         bool   `json:"allow_cc" gorm:"default:false"`
 	LastSynced      int64  `json:"last_synced"`
 	CreatedAt       int64  `json:"created_at"`
 }
@@ -78,6 +80,8 @@ func UpsertProviderToken(pt *ProviderToken) error {
 			"unlimited_quota":   pt.UnlimitedQuota,
 			"used_quota":        pt.UsedQuota,
 			"model_limits":      pt.ModelLimits,
+			"allow_codex":       pt.AllowCodex,
+			"allow_cc":          pt.AllowCC,
 			"last_synced":       pt.LastSynced,
 			"upstream_token_id": pt.UpstreamTokenId,
 		}).Error
@@ -114,4 +118,28 @@ func (pt *ProviderToken) CleanForResponse() {
 	if len(pt.SkKey) > 8 {
 		pt.SkKey = pt.SkKey[:4] + "****" + pt.SkKey[len(pt.SkKey)-4:]
 	}
+}
+
+// IsClientAllowed checks if a client type is allowed to use this token
+// Returns true if:
+// - Both AllowCodex and AllowCC are false (no restriction)
+// - clientType is empty (unrestricted client)
+// - clientType matches one of the allowed types
+func (pt *ProviderToken) IsClientAllowed(clientType string) bool {
+	// No restriction set - allow all
+	if !pt.AllowCodex && !pt.AllowCC {
+		return true
+	}
+	// Unrestricted client - allow all
+	if clientType == "" {
+		return true
+	}
+	// Check specific restrictions
+	if clientType == "codex" && pt.AllowCodex {
+		return true
+	}
+	if clientType == "cc" && pt.AllowCC {
+		return true
+	}
+	return false
 }

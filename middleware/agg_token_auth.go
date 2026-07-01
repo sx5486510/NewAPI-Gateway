@@ -56,8 +56,26 @@ func AggTokenAuth() func(c *gin.Context) {
 		c.Set("agg_token", token)
 		c.Set("user", user)
 		c.Set("user_id", user.Id)
+
+		// 5. Extract client type from User-Agent
+		userAgent := strings.ToLower(strings.TrimSpace(c.GetHeader("User-Agent")))
+		clientType := identifyClientType(userAgent)
+		c.Set("client_type", clientType)
+
 		c.Next()
 	}
+}
+
+// identifyClientType extracts client type from User-Agent
+// Returns "codex", "cc" (claudecode), or "" (unrestricted)
+func identifyClientType(userAgent string) string {
+	if strings.Contains(userAgent, "codex") {
+		return "codex"
+	}
+	if strings.Contains(userAgent, "claudecode") || strings.Contains(userAgent, "claude-code") {
+		return "cc"
+	}
+	return ""
 }
 
 func extractAggToken(c *gin.Context) string {

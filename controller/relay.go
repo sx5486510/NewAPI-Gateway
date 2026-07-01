@@ -41,6 +41,14 @@ func Relay(c *gin.Context) {
 		modelsToTry = append(modelsToTry, chain...)
 	}
 
+	// Extract client type from context
+	clientType := ""
+	if ct, exists := c.Get("client_type"); exists {
+		if ctStr, ok := ct.(string); ok {
+			clientType = ctStr
+		}
+	}
+
 	var lastErr *service.ProxyAttemptError
 	for idx, routingModel := range modelsToTry {
 		if idx > 0 && !aggToken.IsModelAllowed(routingModel) {
@@ -48,7 +56,7 @@ func Relay(c *gin.Context) {
 		}
 
 		// 3. Build retry plan for all selectable routes.
-		plan, err := model.BuildRouteAttemptsByPriority(routingModel)
+		plan, err := model.BuildRouteAttemptsByPriority(routingModel, clientType)
 		if err != nil {
 			continue
 		}

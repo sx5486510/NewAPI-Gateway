@@ -689,14 +689,15 @@ const ModelRoutesTable = () => {
                                 </div>
 
                                 <div className="routes-detail-scroller">
-                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '800px' : '900px'}>
+                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '800px' : '1050px'}>
                                     <colgroup>
-                                        <col style={{ width: '22%' }} />
-                                        <col style={{ width: '10%' }} />
-                                        <col style={{ width: '10%' }} />
                                         <col style={{ width: '20%' }} />
+                                        <col style={{ width: '9%' }} />
+                                        <col style={{ width: '9%' }} />
                                         <col style={{ width: '18%' }} />
-                                        <col style={{ width: '20%' }} />
+                                        <col style={{ width: '16%' }} />
+                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '18%' }} />
                                     </colgroup>
                                     <Thead>
                                         <Tr>
@@ -706,19 +707,20 @@ const ModelRoutesTable = () => {
                                             <Th style={stickyHeaderCellStyle}>健康值</Th>
                                             <Th style={stickyHeaderCellStyle}>冷却状态</Th>
                                             <Th style={stickyHeaderCellStyle}>状态</Th>
+                                            <Th style={stickyHeaderCellStyle}>客户端限制</Th>
                                         </Tr>
                                     </Thead>
                                     <Tbody>
                                         {selectedGroupedRoutes.length === 0 ? (
                                             <Tr>
-                                                <Td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
+                                                <Td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
                                                     当前模型没有符合条件的路由
                                                 </Td>
                                             </Tr>
                                         ) : selectedGroupedRoutes.map((group) => (
                                             <React.Fragment key={group.key}>
                                                 <Tr style={{ backgroundColor: 'var(--gray-50)' }}>
-                                                    <Td colSpan={6} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
+                                                    <Td colSpan={7} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                             <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>候选路由</div>
                                                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -742,6 +744,11 @@ const ModelRoutesTable = () => {
                                                     const successCount = Number.isFinite(healthSuccessCount) ? healthSuccessCount : 0;
                                                     const failCount = Number.isFinite(healthErrorCount) ? healthErrorCount : 0;
                                                     const safeHealthValue = Number.isFinite(healthValue) ? healthValue : 0;
+
+                                                    // Get token info for client restrictions (assuming we add these to the route overview response)
+                                                    const tokenAllowCodex = route.token_allow_codex || false;
+                                                    const tokenAllowCC = route.token_allow_cc || false;
+
                                                     return (
                                                         <Tr key={route.id} style={isDirty ? { backgroundColor: 'rgba(245, 158, 11, 0.06)' } : undefined}>
                                                             <Td style={cellTopStyle}>
@@ -801,6 +808,16 @@ const ModelRoutesTable = () => {
                                                                     <span>{route.enabled ? '启用' : '禁用'}</span>
                                                                     <span aria-hidden="true" style={statusToggleDotStyle} />
                                                                 </button>
+                                                            </Td>
+                                                            <Td style={cellTopStyle}>
+                                                                {!tokenAllowCodex && !tokenAllowCC ? (
+                                                                    <Badge color="gray">不限制</Badge>
+                                                                ) : (
+                                                                    <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                                                        {tokenAllowCodex && <Badge color="blue">Codex</Badge>}
+                                                                        {tokenAllowCC && <Badge color="purple">CC</Badge>}
+                                                                    </div>
+                                                                )}
                                                             </Td>
                                                         </Tr>
                                                     );

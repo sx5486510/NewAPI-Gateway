@@ -120,7 +120,7 @@ const ProviderDetail = () => {
     };
 
     const openAddToken = () => {
-        setEditToken({ name: '', group_name: '', status: 1, priority: 0, weight: 10, model_limits: '', unlimited_quota: true, remain_quota: 0 });
+        setEditToken({ name: '', group_name: '', status: 1, priority: 0, weight: 10, model_limits: '', unlimited_quota: true, remain_quota: 0, allow_codex: false, allow_cc: false });
         setShowTokenModal(true);
     };
 
@@ -481,6 +481,7 @@ const ProviderDetail = () => {
                                 <Th>状态</Th>
                                 <Th>配额</Th>
                                 <Th>权重 / 优先级</Th>
+                                <Th>客户端限制</Th>
                                 <Th>操作</Th>
                             </Tr>
                         </Thead>
@@ -494,6 +495,16 @@ const ProviderDetail = () => {
                                     <Td>{renderStatus(t.status)}</Td>
                                     <Td>{t.unlimited_quota ? <Badge color="green">无限</Badge> : <span>{t.remain_quota}</span>}</Td>
                                     <Td>{t.weight} / {t.priority}</Td>
+                                    <Td>
+                                        {!t.allow_codex && !t.allow_cc ? (
+                                            <Badge color="gray">不限制</Badge>
+                                        ) : (
+                                            <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                                {t.allow_codex && <Badge color="blue">Codex</Badge>}
+                                                {t.allow_cc && <Badge color="purple">CC</Badge>}
+                                            </div>
+                                        )}
+                                    </Td>
                                     <Td>
                                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                                             <Button size="sm" variant="secondary" onClick={() => openEditToken(t)} title="编辑" icon={Edit} />
@@ -937,6 +948,22 @@ const ProviderDetail = () => {
                         <div style={{ display: 'flex', alignItems: 'center' }}>
                             <input type="checkbox" id="unlimited_quota" checked={editToken?.unlimited_quota || false} onChange={(e) => setEditToken({ ...editToken, unlimited_quota: e.target.checked })} style={{ marginRight: '0.5rem' }} />
                             <label htmlFor="unlimited_quota">无限配额</label>
+                        </div>
+                    </div>
+                    <div style={{ padding: '0.75rem', backgroundColor: 'var(--gray-50)', borderRadius: 'var(--radius-md)' }}>
+                        <div style={{ fontWeight: '600', marginBottom: '0.5rem', fontSize: '0.875rem' }}>客户端限制</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+                            默认不勾选表示不限制，勾选后只允许对应客户端使用此令牌
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <input type="checkbox" id="allow_codex" checked={editToken?.allow_codex || false} onChange={(e) => setEditToken({ ...editToken, allow_codex: e.target.checked })} style={{ marginRight: '0.5rem' }} />
+                                <label htmlFor="allow_codex">允许 Codex</label>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <input type="checkbox" id="allow_cc" checked={editToken?.allow_cc || false} onChange={(e) => setEditToken({ ...editToken, allow_cc: e.target.checked })} style={{ marginRight: '0.5rem' }} />
+                                <label htmlFor="allow_cc">允许 ClaudeCode/CC</label>
+                            </div>
                         </div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
