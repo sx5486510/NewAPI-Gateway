@@ -16,7 +16,7 @@ var DB *gorm.DB
 
 // runMigrations handles custom migrations that AutoMigrate cannot handle
 func runMigrations(db *gorm.DB) error {
-	// Add allow_codex and allow_cc columns to provider_token table if they don't exist
+	// Add client restriction columns to provider_token table if they don't exist
 	if !db.Migrator().HasColumn(&ProviderToken{}, "allow_codex") {
 		common.SysLog("Adding allow_codex column to provider_token table")
 		if err := db.Migrator().AddColumn(&ProviderToken{}, "allow_codex"); err != nil {
@@ -28,6 +28,13 @@ func runMigrations(db *gorm.DB) error {
 		common.SysLog("Adding allow_cc column to provider_token table")
 		if err := db.Migrator().AddColumn(&ProviderToken{}, "allow_cc"); err != nil {
 			return fmt.Errorf("failed to add allow_cc column: %w", err)
+		}
+	}
+
+	if !db.Migrator().HasColumn(&ProviderToken{}, "block_clients") {
+		common.SysLog("Adding block_clients column to provider_token table")
+		if err := db.Migrator().AddColumn(&ProviderToken{}, "block_clients"); err != nil {
+			return fmt.Errorf("failed to add block_clients column: %w", err)
 		}
 	}
 

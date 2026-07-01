@@ -7,6 +7,7 @@ jest.mock('../helpers', () => ({
   API: {
     get: jest.fn(),
     post: jest.fn(),
+    put: jest.fn(),
   },
   copy: jest.fn(),
   showError: jest.fn(),
@@ -25,6 +26,9 @@ const route = {
   provider_token_id: 20,
   token_name: 'primary token',
   token_group_name: 'default',
+  token_allow_codex: false,
+  token_allow_cc: false,
+  token_block_clients: false,
   token_status: 1,
   enabled: true,
   priority: 100,
@@ -63,6 +67,11 @@ describe('ModelRoutesTable', () => {
       },
     });
     API.post.mockResolvedValue({
+      data: {
+        success: true,
+      },
+    });
+    API.put.mockResolvedValue({
       data: {
         success: true,
       },
@@ -106,5 +115,27 @@ describe('ModelRoutesTable', () => {
     });
 
     expect(document.querySelectorAll('.routes-number-input')).toHaveLength(0);
+  });
+
+  it('updates upstream token client restrictions from the route list', async () => {
+    await act(async () => {
+      root.render(<ModelRoutesTable />);
+    });
+
+    const toggles = [...document.querySelectorAll('.routes-token-client-toggle')];
+    expect(toggles).toHaveLength(3);
+    expect(toggles.map((item) => item.closest('label').textContent.trim())).toEqual(['Codex', 'CC', '全禁用']);
+
+    await act(async () => {
+      toggles[2].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(API.put).toHaveBeenCalledWith('/api/provider/token/20', {
+      id: 20,
+      provider_id: 10,
+      allow_codex: false,
+      allow_cc: false,
+      block_clients: true,
+    });
   });
 });

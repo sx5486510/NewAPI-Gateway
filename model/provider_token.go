@@ -22,6 +22,7 @@ type ProviderToken struct {
 	ModelLimits     string `json:"model_limits" gorm:"type:varchar(2048)"`
 	AllowCodex      bool   `json:"allow_codex" gorm:"default:false"`
 	AllowCC         bool   `json:"allow_cc" gorm:"default:false"`
+	BlockClients    bool   `json:"block_clients" gorm:"default:false"`
 	LastSynced      int64  `json:"last_synced"`
 	CreatedAt       int64  `json:"created_at"`
 }
@@ -49,11 +50,30 @@ func GetProviderTokenById(id int) (*ProviderToken, error) {
 
 func (pt *ProviderToken) Insert() error {
 	pt.CreatedAt = time.Now().Unix()
+	pt.NormalizeClientRestrictions()
 	return DB.Create(pt).Error
 }
 
 func (pt *ProviderToken) Update() error {
-	return DB.Model(pt).Updates(pt).Error
+	pt.NormalizeClientRestrictions()
+	return DB.Model(pt).Updates(map[string]interface{}{
+		"provider_id":       pt.ProviderId,
+		"upstream_token_id": pt.UpstreamTokenId,
+		"sk_key":            pt.SkKey,
+		"name":              pt.Name,
+		"group_name":        pt.GroupName,
+		"status":            pt.Status,
+		"priority":          pt.Priority,
+		"weight":            pt.Weight,
+		"remain_quota":      pt.RemainQuota,
+		"unlimited_quota":   pt.UnlimitedQuota,
+		"used_quota":        pt.UsedQuota,
+		"model_limits":      pt.ModelLimits,
+		"allow_codex":       pt.AllowCodex,
+		"allow_cc":          pt.AllowCC,
+		"block_clients":     pt.BlockClients,
+		"last_synced":       pt.LastSynced,
+	}).Error
 }
 
 func (pt *ProviderToken) Delete() error {
@@ -69,6 +89,10 @@ func UpsertProviderToken(pt *ProviderToken) error {
 	if result.RowsAffected > 0 {
 		pt.Id = existing.Id
 		pt.CreatedAt = existing.CreatedAt
+		pt.AllowCodex = existing.AllowCodex
+		pt.AllowCC = existing.AllowCC
+		pt.BlockClients = existing.BlockClients
+		pt.NormalizeClientRestrictions()
 		return DB.Model(&existing).Updates(map[string]interface{}{
 			"sk_key":            pt.SkKey,
 			"name":              pt.Name,
@@ -82,11 +106,13 @@ func UpsertProviderToken(pt *ProviderToken) error {
 			"model_limits":      pt.ModelLimits,
 			"allow_codex":       pt.AllowCodex,
 			"allow_cc":          pt.AllowCC,
+			"block_clients":     pt.BlockClients,
 			"last_synced":       pt.LastSynced,
 			"upstream_token_id": pt.UpstreamTokenId,
 		}).Error
 	}
 	pt.CreatedAt = time.Now().Unix()
+	pt.NormalizeClientRestrictions()
 	return DB.Create(pt).Error
 }
 
@@ -120,19 +146,33 @@ func (pt *ProviderToken) CleanForResponse() {
 	}
 }
 
+func (pt *ProviderToken) NormalizeClientRestrictions() {
+	if pt.BlockClients {
+		pt.AllowCodex = false
+		pt.AllowCC = false
+	}
+	if pt.AllowCodex || pt.AllowCC {
+		pt.BlockClients = false
+	}
+}
+
 // IsClientAllowed checks if a client type is allowed to use this token
 // Returns true if:
-// - Both AllowCodex and AllowCC are false (no restriction)
+// - AllowCodex, AllowCC, and BlockClients are false (no restriction)
 // - clientType is empty (unrestricted client)
 // - clientType matches one of the allowed types
 func (pt *ProviderToken) IsClientAllowed(clientType string) bool {
+	pt.NormalizeClientRestrictions()
 	// No restriction set - allow all
-	if !pt.AllowCodex && !pt.AllowCC {
+	if !pt.AllowCodex && !pt.AllowCC && !pt.BlockClients {
 		return true
 	}
 	// Unrestricted client - allow all
 	if clientType == "" {
 		return true
+	}
+	if pt.BlockClients && (clientType == "codex" || clientType == "cc") {
+		return false
 	}
 	// Check specific restrictions
 	if clientType == "codex" && pt.AllowCodex {

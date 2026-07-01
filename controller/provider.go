@@ -551,8 +551,80 @@ func UpdateProviderToken(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "Token 不存在"})
 		return
 	}
-	var token model.ProviderToken
-	if err := json.NewDecoder(c.Request.Body).Decode(&token); err != nil {
+	var payload map[string]json.RawMessage
+	if err := json.NewDecoder(c.Request.Body).Decode(&payload); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	token := *existingToken
+	decodeField := func(name string, target interface{}) error {
+		raw, ok := payload[name]
+		if !ok {
+			return nil
+		}
+		return json.Unmarshal(raw, target)
+	}
+	if err := decodeField("provider_id", &token.ProviderId); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("upstream_token_id", &token.UpstreamTokenId); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("sk_key", &token.SkKey); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("name", &token.Name); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("group_name", &token.GroupName); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("status", &token.Status); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("priority", &token.Priority); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("weight", &token.Weight); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("remain_quota", &token.RemainQuota); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("unlimited_quota", &token.UnlimitedQuota); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("used_quota", &token.UsedQuota); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("model_limits", &token.ModelLimits); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("allow_codex", &token.AllowCodex); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("allow_cc", &token.AllowCC); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("block_clients", &token.BlockClients); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
+		return
+	}
+	if err := decodeField("last_synced", &token.LastSynced); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的参数"})
 		return
 	}

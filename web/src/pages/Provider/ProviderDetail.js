@@ -120,7 +120,7 @@ const ProviderDetail = () => {
     };
 
     const openAddToken = () => {
-        setEditToken({ name: '', group_name: '', status: 1, priority: 0, weight: 10, model_limits: '', unlimited_quota: true, remain_quota: 0, allow_codex: false, allow_cc: false });
+        setEditToken({ name: '', group_name: '', status: 1, priority: 0, weight: 10, model_limits: '', unlimited_quota: true, remain_quota: 0, allow_codex: false, allow_cc: false, block_clients: false });
         setShowTokenModal(true);
     };
 
@@ -140,6 +140,40 @@ const ProviderDetail = () => {
         }
     };
 
+    const buildNextClientRestrictionToken = (token, field, value) => {
+        const nextToken = { ...token, [field]: value };
+        if (field === 'block_clients' && value) {
+            nextToken.allow_codex = false;
+            nextToken.allow_cc = false;
+        }
+        if ((field === 'allow_codex' || field === 'allow_cc') && value) {
+            nextToken.block_clients = false;
+        }
+        return nextToken;
+    };
+
+    const updateTokenClientRestriction = async (token, field, value) => {
+        const nextToken = buildNextClientRestrictionToken(token, field, value);
+        const previousTokens = tokens;
+        setTokens((currentTokens) => currentTokens.map((item) => (
+            item.id === token.id ? nextToken : item
+        )));
+        try {
+            const res = await API.put(`/api/provider/token/${token.id}`, nextToken);
+            const { success, message } = res.data;
+            if (success) {
+                showSuccess('客户端限制已更新');
+                loadTokens();
+            } else {
+                setTokens(previousTokens);
+                showError(message);
+            }
+        } catch (e) {
+            setTokens(previousTokens);
+            showError('更新客户端限制失败');
+        }
+    };
+
     const deleteToken = async (tokenId) => {
         if (!window.confirm('确定要删除此令牌吗？相关路由也会被删除。')) return;
         const res = await API.delete(`/api/provider/token/${tokenId}`);
@@ -151,6 +185,33 @@ const ProviderDetail = () => {
     const renderStatus = (status) => {
         if (status === 1) return <Badge color="green">启用</Badge>;
         return <Badge color="red">禁用</Badge>;
+    };
+
+    const renderClientRestrictionCheckbox = (token, field, label) => {
+        const checked = !!token[field];
+        return (
+            <label
+                style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    fontSize: '0.85rem',
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                }}
+            >
+                <input
+                    type="checkbox"
+                    className="provider-token-client-toggle"
+                    checked={checked}
+                    aria-label={`${label} 客户端限制`}
+                    onChange={(e) => updateTokenClientRestriction(token, field, e.target.checked)}
+                    style={{ margin: 0 }}
+                />
+                <span>{label}</span>
+            </label>
+        );
     };
 
     const isSameDay = (timestampSeconds) => {
@@ -496,14 +557,16 @@ const ProviderDetail = () => {
                                     <Td>{t.unlimited_quota ? <Badge color="green">无限</Badge> : <span>{t.remain_quota}</span>}</Td>
                                     <Td>{t.weight} / {t.priority}</Td>
                                     <Td>
-                                        {!t.allow_codex && !t.allow_cc ? (
-                                            <Badge color="gray">不限制</Badge>
-                                        ) : (
-                                            <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-                                                {t.allow_codex && <Badge color="blue">Codex</Badge>}
-                                                {t.allow_cc && <Badge color="purple">CC</Badge>}
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'flex-start' }}>
+                                            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                                {renderClientRestrictionCheckbox(t, 'allow_codex', 'Codex')}
+                                                {renderClientRestrictionCheckbox(t, 'allow_cc', 'CC')}
+                                                {renderClientRestrictionCheckbox(t, 'block_clients', '全禁用')}
                                             </div>
-                                        )}
+                                            {!t.allow_codex && !t.allow_cc && !t.block_clients && (
+                                                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>不限制</span>
+                                            )}
+                                        </div>
                                     </Td>
                                     <Td>
                                         <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -948,22 +1011,6 @@ const ProviderDetail = () => {
                         <div style={{ display: 'flex', alignItems: 'center' }}>
                             <input type="checkbox" id="unlimited_quota" checked={editToken?.unlimited_quota || false} onChange={(e) => setEditToken({ ...editToken, unlimited_quota: e.target.checked })} style={{ marginRight: '0.5rem' }} />
                             <label htmlFor="unlimited_quota">无限配额</label>
-                        </div>
-                    </div>
-                    <div style={{ padding: '0.75rem', backgroundColor: 'var(--gray-50)', borderRadius: 'var(--radius-md)' }}>
-                        <div style={{ fontWeight: '600', marginBottom: '0.5rem', fontSize: '0.875rem' }}>客户端限制</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-                            默认不勾选表示不限制，勾选后只允许对应客户端使用此令牌
-                        </div>
-                        <div style={{ display: 'flex', gap: '1rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center' }}>
-                                <input type="checkbox" id="allow_codex" checked={editToken?.allow_codex || false} onChange={(e) => setEditToken({ ...editToken, allow_codex: e.target.checked })} style={{ marginRight: '0.5rem' }} />
-                                <label htmlFor="allow_codex">允许 Codex</label>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center' }}>
-                                <input type="checkbox" id="allow_cc" checked={editToken?.allow_cc || false} onChange={(e) => setEditToken({ ...editToken, allow_cc: e.target.checked })} style={{ marginRight: '0.5rem' }} />
-                                <label htmlFor="allow_cc">允许 ClaudeCode/CC</label>
-                            </div>
                         </div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>

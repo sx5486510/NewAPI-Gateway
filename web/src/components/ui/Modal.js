@@ -33,6 +33,7 @@ const Modal = ({ isOpen, onClose, title, children, actions }) => {
             onClick={onClose}
         >
             <div
+                className="modal-content"
                 style={{
                     backgroundColor: 'var(--bg-primary)',
                     borderRadius: 'var(--radius-lg)',

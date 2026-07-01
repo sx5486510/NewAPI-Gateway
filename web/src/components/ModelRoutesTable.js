@@ -59,6 +59,16 @@ const statusToggleDotStyle = {
     flex: '0 0 auto'
 };
 
+const tokenClientToggleStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.3rem',
+    fontSize: '0.78rem',
+    color: 'var(--text-primary)',
+    lineHeight: 1.2,
+    whiteSpace: 'nowrap'
+};
+
 const helperTextStyle = {
     fontSize: '0.75rem',
     color: 'var(--text-secondary)',
@@ -113,6 +123,18 @@ const normalizeModelName = (value) => {
         .replace(/-20\d{2}-\d{2}-\d{2}$/i, '')
         .replace(/-latest$/i, '');
     return normalized.trim();
+};
+
+const buildNextClientRestrictionRoute = (route, field, value) => {
+    const nextRoute = { ...route, [field]: value };
+    if (field === 'token_block_clients' && value) {
+        nextRoute.token_allow_codex = false;
+        nextRoute.token_allow_cc = false;
+    }
+    if ((field === 'token_allow_codex' || field === 'token_allow_cc') && value) {
+        nextRoute.token_block_clients = false;
+    }
+    return nextRoute;
 };
 
 const getRouteHealth = (route) => {
@@ -491,6 +513,46 @@ const ModelRoutesTable = () => {
         setSaving(false);
     };
 
+    const updateRouteTokenClientRestriction = async (route, field, value) => {
+        if (!route.provider_token_id) {
+            showError('缺少令牌 ID，无法更新客户端限制');
+            return;
+        }
+        const nextRoute = buildNextClientRestrictionRoute(route, field, value);
+        const nextRestriction = {
+            token_allow_codex: !!nextRoute.token_allow_codex,
+            token_allow_cc: !!nextRoute.token_allow_cc,
+            token_block_clients: !!nextRoute.token_block_clients
+        };
+        const previousRoutes = routes;
+
+        setRoutes((currentRoutes) => currentRoutes.map((item) => (
+            item.provider_token_id === route.provider_token_id
+                ? { ...item, ...nextRestriction }
+                : item
+        )));
+
+        try {
+            const res = await API.put(`/api/provider/token/${route.provider_token_id}`, {
+                id: route.provider_token_id,
+                provider_id: route.provider_id,
+                allow_codex: nextRestriction.token_allow_codex,
+                allow_cc: nextRestriction.token_allow_cc,
+                block_clients: nextRestriction.token_block_clients,
+            });
+            const { success, message } = res.data;
+            if (success) {
+                showSuccess('客户端限制已更新');
+                return;
+            }
+            setRoutes(previousRoutes);
+            showError(message || '更新客户端限制失败');
+        } catch (e) {
+            setRoutes(previousRoutes);
+            showError('更新客户端限制失败');
+        }
+    };
+
     const rebuildRoutes = async () => {
         const res = await API.post('/api/route/rebuild');
         const { success, message } = res.data;
@@ -745,9 +807,9 @@ const ModelRoutesTable = () => {
                                                     const failCount = Number.isFinite(healthErrorCount) ? healthErrorCount : 0;
                                                     const safeHealthValue = Number.isFinite(healthValue) ? healthValue : 0;
 
-                                                    // Get token info for client restrictions (assuming we add these to the route overview response)
                                                     const tokenAllowCodex = route.token_allow_codex || false;
                                                     const tokenAllowCC = route.token_allow_cc || false;
+                                                    const tokenBlockClients = route.token_block_clients || false;
 
                                                     return (
                                                         <Tr key={route.id} style={isDirty ? { backgroundColor: 'rgba(245, 158, 11, 0.06)' } : undefined}>
@@ -810,14 +872,46 @@ const ModelRoutesTable = () => {
                                                                 </button>
                                                             </Td>
                                                             <Td style={cellTopStyle}>
-                                                                {!tokenAllowCodex && !tokenAllowCC ? (
-                                                                    <Badge color="gray">不限制</Badge>
-                                                                ) : (
-                                                                    <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-                                                                        {tokenAllowCodex && <Badge color="blue">Codex</Badge>}
-                                                                        {tokenAllowCC && <Badge color="purple">CC</Badge>}
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'flex-start' }}>
+                                                                    <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                                                                        <label style={tokenClientToggleStyle}>
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                className="routes-token-client-toggle"
+                                                                                checked={tokenAllowCodex}
+                                                                                aria-label="Codex 客户端限制"
+                                                                                onChange={(e) => updateRouteTokenClientRestriction(route, 'token_allow_codex', e.target.checked)}
+                                                                                style={{ margin: 0 }}
+                                                                            />
+                                                                            <span>Codex</span>
+                                                                        </label>
+                                                                        <label style={tokenClientToggleStyle}>
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                className="routes-token-client-toggle"
+                                                                                checked={tokenAllowCC}
+                                                                                aria-label="CC 客户端限制"
+                                                                                onChange={(e) => updateRouteTokenClientRestriction(route, 'token_allow_cc', e.target.checked)}
+                                                                                style={{ margin: 0 }}
+                                                                            />
+                                                                            <span>CC</span>
+                                                                        </label>
+                                                                        <label style={tokenClientToggleStyle}>
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                className="routes-token-client-toggle"
+                                                                                checked={tokenBlockClients}
+                                                                                aria-label="全禁用客户端限制"
+                                                                                onChange={(e) => updateRouteTokenClientRestriction(route, 'token_block_clients', e.target.checked)}
+                                                                                style={{ margin: 0 }}
+                                                                            />
+                                                                            <span>全禁用</span>
+                                                                        </label>
                                                                     </div>
-                                                                )}
+                                                                    {!tokenAllowCodex && !tokenAllowCC && !tokenBlockClients && (
+                                                                        <span style={helperTextStyle}>不限制</span>
+                                                                    )}
+                                                                </div>
                                                             </Td>
                                                         </Tr>
                                                     );

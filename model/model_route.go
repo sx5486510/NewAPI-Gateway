@@ -111,6 +111,7 @@ type ModelRouteOverviewItem struct {
 	TokenStatus             int      `json:"token_status"`
 	TokenAllowCodex         bool     `json:"token_allow_codex"`
 	TokenAllowCC            bool     `json:"token_allow_cc"`
+	TokenBlockClients       bool     `json:"token_block_clients"`
 	Enabled                 bool     `json:"enabled"`
 	Priority                int      `json:"priority"`
 	Weight                  int      `json:"weight"`
@@ -151,6 +152,7 @@ type modelRouteOverviewRow struct {
 	TokenStatus       int     `gorm:"column:token_status"`
 	TokenAllowCodex   bool    `gorm:"column:token_allow_codex"`
 	TokenAllowCC      bool    `gorm:"column:token_allow_cc"`
+	TokenBlockClients bool    `gorm:"column:token_block_clients"`
 	Enabled           bool    `gorm:"column:enabled"`
 	Priority          int     `gorm:"column:priority"`
 	Weight            int     `gorm:"column:weight"`
@@ -957,6 +959,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			"COALESCE(pt.status, 0) AS token_status",
 			"COALESCE(pt.allow_codex, 0) AS token_allow_codex",
 			"COALESCE(pt.allow_cc, 0) AS token_allow_cc",
+			"COALESCE(pt.block_clients, 0) AS token_block_clients",
 			"mr.enabled",
 			"mr.priority",
 			"mr.weight",
@@ -1033,6 +1036,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			TokenStatus:             row.TokenStatus,
 			TokenAllowCodex:         row.TokenAllowCodex,
 			TokenAllowCC:            row.TokenAllowCC,
+			TokenBlockClients:       row.TokenBlockClients,
 			Enabled:                 row.Enabled,
 			Priority:                row.Priority,
 			Weight:                  row.Weight,
