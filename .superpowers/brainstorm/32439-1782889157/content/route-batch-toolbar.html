@@ -1,0 +1,35 @@
+<h2>模型路由批量操作区</h2>
+<p class="subtitle">建议把批量字段、启用状态和保存变更放进同一个右侧操作组，减少“应用后还要去顶部保存”的断层。</p>
+
+<div class="cards">
+  <div class="card" data-choice="recommended" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="border:1px solid #d6dbe3;border-radius:8px;background:#fff;overflow:hidden;font-family:system-ui,sans-serif;color:#26313f">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #e3e7ee;gap:12px;flex-wrap:wrap">
+          <div>
+            <div style="font-weight:650;font-size:14px">gpt-4o-mini</div>
+            <div style="display:flex;gap:6px;margin-top:7px;flex-wrap:wrap">
+              <span style="font-size:12px;background:#eaf2ff;color:#1d4f91;padding:3px 8px;border-radius:6px">路由 12</span>
+              <span style="font-size:12px;background:#e9f8f0;color:#17613a;padding:3px 8px;border-radius:6px">启用 9</span>
+              <span style="font-size:12px;background:#fff8db;color:#765300;padding:3px 8px;border-radius:6px">待保存 3</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+            <input value="10" readonly style="width:88px;border:1px solid #cbd3df;border-radius:6px;padding:8px 9px;font-size:13px;text-align:center;background:#fff" />
+            <input value="20" readonly style="width:88px;border:1px solid #cbd3df;border-radius:6px;padding:8px 9px;font-size:13px;text-align:center;background:#fff" />
+            <select style="border:1px solid #cbd3df;border-radius:6px;padding:8px 9px;font-size:13px;background:#fff;color:#26313f">
+              <option>全部启用</option>
+            </select>
+            <button style="border:1px solid #cbd3df;border-radius:6px;padding:8px 12px;background:#fff;color:#26313f;font-weight:600">应用到当前模型</button>
+            <button style="border:1px solid #2f6feb;border-radius:6px;padding:8px 12px;background:#2f6feb;color:white;font-weight:650">保存变更</button>
+          </div>
+        </div>
+        <div style="height:130px;background:linear-gradient(#f7f9fc,#fff);display:flex;align-items:center;justify-content:center;color:#7b8796;font-size:13px">路由表格区域</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>推荐：合并为一行操作组</h3>
+      <p>批量优先级、批量权重、状态选择、应用、保存都在模型详情工具栏右侧；顶部只保留刷新、重建、撤销等全局动作。</p>
+    </div>
+  </div>
+</div>

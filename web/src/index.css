@@ -1127,7 +1127,7 @@ button {
   font-size: 0.8rem !important;
 }
 
-.routes-table-shell-compact .routes-status-select {
+.routes-table-shell-compact .routes-status-toggle {
   min-width: 84px !important;
   width: 100% !important;
   padding: 0.22rem 0.32rem !important;
