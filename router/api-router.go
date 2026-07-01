@@ -116,6 +116,14 @@ func SetApiRouter(router *gin.Engine) {
 			adminLogRoute.GET("/", controller.GetAllLogs)
 		}
 
+		llmTraceRoute := apiRouter.Group("/llm-trace")
+		llmTraceRoute.Use(middleware.AdminAuth(), middleware.NoTokenAuth())
+		{
+			llmTraceRoute.GET("/", controller.GetLLMTraces)
+			llmTraceRoute.GET("/:id", controller.GetLLMTrace)
+			llmTraceRoute.DELETE("/", controller.DeleteLLMTraces)
+		}
+
 		// === Dashboard (Admin) ===
 		apiRouter.GET("/dashboard", middleware.AdminAuth(), controller.GetDashboard)
 	}
