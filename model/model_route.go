@@ -19,10 +19,10 @@ const (
 	defaultRoutingValueScoreFactor = 0.8
 	defaultRoutingHealthEnabled    = true
 
-	routingUsageWindowHoursOptionKey    = "RoutingUsageWindowHours"
-	routingBaseWeightFactorOptionKey    = "RoutingBaseWeightFactor"
-	routingValueScoreFactorOptionKey    = "RoutingValueScoreFactor"
-	routingHealthEnabledOptionKey       = "RoutingHealthAdjustmentEnabled"
+	routingUsageWindowHoursOptionKey = "RoutingUsageWindowHours"
+	routingBaseWeightFactorOptionKey = "RoutingBaseWeightFactor"
+	routingValueScoreFactorOptionKey = "RoutingValueScoreFactor"
+	routingHealthEnabledOptionKey    = "RoutingHealthAdjustmentEnabled"
 
 	sqliteSingleInChunkSize = 800
 	sqlitePairInChunkSize   = 400
@@ -129,11 +129,11 @@ type ModelRouteOverviewItem struct {
 	HealthSampleCount       int64    `json:"health_sample_count"`
 	EffectiveSharePercent   *float64 `json:"effective_share_percent"`
 	// Cooldown status fields
-	CooldownInCooldown     bool     `json:"cooldown_in_cooldown"`
-	CooldownReason          string   `json:"cooldown_reason"`
-	CooldownRemainingSecs   int      `json:"cooldown_remaining_secs"`
-	CooldownHalfOpen        bool     `json:"cooldown_half_open"`
-	CooldownHalfOpenInflight int     `json:"cooldown_half_open_inflight"`
+	CooldownInCooldown       bool   `json:"cooldown_in_cooldown"`
+	CooldownReason           string `json:"cooldown_reason"`
+	CooldownRemainingSecs    int    `json:"cooldown_remaining_secs"`
+	CooldownHalfOpen         bool   `json:"cooldown_half_open"`
+	CooldownHalfOpenInflight int    `json:"cooldown_half_open_inflight"`
 }
 
 type modelRouteOverviewRow struct {
@@ -193,7 +193,7 @@ type routeHealthStats struct {
 	HealthValue  int64
 }
 
-// SelectProviderToken selects a provider token for a specific priority-retry index.
+// SelectProviderToken selects a provider token for a specific retry index.
 // It is kept for compatibility with existing callers and now uses the dynamic route plan.
 func SelectProviderToken(modelName string, retry int) (*ProviderToken, *Provider, string, error) {
 	requestedModel := strings.TrimSpace(modelName)
@@ -223,8 +223,8 @@ func SelectProviderToken(modelName string, retry int) (*ProviderToken, *Provider
 	return chosen.Token, chosen.Provider, chosen.Route.ModelName, nil
 }
 
-// BuildRouteAttemptsByPriority returns retry plan grouped by priority (high -> low).
-// Inside one priority level, routes are ordered by weighted-random without replacement.
+// BuildRouteAttemptsByPriority returns one retry group for compatibility with
+// existing callers. Stored priority and weight no longer affect routing.
 func BuildRouteAttemptsByPriority(modelName string) ([][]RouteAttempt, error) {
 	requestedModel := strings.TrimSpace(modelName)
 	if requestedModel == "" {
@@ -286,75 +286,53 @@ func BuildRouteAttemptsByPriority(modelName string) ([][]RouteAttempt, error) {
 		return nil, err
 	}
 
-	prioritySet := make(map[int]bool)
-	priorities := make([]int, 0)
-	routesByPriority := make(map[int][]ModelRoute)
+	attempts := make([]RouteAttempt, 0, len(candidateRoutes))
+	maxScore := 0.0
 	for _, route := range candidateRoutes {
-		if !prioritySet[route.Priority] {
-			prioritySet[route.Priority] = true
-			priorities = append(priorities, route.Priority)
-		}
-		routesByPriority[route.Priority] = append(routesByPriority[route.Priority], route)
-	}
-	sort.Sort(sort.Reverse(sort.IntSlice(priorities)))
-
-	plan := make([][]RouteAttempt, 0, len(priorities))
-	for _, priority := range priorities {
-		routes := routesByPriority[priority]
-		attempts := make([]RouteAttempt, 0, len(routes))
-		maxScore := 0.0
-		for _, route := range routes {
-			provider := providerLookup[route.ProviderId]
-			token := tokenLookup[route.ProviderTokenId]
-			if provider == nil || token == nil {
-				continue
-			}
-			if provider.Status != common.UserStatusEnabled || token.Status != common.UserStatusEnabled {
-				continue
-			}
-			metric := metricLookup[route.Id]
-			if metric.ValueScore > maxScore {
-				maxScore = metric.ValueScore
-			}
-			attempts = append(attempts, RouteAttempt{
-				Route:              route,
-				Token:              token,
-				Provider:           provider,
-				HealthValue:        metric.HealthValue,
-				ValueScore:         metric.ValueScore,
-				ProviderBalance:    metric.ProviderBalanceUSD,
-				RecentUsageCostUSD: metric.RecentUsageCostUSD,
-			})
-		}
-		if len(attempts) == 0 {
+		provider := providerLookup[route.ProviderId]
+		token := tokenLookup[route.ProviderTokenId]
+		if provider == nil || token == nil {
 			continue
 		}
-		for i := range attempts {
-			attempts[i].Contribution = computeRouteContribution(
-				attempts[i].Route.Weight,
-				attempts[i].ValueScore,
-				maxScore,
-				config.BaseWeightFactor,
-				config.ValueScoreFactor,
-			)
+		if provider.Status != common.UserStatusEnabled || token.Status != common.UserStatusEnabled {
+			continue
 		}
-		if config.HealthEnabled {
-			plan = append(plan, orderAttemptsByHealthValue(attempts))
-		} else {
-			plan = append(plan, weightedShuffleAttempts(attempts))
+		metric := metricLookup[route.Id]
+		if metric.ValueScore > maxScore {
+			maxScore = metric.ValueScore
 		}
+		attempts = append(attempts, RouteAttempt{
+			Route:              route,
+			Token:              token,
+			Provider:           provider,
+			HealthValue:        metric.HealthValue,
+			ValueScore:         metric.ValueScore,
+			ProviderBalance:    metric.ProviderBalanceUSD,
+			RecentUsageCostUSD: metric.RecentUsageCostUSD,
+		})
 	}
-
-	if len(plan) == 0 {
-		return nil, errors.New("无可用的模型路由: " + requestedModel)
+	if len(attempts) == 0 {
+		return nil, errors.New("鏃犲彲鐢ㄧ殑妯″瀷璺敱: " + requestedModel)
 	}
-	return plan, nil
+	for i := range attempts {
+		attempts[i].Contribution = computeRouteContribution(
+			attempts[i].Route.Weight,
+			attempts[i].ValueScore,
+			maxScore,
+			config.BaseWeightFactor,
+			config.ValueScoreFactor,
+		)
+	}
+	if config.HealthEnabled {
+		return [][]RouteAttempt{orderAttemptsByHealthValue(attempts)}, nil
+	}
+	return [][]RouteAttempt{weightedShuffleAttempts(attempts)}, nil
 }
 
 func getCandidateRoutesByModel(requestedModel string) ([]ModelRoute, error) {
 	var allRoutes []ModelRoute
 	if err := DB.Where("enabled = ?", true).
-		Order("priority DESC, id ASC").Find(&allRoutes).Error; err != nil {
+		Order("id ASC").Find(&allRoutes).Error; err != nil {
 		return nil, err
 	}
 	if len(allRoutes) == 0 {
@@ -760,11 +738,7 @@ func parseOptionFloatInRange(raw string, fallback float64, min float64, max floa
 	return value
 }
 
-func computeRouteContribution(weight int, valueScore float64, maxValueScore float64, baseWeightFactor float64, valueScoreFactor float64) float64 {
-	base := float64(weight + 10)
-	if base <= 0 {
-		return 0
-	}
+func computeRouteContribution(_ int, valueScore float64, maxValueScore float64, baseWeightFactor float64, valueScoreFactor float64) float64 {
 	if baseWeightFactor < 0 {
 		baseWeightFactor = 0
 	}
@@ -776,7 +750,7 @@ func computeRouteContribution(weight int, valueScore float64, maxValueScore floa
 		valueScoreFactor = defaultRoutingValueScoreFactor
 	}
 	if maxValueScore <= 0 {
-		return base
+		return 1
 	}
 	normalized := valueScore / maxValueScore
 	if normalized < 0 {
@@ -785,9 +759,7 @@ func computeRouteContribution(weight int, valueScore float64, maxValueScore floa
 	if normalized > 1 {
 		normalized = 1
 	}
-	// Keep a baseline from manual weight while allowing value score to bias traffic.
-	multiplier := baseWeightFactor + normalized*valueScoreFactor
-	return base * multiplier
+	return baseWeightFactor + normalized*valueScoreFactor
 }
 
 func parseBalanceUSD(raw string) float64 {
@@ -907,7 +879,7 @@ func finalizeRouteHealthStat(stat routeHealthStats, _ routingTuningConfig) route
 // GetAllModelRoutes returns all routes with optional model name filter
 func GetAllModelRoutes(modelName string, startIdx int, num int) ([]*ModelRoute, error) {
 	var routes []*ModelRoute
-	query := DB.Order("model_name ASC, priority DESC")
+	query := DB.Order("model_name ASC, id ASC")
 	if modelName != "" {
 		query = query.Where("model_name LIKE ?", "%"+modelName+"%")
 	}
@@ -998,7 +970,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 	}
 
 	var rows []modelRouteOverviewRow
-	err := query.Order("mr.model_name ASC, mr.priority DESC, mr.provider_id ASC, mr.provider_token_id ASC, mr.id ASC").
+	err := query.Order("mr.model_name ASC, mr.provider_id ASC, mr.provider_token_id ASC, mr.id ASC").
 		Scan(&rows).Error
 	if err != nil {
 		return nil, err
@@ -1125,7 +1097,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			scoreCopy := score
 			item.ValueScore = &scoreCopy
 		}
-		key := item.ModelName + "#" + strconv.Itoa(item.Priority)
+		key := item.ModelName
 		if score > groupMaxScore[key] {
 			groupMaxScore[key] = score
 		}
@@ -1145,7 +1117,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 		if !item.Enabled {
 			continue
 		}
-		key := item.ModelName + "#" + strconv.Itoa(item.Priority)
+		key := item.ModelName
 		score := 0.0
 		if item.ValueScore != nil {
 			score = *item.ValueScore
@@ -1167,7 +1139,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			continue
 		}
 		contribution := routeContribution[item.Id]
-		key := item.ModelName + "#" + strconv.Itoa(item.Priority)
+		key := item.ModelName
 		total := shareSum[key]
 		if total <= 0 || contribution <= 0 {
 			item.EffectiveSharePercent = nil
@@ -1228,8 +1200,6 @@ func RebuildRoutesForProvider(providerId int, routes []ModelRoute) error {
 		key := routeModelTokenKey(routes[i].ModelName, routes[i].ProviderTokenId)
 		if previous, ok := existingMap[key]; ok {
 			routes[i].Enabled = previous.Enabled
-			routes[i].Priority = previous.Priority
-			routes[i].Weight = previous.Weight
 		}
 	}
 

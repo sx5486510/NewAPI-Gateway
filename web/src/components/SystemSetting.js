@@ -371,11 +371,11 @@ const SystemSetting = () => {
       <Card padding="1.5rem">
         <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>路由策略调优（Beta）</h3>
         <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          调整路由占比计算参数。未触发健康优选时，占比贡献公式为：<code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>max(weight+10,0) * (基础系数 + 性价比系数 * 归一化评分)</code>。健康优选开启后，每个渠道模型在每个整点小时初始健康值为 0，每失败 1 次健康值 -1，成功不加不减，按健康值高低决定同优先级下的尝试顺序。
+          调整路由占比计算参数。未触发健康优选时，占比贡献公式为：<code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>基础系数 + 性价比系数 * 归一化评分</code>。健康优选开启后，每个渠道模型在每个整点小时初始健康值为 0，每失败 1 次健康值 -1，成功不加不减，按健康值高低决定尝试顺序。
         </p>
         <div style={{ marginBottom: '0.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>性价比（金额）参数</div>
         <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-          控制金额维度的占比分配，包括使用统计窗口、基础权重系数和性价比系数。
+          控制金额维度的占比分配，包括使用统计窗口、基础占比系数和性价比系数。
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
           <Input
@@ -390,7 +390,7 @@ const SystemSetting = () => {
             placeholder='默认 24'
           />
           <Input
-            label='基础权重系数'
+            label='基础占比系数'
             type='number'
             name='RoutingBaseWeightFactor'
             onChange={handleInputChange}

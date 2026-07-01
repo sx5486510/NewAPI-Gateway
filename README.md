@@ -12,13 +12,13 @@ _✨ 多供应商 NewAPI 聚合网关 — 统一接入、透明代理、使用�
 
 ## 项目简介
 
-NewAPI Gateway 是一个聚合多个 [NewAPI](https://github.com/QuantumNous/new-api) 供应商的透明网关。用户使用单一聚合 Token（`ag-xxx`）即可调用所有已接入供应商的 AI 模型服务，系统自动进行**优先级分层 + 价值评分 + 可选健康调节**的智能路由，上游供应商无法感知网关的存在。
+NewAPI Gateway 是一个聚合多个 [NewAPI](https://github.com/QuantumNous/new-api) 供应商的透明网关。用户使用单一聚合 Token（`ag-xxx`）即可调用所有已接入供应商的 AI 模型服务，系统自动进行**价值评分 + 可选健康调节**的智能路由，上游供应商无法感知网关的存在。
 
 ### 核心特性
 
 - ✅ **透明代理**：Header 清洗、body 零改动、UA 透传，上游仅看到"真实客户端"
 - ✅ **多供应商管理**：统一管理多个 NewAPI 实例的 Token、定价、余额
-- ✅ **智能路由**：候选归一匹配 + Priority 分层 + 价值评分加权 + 可选健康调节
+- ✅ **智能路由**：候选归一匹配 + 价值评分加权 + 可选健康调节
 - ✅ **自动同步**：每 5 分钟从上游同步 pricing/tokens/balance，自动重建路由表
 - ✅ **签到服务**：每天本地时间 `00:05` 自动签到（启动后补跑一次，已签当日自动跳过）
 - ✅ **SSE 流式支持**：完整支持 Server-Sent Events 流式代理
@@ -98,6 +98,41 @@ go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)'" -o g
 ./gateway-aggregator --port 3030 --log-dir ./logs
 ```
 
+### 方式四：CentOS 一键部署 + Caddy TLS
+
+> 适用于 CentOS / RHEL 系服务器。`deploy-with-caddy.sh` 只负责配置 Caddy TLS 反向代理，不能单独部署应用；必须先运行 `deploy-on-centos.sh` 并确认 `newapi-gateway` 服务已启动。
+
+1. 先部署应用服务（默认 HTTP，监听 `3030`）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sx5486510/NewAPI-Gateway/main/deploy/deploy-on-centos.sh | sudo bash -s --
+```
+
+2. 准备域名证书和私钥后，再配置 Caddy：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sx5486510/NewAPI-Gateway/main/deploy/deploy-with-caddy.sh | sudo bash -s -- \
+  --domain gateway.example.com \
+  --app-port 3030 \
+  --cert-file /etc/ssl/newapi/fullchain.pem \
+  --key-file /etc/ssl/newapi/privkey.pem
+```
+
+Caddy 默认对外监听 `3031`，访问地址为：
+
+```text
+https://gateway.example.com:3031
+```
+
+常用检查命令：
+
+```bash
+sudo systemctl status newapi-gateway
+sudo systemctl status caddy
+sudo journalctl -u newapi-gateway -f
+sudo journalctl -u caddy -f
+```
+
 ### 首次登录
 
 访问 `http://localhost:3030/` — 初始账号：`root` / `123456`
@@ -116,8 +151,6 @@ go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)'" -o g
 | Base URL     | 上游 NewAPI 地址                    | `https://api.provider-a.com` |
 | Access Token | 上游NewAPI提供的系统访问令牌                   | `eyJhbGci...`                |
 | 上游 User ID | 上游用户 ID（用于 New-Api-User 头） | `1`                          |
-| 权重         | 路由权重（越高越优先）              | `10`                         |
-| 优先级       | 路由层级（越高越优先）              | `0`                          |
 | 启用签到     | 是否自动签到（每天 `00:05`）         | ☑️                            |
 
 ### 2. 同步数据
@@ -211,7 +244,7 @@ curl https://your-gateway.com/v1/chat/completions \
 | ------ | -------------------- | ----------------- |
 | GET    | `/api/route/`        | 查看路由表        |
 | GET    | `/api/route/models`  | 所有可用模型      |
-| PUT    | `/api/route/:id`     | 更新路由权重/状态 |
+| PUT    | `/api/route/:id`     | 更新路由状态 |
 | POST   | `/api/route/rebuild` | 重建路由表        |
 
 #### 日志与统计
@@ -268,26 +301,23 @@ curl https://your-gateway.com/v1/chat/completions \
    - 模型名归一化匹配；
    - 版本无关键匹配；
    - 供应商级别名映射（`providers.model_alias_mapping`）匹配。
-2. **Priority 分层**：按 `priority` 降序分组，先尝试高优先级层。
-3. **计算价值评分 `value_score`**：
+2. **计算价值评分 `value_score`**：
    - `unit_cost_usd`：基于 `model_pricings` + token 分组倍率计算；
    - `recent_usage_cost_usd`：统计窗口内成功请求花费（默认 24h，可调）；
    - `value_score = cost_score * budget_score`，其中
      - `cost_score = 1 / (1 + unit_cost_usd)`；
      - `budget_score = (provider_balance + 1) / (provider_balance + recent_usage_cost_usd + 1)`。
-4. **计算路由贡献值**：
-   - 基础权重：`base = max(weight + 10, 0)`；
-   - 当同层存在有效评分时：`contribution_base = base * (RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor)`；
-   - 当同层评分不可用时，退化为 `contribution_base = base`。
-5. **可选健康优选（默认开启）**：
+3. **计算路由贡献值**：
+   - 当存在有效评分时：`contribution = RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor`；
+   - 当评分不可用时，退化为等概率基础贡献。
+4. **可选健康优选（默认开启）**：
    - 开启 `RoutingHealthAdjustmentEnabled=true` 后，每个渠道模型在每个整点小时初始健康值为 `0`；
    - 每失败 1 次健康值减 `1`，成功不加不减；
-   - 同一优先级层优先尝试健康值更高的路由（如 `0 > -1 > -2`）。
-6. **同层重试顺序生成**：
+   - 优先尝试健康值更高的路由（如 `0 > -1 > -2`）。
+5. **重试顺序生成**：
    - 先按健康值从高到低分桶；
    - 同一健康值桶内再按 `contribution` 做“加权随机不放回”生成完整重试顺序；
-   - 当前层全部失败后才降级到下一优先级层；
-   - 遇到不可重试错误（如明确上游失败）会提前终止，不再继续降级。
+   - 遇到不可重试错误（如明确上游失败）会提前终止。
 
 ---
 

@@ -43,7 +43,7 @@
 | `router/api-router.go` | 管理 API 分组与权限控制 |
 | `service/proxy.go` | 透明代理、SSE 转发、Usage 日志 |
 | `service/sync.go` | 上游 pricing/token/balance 同步与路由重建 |
-| `model/model_route.go` | 模型路由候选匹配、价值评分、健康调节与分层重试 |
+| `model/model_route.go` | 模型路由候选匹配、价值评分、健康调节与重试顺序 |
 | `middleware/agg_token_auth.go` | 聚合 Token 校验（ag-token） |
 
 ## 前端结构（`web/`）

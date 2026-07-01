@@ -47,7 +47,7 @@ func Relay(c *gin.Context) {
 			continue
 		}
 
-		// 3. Build retry plan: retry all routes within one priority first, then downgrade.
+		// 3. Build retry plan for all selectable routes.
 		plan, err := model.BuildRouteAttemptsByPriority(routingModel)
 		if err != nil {
 			continue
@@ -58,8 +58,8 @@ func Relay(c *gin.Context) {
 		}
 
 		sawNonCooldownFailure := false
-		for _, priorityGroup := range plan {
-			for _, attempt := range priorityGroup {
+		for _, retryGroup := range plan {
+			for _, attempt := range retryGroup {
 				if attempt.Route.ModelName != "" {
 					c.Set("request_model_resolved", attempt.Route.ModelName)
 					c.Set("request_model", attempt.Route.ModelName)

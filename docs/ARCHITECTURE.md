@@ -35,8 +35,8 @@
   -> controller.Relay
       - 提取请求 model
       - 校验聚合 token 的模型白名单
-      - BuildRouteAttemptsByPriority(model) 生成分层重试计划
-      - 同优先级层按贡献值加权洗牌，失败后再降级下一层
+      - BuildRouteAttemptsByPriority(model) 生成重试计划
+      - 按健康值与贡献值生成加权重试顺序
   -> service.ProxyToUpstream
       - 替换认证为上游 sk-token
       - 清理代理特征 Header
@@ -81,24 +81,21 @@
    - 精确模型名匹配；
    - 供应商级手动映射（`providers.model_alias_mapping`）；
    - 模型归一化与版本无关键匹配。
-2. 按优先级分层（降序），先尝试最高优先级层。
-3. 对每条候选计算性价比评分 `value_score`：
+2. 对每条候选计算性价比评分 `value_score`：
    - 价格侧：基于模型价格计算 `unit_cost_usd`；
    - 预算侧：基于供应商余额与最近窗口内使用金额计算；
    - `recent_usage_cost_usd` 的窗口由 `RoutingUsageWindowHours`（默认 24）控制。
-4. 将人工权重与评分融合为贡献值：
-   - 基础值：`base = max(weight + 10, 0)`；
-   - 同层存在有效评分时：`contribution_base = base * (RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor)`；
-   - 同层评分不可用时：`contribution_base = base`。
-5. 健康优选（默认开启）：
+3. 将评分融合为贡献值：
+   - 存在有效评分时：`contribution = RoutingBaseWeightFactor + normalize(value_score) * RoutingValueScoreFactor`；
+   - 评分不可用时退化为等概率基础贡献。
+4. 健康优选（默认开启）：
    - 开关：`RoutingHealthAdjustmentEnabled`；
    - 每个渠道模型在每个整点小时初始健康值为 `0`；
    - 每失败 1 次健康值减 `1`，成功不加不减。
-6. 同层先按健康值从高到低排序；健康值相同的路由再按 `contribution_base` 执行“加权随机不放回”生成完整重试顺序，层内全部失败后再降级到下一优先级层。
+5. 先按健康值从高到低排序；健康值相同的路由再按 `contribution` 执行“加权随机不放回”生成完整重试顺序。
 
 说明：
 
-- `weight + 10` 仍用于保留低权重路由的基础概率。
 - 路由调参项（价值评分 + 健康优选开关）均可通过系统选项实时调整。
 
 ## 透明代理策略

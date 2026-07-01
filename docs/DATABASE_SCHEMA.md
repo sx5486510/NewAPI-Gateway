@@ -35,7 +35,7 @@
 
 ### providers
 
-- `priority`、`weight`：作为上游 token 默认路由权重来源。
+- `priority`、`weight`：历史兼容字段，当前路由算法不再使用。
 - `checkin_enabled`：是否启用签到。
 - `last_checkin_at`：最近一次签到时间（Unix 秒）。
 - `last_synced_at`：最近一次同步成功时间（Unix 秒）。
@@ -60,9 +60,9 @@
 ### model_routes
 
 - 按 `(model_name, provider_token_id)` 形成路由候选。
-- 选择算法按 `priority` 分层。
-- 同一优先级层先按当前整点小时的健康值排序：初始 `0`，每失败 1 次减 `1`，成功不加不减。
-- 健康值相同的路由再基于 `weight + 10` 与 `value_score` 计算贡献值，并进行“加权随机不放回”生成重试顺序。
+- 选择算法不再按 `priority` 分层。
+- 候选路由先按当前整点小时的健康值排序：初始 `0`，每失败 1 次减 `1`，成功不加不减。
+- 健康值相同的路由再基于 `value_score` 计算贡献值，并进行“加权随机不放回”生成重试顺序。
 
 ### usage_logs
 

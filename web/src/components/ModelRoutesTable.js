@@ -17,17 +17,6 @@ const selectStyle = {
     minWidth: '140px'
 };
 
-const numberInputStyle = {
-    width: '76px',
-    border: '1px solid var(--border-color)',
-    borderRadius: 'var(--radius-md)',
-    padding: '0.325rem 0.45rem',
-    fontSize: '0.875rem',
-    backgroundColor: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
-    textAlign: 'center'
-};
-
 const cellTopStyle = {
     verticalAlign: 'top',
     lineHeight: 1.35
@@ -38,10 +27,36 @@ const cellMiddleStyle = {
     lineHeight: 1.35
 };
 
-const statusSelectStyle = {
-    ...selectStyle,
-    minWidth: '96px',
-    width: '100%'
+const statusToggleBaseStyle = {
+    width: '100%',
+    minWidth: '86px',
+    border: '1px solid transparent',
+    borderRadius: 'var(--radius-md)',
+    padding: '0.3rem 0.45rem',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    lineHeight: 1,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '0.4rem',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+};
+
+const getStatusToggleStyle = (enabled) => ({
+    ...statusToggleBaseStyle,
+    backgroundColor: enabled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.08)',
+    borderColor: enabled ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.25)',
+    color: enabled ? 'var(--success)' : 'var(--error)'
+});
+
+const statusToggleDotStyle = {
+    width: '0.48rem',
+    height: '0.48rem',
+    borderRadius: '999px',
+    backgroundColor: 'currentColor',
+    flex: '0 0 auto'
 };
 
 const helperTextStyle = {
@@ -73,12 +88,6 @@ const compareNullableNumber = (a, b) => {
     if (!aValid) return 1;
     if (!bValid) return -1;
     return aNum - bNum;
-};
-
-const parseInteger = (value, fallback = 0) => {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isNaN(parsed)) return fallback;
-    return parsed;
 };
 
 const normalizeModelName = (value) => {
@@ -214,7 +223,6 @@ const sortRoutesForDisplay = (rows) => [...rows].sort((a, b) => {
     const safeHealthA = Number.isFinite(healthA) ? healthA : 0;
     const safeHealthB = Number.isFinite(healthB) ? healthB : 0;
     if (safeHealthB !== safeHealthA) return safeHealthB - safeHealthA;
-    if (b.priority !== a.priority) return b.priority - a.priority;
     if (a.provider_name !== b.provider_name) return String(a.provider_name).localeCompare(String(b.provider_name), 'zh-Hans-CN');
     return a.id - b.id;
 });
@@ -228,8 +236,6 @@ const ModelRoutesTable = () => {
     const [statusFilter, setStatusFilter] = useState('all');
     const [selectedModel, setSelectedModel] = useState('');
     const [drafts, setDrafts] = useState({});
-    const [batchPriority, setBatchPriority] = useState('');
-    const [batchWeight, setBatchWeight] = useState('');
     const [batchEnabled, setBatchEnabled] = useState('keep');
     const [sortMode, setSortMode] = useState('name');
     const [changedOnly, setChangedOnly] = useState(false);
@@ -402,20 +408,12 @@ const ModelRoutesTable = () => {
         const rows = detailChangedOnly
             ? selectedEntry.routes.filter((route) => Boolean(drafts[route.id]))
             : selectedEntry.routes;
-        const grouped = {};
-        rows.forEach((route) => {
-            const key = String(route.priority);
-            if (!grouped[key]) grouped[key] = [];
-            grouped[key].push(route);
-        });
-        return Object.entries(grouped)
-            .map(([priority, items]) => ({
-                priority: Number(priority),
-                total: items.length,
-                enabled: items.filter((item) => item.enabled).length,
-                routes: sortRoutesForDisplay(items)
-            }))
-            .sort((a, b) => b.priority - a.priority);
+        return [{
+            key: 'all',
+            total: rows.length,
+            enabled: rows.filter((item) => item.enabled).length,
+            routes: sortRoutesForDisplay(rows)
+        }];
     }, [detailChangedOnly, drafts, selectedEntry]);
 
     const updateDraft = useCallback((routeId, patch) => {
@@ -425,15 +423,10 @@ const ModelRoutesTable = () => {
             const baseDraft = prev[routeId]
                 ? { ...prev[routeId] }
                 : {
-                    priority: original.priority,
-                    weight: original.weight,
                     enabled: original.enabled
                 };
             const nextDraft = { ...baseDraft, ...patch };
-            const unchanged =
-                nextDraft.priority === original.priority &&
-                nextDraft.weight === original.weight &&
-                nextDraft.enabled === original.enabled;
+            const unchanged = nextDraft.enabled === original.enabled;
             if (unchanged) {
                 const next = { ...prev };
                 delete next[routeId];
@@ -445,8 +438,8 @@ const ModelRoutesTable = () => {
 
     const applyBatchToSelectedModel = () => {
         if (!selectedEntry) return;
-        if (batchPriority === '' && batchWeight === '' && batchEnabled === 'keep') {
-            showError('请先填写至少一个批量项');
+        if (batchEnabled === 'keep') {
+            showError('请选择要批量修改的状态');
             return;
         }
         setDrafts((prev) => {
@@ -457,25 +450,14 @@ const ModelRoutesTable = () => {
                 const current = next[route.id]
                     ? { ...next[route.id] }
                     : {
-                        priority: original.priority,
-                        weight: original.weight,
                         enabled: original.enabled
                     };
-                if (batchPriority !== '') {
-                    current.priority = parseInteger(batchPriority, 0);
-                }
-                if (batchWeight !== '') {
-                    current.weight = parseInteger(batchWeight, 0);
-                }
                 if (batchEnabled === 'enabled') {
                     current.enabled = true;
                 } else if (batchEnabled === 'disabled') {
                     current.enabled = false;
                 }
-                const unchanged =
-                    current.priority === original.priority &&
-                    current.weight === original.weight &&
-                    current.enabled === original.enabled;
+                const unchanged = current.enabled === original.enabled;
                 if (unchanged) {
                     delete next[route.id];
                 } else {
@@ -490,8 +472,6 @@ const ModelRoutesTable = () => {
     const saveChanges = async () => {
         const items = Object.entries(drafts).map(([id, value]) => ({
             id: Number(id),
-            priority: value.priority,
-            weight: value.weight,
             enabled: value.enabled
         }));
         if (items.length === 0) {
@@ -691,22 +671,6 @@ const ModelRoutesTable = () => {
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                                        <input
-                                            className="routes-number-input"
-                                            type="number"
-                                            placeholder="批量优先级"
-                                            value={batchPriority}
-                                            onChange={(e) => setBatchPriority(e.target.value)}
-                                            style={numberInputStyle}
-                                        />
-                                        <input
-                                            className="routes-number-input"
-                                            type="number"
-                                            placeholder="批量权重"
-                                            value={batchWeight}
-                                            onChange={(e) => setBatchWeight(e.target.value)}
-                                            style={numberInputStyle}
-                                        />
                                         <select className="routes-inline-select" value={batchEnabled} onChange={(e) => setBatchEnabled(e.target.value)} style={selectStyle}>
                                             <option value="keep">状态不变</option>
                                             <option value="enabled">全部启用</option>
@@ -752,11 +716,11 @@ const ModelRoutesTable = () => {
                                                 </Td>
                                             </Tr>
                                         ) : selectedGroupedRoutes.map((group) => (
-                                            <React.Fragment key={group.priority}>
+                                            <React.Fragment key={group.key}>
                                                 <Tr style={{ backgroundColor: 'var(--gray-50)' }}>
                                                     <Td colSpan={6} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                                            <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>优先级 {group.priority}</div>
+                                                            <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>候选路由</div>
                                                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                                                                 <Badge color="blue">路由 {group.total}</Badge>
                                                                 <Badge color="green">启用 {group.enabled}</Badge>
@@ -825,15 +789,18 @@ const ModelRoutesTable = () => {
                                                                 {renderCooldownStatus(route)}
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>
-                                                                <select
-                                                                    className="routes-status-select"
-                                                                    value={route.enabled ? 'enabled' : 'disabled'}
-                                                                    onChange={(e) => updateDraft(route.id, { enabled: e.target.value === 'enabled' })}
-                                                                    style={statusSelectStyle}
+                                                                <button
+                                                                    type="button"
+                                                                    className="routes-status-toggle"
+                                                                    role="switch"
+                                                                    aria-checked={route.enabled}
+                                                                    aria-label={`${route.provider_name || '路由'}状态：${route.enabled ? '启用' : '禁用'}`}
+                                                                    onClick={() => updateDraft(route.id, { enabled: !route.enabled })}
+                                                                    style={getStatusToggleStyle(route.enabled)}
                                                                 >
-                                                                    <option value="enabled">启用</option>
-                                                                    <option value="disabled">禁用</option>
-                                                                </select>
+                                                                    <span>{route.enabled ? '启用' : '禁用'}</span>
+                                                                    <span aria-hidden="true" style={statusToggleDotStyle} />
+                                                                </button>
                                                             </Td>
                                                         </Tr>
                                                     );
