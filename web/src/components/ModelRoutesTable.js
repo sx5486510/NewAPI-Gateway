@@ -333,7 +333,7 @@ const ModelRoutesTable = () => {
     const [statusFilter, setStatusFilter] = useState('all');
     const [selectedModel, setSelectedModel] = useState('');
     const [drafts, setDrafts] = useState({});
-    const [sortMode, setSortMode] = useState('name');
+    const [sortMode, setSortMode] = useState('provider_count');
     const [changedOnly, setChangedOnly] = useState(false);
     const [detailChangedOnly, setDetailChangedOnly] = useState(false);
     const [ultraCompact, setUltraCompact] = useState(true);
@@ -713,14 +713,6 @@ const ModelRoutesTable = () => {
                     <option value="all">全部状态</option>
                     <option value="enabled">仅启用路由</option>
                     <option value="disabled">仅禁用路由</option>
-                </select>
-                <select className="routes-inline-select" value={sortMode} onChange={(e) => setSortMode(e.target.value)} style={selectStyle}>
-                    <option value="name">按模型名排序</option>
-                    <option value="provider_count">{'\u6309\u4f9b\u5e94\u5546\u6570\u6392\u5e8f'}</option>
-                    <option value="cheapest_prompt">按最低输入价</option>
-                    <option value="cheapest_call">按最低按次价</option>
-                    <option value="dirty_first">按改动优先</option>
-                    <option value="health_first">按故障健康排序</option>
                 </select>
                 <label className="routes-switch" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
                     <input
