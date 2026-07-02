@@ -292,10 +292,12 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		streamUsage := usageMetrics{}
 		streamCapture := newTraceStreamCapture()
 		firstTokenMs := 0
+		eventCount := 0
 		for scanner.Scan() {
 			line := scanner.Text()
 			streamCapture.appendLine(line)
 			fmt.Fprintf(c.Writer, "%s\n", line)
+			eventCount++
 			currentUsage, hasData := extractUsageAndModelFromSSELine(line)
 			if hasData && firstTokenMs == 0 {
 				firstTokenMs = int(time.Since(startTime).Milliseconds())
@@ -325,6 +327,14 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 				errorMsg += "; scanner error: " + scanErr.Error()
 			} else {
 				errorMsg = "stream scanner error: " + scanErr.Error()
+			}
+		}
+		// Check if stream ended without any events
+		if eventCount == 0 {
+			if errorMsg != "" {
+				errorMsg += "; stream ended without receiving any events"
+			} else {
+				errorMsg = "stream ended without receiving any events"
 			}
 		}
 		if errorMsg != "" {
