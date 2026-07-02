@@ -120,7 +120,7 @@ const ProviderDetail = () => {
     };
 
     const openAddToken = () => {
-        setEditToken({ name: '', group_name: '', status: 1, priority: 0, weight: 10, model_limits: '', unlimited_quota: true, remain_quota: 0, allow_codex: false, allow_cc: false, block_clients: false });
+        setEditToken({ name: '', group_name: '', status: 1, priority: 0, weight: 10, model_limits: '', unlimited_quota: true, remain_quota: 0 });
         setShowTokenModal(true);
     };
 
@@ -140,39 +140,6 @@ const ProviderDetail = () => {
         }
     };
 
-    const buildNextClientRestrictionToken = (token, field, value) => {
-        const nextToken = { ...token, [field]: value };
-        if (field === 'block_clients' && value) {
-            nextToken.allow_codex = false;
-            nextToken.allow_cc = false;
-        }
-        if ((field === 'allow_codex' || field === 'allow_cc') && value) {
-            nextToken.block_clients = false;
-        }
-        return nextToken;
-    };
-
-    const updateTokenClientRestriction = async (token, field, value) => {
-        const nextToken = buildNextClientRestrictionToken(token, field, value);
-        const previousTokens = tokens;
-        setTokens((currentTokens) => currentTokens.map((item) => (
-            item.id === token.id ? nextToken : item
-        )));
-        try {
-            const res = await API.put(`/api/provider/token/${token.id}`, nextToken);
-            const { success, message } = res.data;
-            if (success) {
-                showSuccess('客户端限制已更新');
-                loadTokens();
-            } else {
-                setTokens(previousTokens);
-                showError(message);
-            }
-        } catch (e) {
-            setTokens(previousTokens);
-            showError('更新客户端限制失败');
-        }
-    };
 
     const deleteToken = async (tokenId) => {
         if (!window.confirm('确定要删除此令牌吗？相关路由也会被删除。')) return;
@@ -185,33 +152,6 @@ const ProviderDetail = () => {
     const renderStatus = (status) => {
         if (status === 1) return <Badge color="green">启用</Badge>;
         return <Badge color="red">禁用</Badge>;
-    };
-
-    const renderClientRestrictionCheckbox = (token, field, label) => {
-        const checked = !!token[field];
-        return (
-            <label
-                style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                    fontSize: '0.85rem',
-                    color: 'var(--text-primary)',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                }}
-            >
-                <input
-                    type="checkbox"
-                    className="provider-token-client-toggle"
-                    checked={checked}
-                    aria-label={`${label} 客户端限制`}
-                    onChange={(e) => updateTokenClientRestriction(token, field, e.target.checked)}
-                    style={{ margin: 0 }}
-                />
-                <span>{label}</span>
-            </label>
-        );
     };
 
     const isSameDay = (timestampSeconds) => {
@@ -541,8 +481,6 @@ const ProviderDetail = () => {
                                 <Th>分组</Th>
                                 <Th>状态</Th>
                                 <Th>配额</Th>
-                                <Th>权重 / 优先级</Th>
-                                <Th>客户端限制</Th>
                                 <Th>操作</Th>
                             </Tr>
                         </Thead>
@@ -555,19 +493,6 @@ const ProviderDetail = () => {
                                     <Td>{t.group_name ? <Badge color="blue">{t.group_name}</Badge> : '-'}</Td>
                                     <Td>{renderStatus(t.status)}</Td>
                                     <Td>{t.unlimited_quota ? <Badge color="green">无限</Badge> : <span>{t.remain_quota}</span>}</Td>
-                                    <Td>{t.weight} / {t.priority}</Td>
-                                    <Td>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'flex-start' }}>
-                                            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                                {renderClientRestrictionCheckbox(t, 'allow_codex', 'Codex')}
-                                                {renderClientRestrictionCheckbox(t, 'allow_cc', 'CC')}
-                                                {renderClientRestrictionCheckbox(t, 'block_clients', '全禁用')}
-                                            </div>
-                                            {!t.allow_codex && !t.allow_cc && !t.block_clients && (
-                                                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>不限制</span>
-                                            )}
-                                        </div>
-                                    </Td>
                                     <Td>
                                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                                             <Button size="sm" variant="secondary" onClick={() => openEditToken(t)} title="编辑" icon={Edit} />
@@ -999,10 +924,6 @@ const ProviderDetail = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     <Input label="名称" placeholder="令牌名称" value={editToken?.name || ''} onChange={(e) => setEditToken({ ...editToken, name: e.target.value })} />
                     <Input label="分组名称" placeholder="默认（default）" value={editToken?.group_name || ''} onChange={(e) => setEditToken({ ...editToken, group_name: e.target.value })} />
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                        <Input label="权重" type="number" value={editToken?.weight || 10} onChange={(e) => setEditToken({ ...editToken, weight: parseInt(e.target.value) || 0 })} />
-                        <Input label="优先级" type="number" value={editToken?.priority || 0} onChange={(e) => setEditToken({ ...editToken, priority: parseInt(e.target.value) || 0 })} />
-                    </div>
                     <div style={{ display: 'flex', gap: '1rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center' }}>
                             <input type="checkbox" id="token_status" checked={(editToken?.status || 0) === 1} onChange={(e) => setEditToken({ ...editToken, status: e.target.checked ? 1 : 0 })} style={{ marginRight: '0.5rem' }} />
