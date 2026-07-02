@@ -1306,6 +1306,18 @@ func getGroupRatio(groupName string, groupRatioMap map[string]float64) float64 {
 func RebuildRoutesForProvider(providerId int, routes []ModelRoute) error {
 	tx := DB.Begin()
 
+	type routeInsert struct {
+		ModelName       string `gorm:"column:model_name"`
+		ProviderTokenId int    `gorm:"column:provider_token_id"`
+		ProviderId      int    `gorm:"column:provider_id"`
+		Enabled         *bool  `gorm:"column:enabled"`
+		Priority        int    `gorm:"column:priority"`
+		Weight          int    `gorm:"column:weight"`
+		AllowCodex      bool   `gorm:"column:allow_codex"`
+		AllowCC         bool   `gorm:"column:allow_cc"`
+		BlockClients    bool   `gorm:"column:block_clients"`
+	}
+
 	var existingRoutes []ModelRoute
 	if err := tx.Where("provider_id = ?", providerId).Find(&existingRoutes).Error; err != nil {
 		tx.Rollback()
@@ -1339,7 +1351,22 @@ func RebuildRoutesForProvider(providerId int, routes []ModelRoute) error {
 		if end > len(routes) {
 			end = len(routes)
 		}
-		if err := tx.Create(routes[i:end]).Error; err != nil {
+		batch := make([]routeInsert, 0, end-i)
+		for _, route := range routes[i:end] {
+			enabled := route.Enabled
+			batch = append(batch, routeInsert{
+				ModelName:       route.ModelName,
+				ProviderTokenId: route.ProviderTokenId,
+				ProviderId:      route.ProviderId,
+				Enabled:         &enabled,
+				Priority:        route.Priority,
+				Weight:          route.Weight,
+				AllowCodex:      route.AllowCodex,
+				AllowCC:         route.AllowCC,
+				BlockClients:    route.BlockClients,
+			})
+		}
+		if err := tx.Table("model_routes").Create(&batch).Error; err != nil {
 			tx.Rollback()
 			return err
 		}

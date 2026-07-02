@@ -141,3 +141,39 @@ func TestUpdateModelRouteFieldsNormalizesClientRestrictions(t *testing.T) {
 		t.Fatal("expected block_clients to be saved")
 	}
 }
+
+func TestRebuildRoutesForProviderPreservesDisabledRoute(t *testing.T) {
+	setupModelRouteTestDB(t)
+
+	route := ModelRoute{
+		ModelName:       "gpt-test",
+		ProviderId:      1,
+		ProviderTokenId: 101,
+		Enabled:         false,
+	}
+	if err := DB.Create(&route).Error; err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+	if err := UpdateModelRouteFields(route.Id, map[string]interface{}{"enabled": false}); err != nil {
+		t.Fatalf("disable route: %v", err)
+	}
+
+	if err := RebuildRoutesForProvider(1, []ModelRoute{
+		{
+			ModelName:       "gpt-test",
+			ProviderId:      1,
+			ProviderTokenId: 101,
+			Enabled:         true,
+		},
+	}); err != nil {
+		t.Fatalf("rebuild routes: %v", err)
+	}
+
+	var stored ModelRoute
+	if err := DB.First(&stored, "provider_id = ? AND provider_token_id = ? AND model_name = ?", 1, 101, "gpt-test").Error; err != nil {
+		t.Fatalf("load rebuilt route: %v", err)
+	}
+	if stored.Enabled {
+		t.Fatal("expected disabled route to remain disabled after rebuild")
+	}
+}
