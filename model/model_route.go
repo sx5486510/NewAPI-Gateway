@@ -105,6 +105,7 @@ type ModelRouteOverviewItem struct {
 	ProviderName            string   `json:"provider_name"`
 	ProviderBalance         string   `json:"provider_balance"`
 	ProviderStatus          int      `json:"provider_status"`
+	ProviderDeleted         bool     `json:"provider_deleted"` // 供应商是否已删除（孤儿路由标识）
 	ProviderTokenId         int      `json:"provider_token_id"`
 	TokenName               string   `json:"token_name"`
 	TokenGroupName          string   `json:"token_group_name"`
@@ -146,6 +147,7 @@ type modelRouteOverviewRow struct {
 	ProviderName      string  `gorm:"column:provider_name"`
 	ProviderBalance   string  `gorm:"column:provider_balance"`
 	ProviderStatus    int     `gorm:"column:provider_status"`
+	ProviderIdExists  *int    `gorm:"column:provider_id_exists"` // p.id IS NOT NULL 判断供应商是否存在
 	ProviderTokenId   int     `gorm:"column:provider_token_id"`
 	TokenName         string  `gorm:"column:token_name"`
 	TokenGroupName    string  `gorm:"column:token_group_name"`
@@ -953,6 +955,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			"COALESCE(p.name, '') AS provider_name",
 			"COALESCE(p.balance, '') AS provider_balance",
 			"COALESCE(p.status, 0) AS provider_status",
+			"p.id AS provider_id_exists", // 用于判断供应商是否存在（NULL = 已删除）
 			"mr.provider_token_id",
 			"COALESCE(pt.name, '') AS token_name",
 			"COALESCE(pt.group_name, '') AS token_group_name",
@@ -1030,6 +1033,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			ProviderName:            row.ProviderName,
 			ProviderBalance:         row.ProviderBalance,
 			ProviderStatus:          row.ProviderStatus,
+			ProviderDeleted:         row.ProviderIdExists == nil,
 			ProviderTokenId:         row.ProviderTokenId,
 			TokenName:               row.TokenName,
 			TokenGroupName:          row.TokenGroupName,

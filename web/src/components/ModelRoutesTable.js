@@ -138,6 +138,10 @@ const buildNextClientRestrictionRoute = (route, field, value) => {
 };
 
 const getRouteHealth = (route) => {
+    // 供应商已被删除（孤儿路由）：优先提示，避免与"停用"混淆
+    if (route.provider_deleted) {
+        return { color: 'red', label: '供应商已删除' };
+    }
     const providerUp = Number(route.provider_status) === 1;
     const tokenUp = Number(route.token_status) === 1;
     if (providerUp && tokenUp) {
@@ -818,7 +822,15 @@ const ModelRoutesTable = () => {
                                                     return (
                                                         <Tr key={route.id} style={isDirty ? { backgroundColor: 'rgba(245, 158, 11, 0.06)' } : undefined}>
                                                             <Td style={cellTopStyle}>
-                                                                <div style={{ fontWeight: '600', color: 'var(--text-primary)', lineHeight: 1.35 }}>{route.provider_name || '未知供应商'}</div>
+                                                                <div style={{ fontWeight: '600', color: 'var(--text-primary)', lineHeight: 1.35 }}>
+                                                                    {route.provider_deleted ? (
+                                                                        <span style={{ color: 'var(--color-red)' }}>
+                                                                            {route.provider_name || `供应商 #${route.provider_id}`} (已删除)
+                                                                        </span>
+                                                                    ) : (
+                                                                        route.provider_name || '未知供应商'
+                                                                    )}
+                                                                </div>
                                                                 {displayTokenName && (
                                                                     <div style={{ ...helperTextStyle, marginTop: '0.2rem' }}>
                                                                         {displayTokenName}
