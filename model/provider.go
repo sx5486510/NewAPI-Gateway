@@ -86,7 +86,24 @@ func (p *Provider) Update() error {
 	if strings.TrimSpace(p.ApiKey) != "" {
 		updates["api_key"] = p.ApiKey
 	}
-	return DB.Model(&Provider{}).Where("id = ?", p.Id).Updates(updates).Error
+	if err := DB.Model(&Provider{}).Where("id = ?", p.Id).Updates(updates).Error; err != nil {
+		return err
+	}
+	if p.IsKeyOnly() && strings.TrimSpace(p.ApiKey) != "" {
+		return UpsertProviderToken(&ProviderToken{
+			ProviderId:      p.Id,
+			UpstreamTokenId: 0,
+			SkKey:           strings.TrimSpace(p.ApiKey),
+			Name:            p.Name,
+			GroupName:       "default",
+			Status:          common.UserStatusEnabled,
+			Priority:        p.Priority,
+			Weight:          p.Weight,
+			UnlimitedQuota:  true,
+			LastSynced:      time.Now().Unix(),
+		})
+	}
+	return nil
 }
 
 func (p *Provider) Delete() error {
