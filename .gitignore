@@ -15,8 +15,11 @@ server.key
 /deploy/__pycache__/*.pyc
 /.gocache
 .claude/
+.codegraph/
 .smoke/
 .worktrees/
+log.txt
+test-debug.txt
 *.htm
 *_files/
 deploy/*.zip
