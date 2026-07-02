@@ -67,12 +67,12 @@ func AggTokenAuth() func(c *gin.Context) {
 }
 
 // identifyClientType extracts client type from User-Agent
-// Returns "codex", "cc" (claudecode), or "" (unrestricted)
+// Returns "codex", "cc" (claude-cli/claudecode/claude-code), or "" (unrestricted)
 func identifyClientType(userAgent string) string {
 	if strings.Contains(userAgent, "codex") {
 		return "codex"
 	}
-	if strings.Contains(userAgent, "claudecode") || strings.Contains(userAgent, "claude-code") {
+	if strings.Contains(userAgent, "claude-cli") || strings.Contains(userAgent, "claudecode") || strings.Contains(userAgent, "claude-code") {
 		return "cc"
 	}
 	return ""

@@ -86,12 +86,13 @@ func (mr *ModelRoute) IsClientAllowed(clientType string) bool {
 	if !mr.AllowCodex && !mr.AllowCC && !mr.BlockClients {
 		return true
 	}
-	// Unrestricted client - allow all
-	if clientType == "" {
-		return true
-	}
-	if mr.BlockClients && (clientType == "codex" || clientType == "cc") {
+	// Block all clients mode
+	if mr.BlockClients {
 		return false
+	}
+	// Unrestricted client - allow if no specific allow rules
+	if clientType == "" {
+		return !mr.AllowCodex && !mr.AllowCC
 	}
 	// Check specific restrictions
 	if clientType == "codex" && mr.AllowCodex {
