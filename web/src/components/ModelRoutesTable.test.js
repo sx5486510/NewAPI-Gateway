@@ -55,6 +55,12 @@ const route = {
   cooldown_half_open_inflight: 0,
 };
 
+const getDetailRouteProviderNames = () => (
+  [...document.querySelectorAll('.routes-detail-scroller tbody tr')]
+    .filter((row) => row.querySelector('.routes-status-toggle'))
+    .map((row) => row.firstElementChild.textContent)
+);
+
 describe('ModelRoutesTable', () => {
   let container;
   let root;
@@ -155,5 +161,42 @@ describe('ModelRoutesTable', () => {
       allow_cc: false,
       block_clients: true,
     });
+  });
+
+  it('sorts detail routes when clicking sortable detail headers', async () => {
+    API.get.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: [
+          route,
+          {
+            ...route,
+            id: 2,
+            provider_id: 11,
+            provider_name: 'Anthropic',
+            provider_token_id: 21,
+            token_name: 'backup token',
+            health_success_count: 0,
+          },
+        ],
+      },
+    });
+
+    await act(async () => {
+      root.render(<ModelRoutesTable />);
+    });
+
+    const sortableHeaders = [...document.querySelectorAll('.routes-detail-sort-header')];
+    expect(sortableHeaders).toHaveLength(5);
+
+    await act(async () => {
+      sortableHeaders[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(getDetailRouteProviderNames()[0]).toContain('Anthropic');
+
+    await act(async () => {
+      sortableHeaders[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(getDetailRouteProviderNames()[0]).toContain('OpenAI');
   });
 });

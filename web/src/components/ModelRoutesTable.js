@@ -83,6 +83,77 @@ const stickyHeaderCellStyle = {
     boxShadow: 'inset 0 -1px 0 var(--border-color)'
 };
 
+const sortableHeaderCellStyle = {
+    ...stickyHeaderCellStyle,
+    cursor: 'pointer',
+    userSelect: 'none'
+};
+
+// 详情表格各列的排序配置：key 用于状态标识，getValue 提取可比较值，type 决定比较方式
+const DETAIL_SORT_COLUMNS = {
+    provider: {
+        type: 'string',
+        getValue: (route) => String(route.provider_name || '')
+    },
+    success: {
+        type: 'number',
+        getValue: (route) => {
+            const v = Number(route.health_success_count);
+            return Number.isFinite(v) ? v : 0;
+        }
+    },
+    fail: {
+        type: 'number',
+        getValue: (route) => {
+            const v = Number(route.health_error_count);
+            return Number.isFinite(v) ? v : 0;
+        }
+    },
+    health: {
+        type: 'number',
+        getValue: (route) => {
+            const v = Number(route.health_value);
+            return Number.isFinite(v) ? v : 0;
+        }
+    },
+    status: {
+        type: 'number',
+        getValue: (route) => (route.enabled ? 1 : 0)
+    }
+};
+
+const sortDetailRoutes = (rows, sortColumn, sortDirection) => {
+    const config = DETAIL_SORT_COLUMNS[sortColumn];
+    if (!config) return rows;
+    const factor = sortDirection === 'desc' ? -1 : 1;
+    return [...rows].sort((a, b) => {
+        const va = config.getValue(a);
+        const vb = config.getValue(b);
+        let cmp;
+        if (config.type === 'string') {
+            cmp = String(va).localeCompare(String(vb), 'zh-Hans-CN');
+        } else {
+            cmp = va - vb;
+        }
+        if (cmp !== 0) return cmp * factor;
+        return (Number(a.id) || 0) - (Number(b.id) || 0);
+    });
+};
+
+const SortIndicator = ({ active, direction }) => (
+    <span
+        aria-hidden="true"
+        style={{
+            marginLeft: '0.3rem',
+            fontSize: '0.7rem',
+            opacity: active ? 1 : 0.3,
+            color: active ? 'var(--primary-600)' : 'inherit'
+        }}
+    >
+        {active ? (direction === 'desc' ? '↓' : '↑') : '⇅'}
+    </span>
+);
+
 const formatPrice = (value, digits = 4) => {
     const amount = Number(value);
     if (!Number.isFinite(amount)) return '-';
@@ -266,6 +337,20 @@ const ModelRoutesTable = () => {
     const [changedOnly, setChangedOnly] = useState(false);
     const [detailChangedOnly, setDetailChangedOnly] = useState(false);
     const [ultraCompact, setUltraCompact] = useState(true);
+    const [detailSort, setDetailSort] = useState({ column: null, direction: 'asc' });
+
+    const handleDetailSort = useCallback((column) => {
+        setDetailSort((prev) => {
+            if (prev.column !== column) {
+                return { column, direction: 'asc' };
+            }
+            if (prev.direction === 'asc') {
+                return { column, direction: 'desc' };
+            }
+            // 第三次点击同一列：取消排序，恢复默认顺序
+            return { column: null, direction: 'asc' };
+        });
+    }, []);
 
     const routeMap = useMemo(() => {
         const map = {};
@@ -433,13 +518,17 @@ const ModelRoutesTable = () => {
         const rows = detailChangedOnly
             ? selectedEntry.routes.filter((route) => Boolean(drafts[route.id]))
             : selectedEntry.routes;
+        const baseSorted = sortRoutesForDisplay(rows);
+        const finalRoutes = detailSort.column
+            ? sortDetailRoutes(baseSorted, detailSort.column, detailSort.direction)
+            : baseSorted;
         return [{
             key: 'all',
             total: rows.length,
             enabled: rows.filter((item) => item.enabled).length,
-            routes: sortRoutesForDisplay(rows)
+            routes: finalRoutes
         }];
-    }, [detailChangedOnly, drafts, selectedEntry]);
+    }, [detailChangedOnly, drafts, selectedEntry, detailSort]);
 
     const updateDraft = useCallback((routeId, patch) => {
         setDrafts((prev) => {
@@ -566,6 +655,22 @@ const ModelRoutesTable = () => {
             return;
         }
         showError('复制失败，请检查浏览器剪贴板权限');
+    };
+
+    const renderSortableDetailHeader = (column, label) => {
+        const active = detailSort.column === column;
+        return (
+            <Th
+                className="routes-detail-sort-header"
+                style={sortableHeaderCellStyle}
+                onClick={() => handleDetailSort(column)}
+                aria-sort={active ? (detailSort.direction === 'desc' ? 'descending' : 'ascending') : 'none'}
+                title="点击排序"
+            >
+                {label}
+                <SortIndicator active={active} direction={detailSort.direction} />
+            </Th>
+        );
     };
 
     return (
@@ -771,12 +876,12 @@ const ModelRoutesTable = () => {
                                     </colgroup>
                                     <Thead>
                                         <Tr>
-                                            <Th style={stickyHeaderCellStyle}>供应商 / 令牌</Th>
-                                            <Th style={stickyHeaderCellStyle}>成功数</Th>
-                                            <Th style={stickyHeaderCellStyle}>失败数</Th>
-                                            <Th style={stickyHeaderCellStyle}>健康值</Th>
+                                            {renderSortableDetailHeader('provider', '供应商 / 令牌')}
+                                            {renderSortableDetailHeader('success', '成功数')}
+                                            {renderSortableDetailHeader('fail', '失败数')}
+                                            {renderSortableDetailHeader('health', '健康值')}
                                             <Th style={stickyHeaderCellStyle}>冷却状态</Th>
-                                            <Th style={stickyHeaderCellStyle}>状态</Th>
+                                            {renderSortableDetailHeader('status', '状态')}
                                             <Th style={stickyHeaderCellStyle}>客户端限制</Th>
                                         </Tr>
                                     </Thead>

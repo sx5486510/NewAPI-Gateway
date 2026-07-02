@@ -28,8 +28,8 @@ export const Tr = ({ children, style, ...props }) => (
     </tr>
 );
 
-export const Th = ({ children, style, className }) => (
-    <th className={className} style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--gray-500)', fontWeight: '600', ...style }}>
+export const Th = ({ children, style, className, ...props }) => (
+    <th className={className} style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--gray-500)', fontWeight: '600', ...style }} {...props}>
         {children}
     </th>
 );
