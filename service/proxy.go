@@ -398,6 +398,13 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			}
 		}
 
+		// Check if response body is empty (treat as failure)
+		errorMsg := ""
+		if len(respBody) == 0 {
+			errorMsg = buildErrorMessage("upstream returned empty response body", c, bodyBytes)
+			logProxyErrorTrace(c, requestId, provider, token, errorMsg)
+		}
+
 		c.Status(resp.StatusCode)
 		_, _ = c.Writer.Write(respBody)
 
@@ -408,7 +415,7 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		}
 		logUsage(
 			aggToken, provider, token, c, requestId,
-			usage, requestedStream, false, 0, int(elapsed), "",
+			usage, requestedStream, false, 0, int(elapsed), errorMsg,
 		)
 		captureLLMTrace(llmTraceInput{
 			AggToken:         aggToken,
@@ -424,8 +431,13 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			ResponseIsStream: false,
 			RequestBody:      bodyBytes,
 			ResponseBody:     respBody,
+			ErrorMessage:     errorMsg,
 		})
-		common.GlobalRouteCooldown.RecordRouteSuccess(token.Id, resolvedModel)
+		if errorMsg != "" {
+			common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
+		} else {
+			common.GlobalRouteCooldown.RecordRouteSuccess(token.Id, resolvedModel)
+		}
 	}
 	return nil
 }
