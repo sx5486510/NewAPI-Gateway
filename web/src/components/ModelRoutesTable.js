@@ -258,7 +258,6 @@ const ModelRoutesTable = () => {
     const [statusFilter, setStatusFilter] = useState('all');
     const [selectedModel, setSelectedModel] = useState('');
     const [drafts, setDrafts] = useState({});
-    const [batchEnabled, setBatchEnabled] = useState('keep');
     const [sortMode, setSortMode] = useState('name');
     const [changedOnly, setChangedOnly] = useState(false);
     const [detailChangedOnly, setDetailChangedOnly] = useState(false);
@@ -458,12 +457,9 @@ const ModelRoutesTable = () => {
         });
     }, [routeMap]);
 
-    const applyBatchToSelectedModel = () => {
+    const applyBatchEnabledDraft = (enabled) => {
         if (!selectedEntry) return;
-        if (batchEnabled === 'keep') {
-            showError('请选择要批量修改的状态');
-            return;
-        }
+
         setDrafts((prev) => {
             const next = { ...prev };
             selectedEntry.routes.forEach((route) => {
@@ -474,11 +470,7 @@ const ModelRoutesTable = () => {
                     : {
                         enabled: original.enabled
                     };
-                if (batchEnabled === 'enabled') {
-                    current.enabled = true;
-                } else if (batchEnabled === 'disabled') {
-                    current.enabled = false;
-                }
+                current.enabled = enabled;
                 const unchanged = current.enabled === original.enabled;
                 if (unchanged) {
                     delete next[route.id];
@@ -733,11 +725,24 @@ const ModelRoutesTable = () => {
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                                        <select className="routes-inline-select" value={batchEnabled} onChange={(e) => setBatchEnabled(e.target.value)} style={selectStyle}>
-                                            <option value="keep">状态不变</option>
-                                            <option value="enabled">全部启用</option>
-                                            <option value="disabled">全部禁用</option>
-                                        </select>
+                                        <Button
+                                            type="button"
+                                            variant="secondary"
+                                            size="sm"
+                                            className="routes-batch-status-button"
+                                            onClick={() => applyBatchEnabledDraft(true)}
+                                        >
+                                            全部启用
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="secondary"
+                                            size="sm"
+                                            className="routes-batch-status-button"
+                                            onClick={() => applyBatchEnabledDraft(false)}
+                                        >
+                                            全部禁用
+                                        </Button>
                                         <label className="routes-switch" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                             <input
                                                 type="checkbox"
@@ -746,7 +751,6 @@ const ModelRoutesTable = () => {
                                             />
                                             仅显示已修改路由
                                         </label>
-                                        <Button variant="secondary" onClick={applyBatchToSelectedModel}>应用到当前模型</Button>
                                     </div>
                                 </div>
 

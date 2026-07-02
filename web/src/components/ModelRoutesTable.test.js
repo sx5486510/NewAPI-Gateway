@@ -117,6 +117,25 @@ describe('ModelRoutesTable', () => {
     expect(document.querySelectorAll('.routes-number-input')).toHaveLength(0);
   });
 
+  it('uses two buttons for bulk route status drafts without saving immediately', async () => {
+    await act(async () => {
+      root.render(<ModelRoutesTable />);
+    });
+
+    const batchStatusButtons = [...document.querySelectorAll('.routes-batch-status-button')];
+
+    expect(batchStatusButtons).toHaveLength(2);
+    expect(batchStatusButtons.map((button) => button.textContent.trim())).toEqual(['全部启用', '全部禁用']);
+    expect(document.querySelector('select.routes-batch-status-select')).toBeNull();
+
+    await act(async () => {
+      batchStatusButtons[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(document.querySelector('.routes-status-toggle').getAttribute('aria-checked')).toBe('false');
+    expect(API.post).not.toHaveBeenCalled();
+  });
+
   it('updates upstream token client restrictions from the route list', async () => {
     await act(async () => {
       root.render(<ModelRoutesTable />);

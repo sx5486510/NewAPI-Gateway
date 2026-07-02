@@ -1127,6 +1127,13 @@ button {
   font-size: 0.8rem !important;
 }
 
+.routes-table-shell-compact .routes-batch-status-button {
+  min-width: 78px !important;
+  padding: 0.35rem 0.55rem !important;
+  font-size: 0.8rem !important;
+  line-height: 1.1 !important;
+}
+
 .routes-table-shell-compact .routes-status-toggle {
   min-width: 84px !important;
   width: 100% !important;
