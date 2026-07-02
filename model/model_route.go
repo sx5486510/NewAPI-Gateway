@@ -74,13 +74,53 @@ type ModelRoute struct {
 	Enabled         bool   `json:"enabled" gorm:"default:true"`
 	Priority        int    `json:"priority" gorm:"default:0;index"`
 	Weight          int    `json:"weight" gorm:"default:10"`
+	AllowCodex      bool   `json:"allow_codex" gorm:"default:false"`
+	AllowCC         bool   `json:"allow_cc" gorm:"default:false"`
+	BlockClients    bool   `json:"block_clients" gorm:"default:false"`
+}
+
+// IsClientAllowed checks if a route allows the specified client type
+func (mr *ModelRoute) IsClientAllowed(clientType string) bool {
+	mr.NormalizeClientRestrictions()
+	// No restriction set - allow all
+	if !mr.AllowCodex && !mr.AllowCC && !mr.BlockClients {
+		return true
+	}
+	// Unrestricted client - allow all
+	if clientType == "" {
+		return true
+	}
+	if mr.BlockClients && (clientType == "codex" || clientType == "cc") {
+		return false
+	}
+	// Check specific restrictions
+	if clientType == "codex" && mr.AllowCodex {
+		return true
+	}
+	if clientType == "cc" && mr.AllowCC {
+		return true
+	}
+	return false
+}
+
+func (mr *ModelRoute) NormalizeClientRestrictions() {
+	if mr.BlockClients {
+		mr.AllowCodex = false
+		mr.AllowCC = false
+	}
+	if mr.AllowCodex || mr.AllowCC {
+		mr.BlockClients = false
+	}
 }
 
 type ModelRoutePatch struct {
-	Id       int   `json:"id"`
-	Priority *int  `json:"priority,omitempty"`
-	Weight   *int  `json:"weight,omitempty"`
-	Enabled  *bool `json:"enabled,omitempty"`
+	Id           int   `json:"id"`
+	Priority     *int  `json:"priority,omitempty"`
+	Weight       *int  `json:"weight,omitempty"`
+	Enabled      *bool `json:"enabled,omitempty"`
+	AllowCodex   *bool `json:"allow_codex,omitempty"`
+	AllowCC      *bool `json:"allow_cc,omitempty"`
+	BlockClients *bool `json:"block_clients,omitempty"`
 }
 
 func (p *ModelRoutePatch) ToUpdates() map[string]interface{} {
@@ -94,7 +134,63 @@ func (p *ModelRoutePatch) ToUpdates() map[string]interface{} {
 	if p.Enabled != nil {
 		updates["enabled"] = *p.Enabled
 	}
+	if p.AllowCodex != nil {
+		updates["allow_codex"] = *p.AllowCodex
+	}
+	if p.AllowCC != nil {
+		updates["allow_cc"] = *p.AllowCC
+	}
+	if p.BlockClients != nil {
+		updates["block_clients"] = *p.BlockClients
+	}
 	return updates
+}
+
+func normalizeModelRouteClientRestrictionUpdates(updates map[string]interface{}) {
+	_, hasAllowCodex := updates["allow_codex"]
+	_, hasAllowCC := updates["allow_cc"]
+	_, hasBlockClients := updates["block_clients"]
+	if !hasAllowCodex && !hasAllowCC && !hasBlockClients {
+		return
+	}
+
+	route := ModelRoute{}
+	if value, ok := updates["allow_codex"].(bool); ok {
+		route.AllowCodex = value
+	}
+	if value, ok := updates["allow_cc"].(bool); ok {
+		route.AllowCC = value
+	}
+	if value, ok := updates["block_clients"].(bool); ok {
+		route.BlockClients = value
+	}
+	route.NormalizeClientRestrictions()
+
+	updates["allow_codex"] = route.AllowCodex
+	updates["allow_cc"] = route.AllowCC
+	updates["block_clients"] = route.BlockClients
+}
+
+func normalizeModelRoutePatch(patch *ModelRoutePatch) {
+	if patch.AllowCodex == nil && patch.AllowCC == nil && patch.BlockClients == nil {
+		return
+	}
+
+	route := ModelRoute{}
+	if patch.AllowCodex != nil {
+		route.AllowCodex = *patch.AllowCodex
+	}
+	if patch.AllowCC != nil {
+		route.AllowCC = *patch.AllowCC
+	}
+	if patch.BlockClients != nil {
+		route.BlockClients = *patch.BlockClients
+	}
+	route.NormalizeClientRestrictions()
+
+	patch.AllowCodex = &route.AllowCodex
+	patch.AllowCC = &route.AllowCC
+	patch.BlockClients = &route.BlockClients
 }
 
 type ModelRouteOverviewItem struct {
@@ -110,9 +206,9 @@ type ModelRouteOverviewItem struct {
 	TokenName               string   `json:"token_name"`
 	TokenGroupName          string   `json:"token_group_name"`
 	TokenStatus             int      `json:"token_status"`
-	TokenAllowCodex         bool     `json:"token_allow_codex"`
-	TokenAllowCC            bool     `json:"token_allow_cc"`
-	TokenBlockClients       bool     `json:"token_block_clients"`
+	AllowCodex              bool     `json:"allow_codex"`
+	AllowCC                 bool     `json:"allow_cc"`
+	BlockClients            bool     `json:"block_clients"`
 	Enabled                 bool     `json:"enabled"`
 	Priority                int      `json:"priority"`
 	Weight                  int      `json:"weight"`
@@ -152,9 +248,9 @@ type modelRouteOverviewRow struct {
 	TokenName         string  `gorm:"column:token_name"`
 	TokenGroupName    string  `gorm:"column:token_group_name"`
 	TokenStatus       int     `gorm:"column:token_status"`
-	TokenAllowCodex   bool    `gorm:"column:token_allow_codex"`
-	TokenAllowCC      bool    `gorm:"column:token_allow_cc"`
-	TokenBlockClients bool    `gorm:"column:token_block_clients"`
+	AllowCodex        bool    `gorm:"column:allow_codex"`
+	AllowCC           bool    `gorm:"column:allow_cc"`
+	BlockClients      bool    `gorm:"column:block_clients"`
 	Enabled           bool    `gorm:"column:enabled"`
 	Priority          int     `gorm:"column:priority"`
 	Weight            int     `gorm:"column:weight"`
@@ -307,7 +403,7 @@ func BuildRouteAttemptsByPriority(modelName string, clientType string) ([][]Rout
 			continue
 		}
 		// Filter by client type restrictions
-		if !token.IsClientAllowed(clientType) {
+		if !route.IsClientAllowed(clientType) {
 			continue
 		}
 		metric := metricLookup[route.Id]
@@ -919,6 +1015,7 @@ func UpdateModelRouteFields(id int, updates map[string]interface{}) error {
 	if len(updates) == 0 {
 		return errors.New("没有可更新的字段")
 	}
+	normalizeModelRouteClientRestrictionUpdates(updates)
 	return DB.Model(&ModelRoute{}).Where("id = ?", id).Updates(updates).Error
 }
 
@@ -932,6 +1029,7 @@ func BatchUpdateModelRoutes(patches []ModelRoutePatch) error {
 			tx.Rollback()
 			return errors.New("存在无效的路由 ID")
 		}
+		normalizeModelRoutePatch(&patch)
 		updates := patch.ToUpdates()
 		if len(updates) == 0 {
 			continue
@@ -960,9 +1058,9 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			"COALESCE(pt.name, '') AS token_name",
 			"COALESCE(pt.group_name, '') AS token_group_name",
 			"COALESCE(pt.status, 0) AS token_status",
-			"COALESCE(pt.allow_codex, 0) AS token_allow_codex",
-			"COALESCE(pt.allow_cc, 0) AS token_allow_cc",
-			"COALESCE(pt.block_clients, 0) AS token_block_clients",
+			"mr.allow_codex",
+			"mr.allow_cc",
+			"mr.block_clients",
 			"mr.enabled",
 			"mr.priority",
 			"mr.weight",
@@ -1038,9 +1136,9 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			TokenName:               row.TokenName,
 			TokenGroupName:          row.TokenGroupName,
 			TokenStatus:             row.TokenStatus,
-			TokenAllowCodex:         row.TokenAllowCodex,
-			TokenAllowCC:            row.TokenAllowCC,
-			TokenBlockClients:       row.TokenBlockClients,
+			AllowCodex:              row.AllowCodex,
+			AllowCC:                 row.AllowCC,
+			BlockClients:            row.BlockClients,
 			Enabled:                 row.Enabled,
 			Priority:                row.Priority,
 			Weight:                  row.Weight,
@@ -1221,6 +1319,9 @@ func RebuildRoutesForProvider(providerId int, routes []ModelRoute) error {
 		key := routeModelTokenKey(routes[i].ModelName, routes[i].ProviderTokenId)
 		if previous, ok := existingMap[key]; ok {
 			routes[i].Enabled = previous.Enabled
+			routes[i].AllowCodex = previous.AllowCodex
+			routes[i].AllowCC = previous.AllowCC
+			routes[i].BlockClients = previous.BlockClients
 		}
 	}
 

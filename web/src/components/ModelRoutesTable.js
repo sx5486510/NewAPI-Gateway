@@ -127,12 +127,12 @@ const normalizeModelName = (value) => {
 
 const buildNextClientRestrictionRoute = (route, field, value) => {
     const nextRoute = { ...route, [field]: value };
-    if (field === 'token_block_clients' && value) {
-        nextRoute.token_allow_codex = false;
-        nextRoute.token_allow_cc = false;
+    if (field === 'block_clients' && value) {
+        nextRoute.allow_codex = false;
+        nextRoute.allow_cc = false;
     }
-    if ((field === 'token_allow_codex' || field === 'token_allow_cc') && value) {
-        nextRoute.token_block_clients = false;
+    if ((field === 'allow_codex' || field === 'allow_cc') && value) {
+        nextRoute.block_clients = false;
     }
     return nextRoute;
 };
@@ -509,33 +509,33 @@ const ModelRoutesTable = () => {
         setSaving(false);
     };
 
-    const updateRouteTokenClientRestriction = async (route, field, value) => {
-        if (!route.provider_token_id) {
-            showError('缺少令牌 ID，无法更新客户端限制');
+    const updateRouteClientRestriction = async (route, field, value) => {
+        if (!route.id) {
+            showError('缺少路由 ID，无法更新客户端限制');
             return;
         }
         const nextRoute = buildNextClientRestrictionRoute(route, field, value);
-        const nextRestriction = {
-            token_allow_codex: !!nextRoute.token_allow_codex,
-            token_allow_cc: !!nextRoute.token_allow_cc,
-            token_block_clients: !!nextRoute.token_block_clients
+        const patch = {
+            id: route.id,
+            allow_codex: !!nextRoute.allow_codex,
+            allow_cc: !!nextRoute.allow_cc,
+            block_clients: !!nextRoute.block_clients
         };
-        const previousRoutes = routes;
 
+        const previousRoutes = routes;
         setRoutes((currentRoutes) => currentRoutes.map((item) => (
-            item.provider_token_id === route.provider_token_id
-                ? { ...item, ...nextRestriction }
+            item.id === route.id
+                ? {
+                    ...item,
+                    allow_codex: patch.allow_codex,
+                    allow_cc: patch.allow_cc,
+                    block_clients: patch.block_clients
+                  }
                 : item
         )));
 
         try {
-            const res = await API.put(`/api/provider/token/${route.provider_token_id}`, {
-                id: route.provider_token_id,
-                provider_id: route.provider_id,
-                allow_codex: nextRestriction.token_allow_codex,
-                allow_cc: nextRestriction.token_allow_cc,
-                block_clients: nextRestriction.token_block_clients,
-            });
+            const res = await API.put(`/api/route/${route.id}`, patch);
             const { success, message } = res.data;
             if (success) {
                 showSuccess('客户端限制已更新');
@@ -815,9 +815,9 @@ const ModelRoutesTable = () => {
                                                     const failCount = Number.isFinite(healthErrorCount) ? healthErrorCount : 0;
                                                     const safeHealthValue = Number.isFinite(healthValue) ? healthValue : 0;
 
-                                                    const tokenAllowCodex = route.token_allow_codex || false;
-                                                    const tokenAllowCC = route.token_allow_cc || false;
-                                                    const tokenBlockClients = route.token_block_clients || false;
+                                                    const tokenAllowCodex = route.allow_codex || false;
+                                                    const tokenAllowCC = route.allow_cc || false;
+                                                    const tokenBlockClients = route.block_clients || false;
 
                                                     return (
                                                         <Tr key={route.id} style={isDirty ? { backgroundColor: 'rgba(245, 158, 11, 0.06)' } : undefined}>
@@ -896,7 +896,7 @@ const ModelRoutesTable = () => {
                                                                                 className="routes-token-client-toggle"
                                                                                 checked={tokenAllowCodex}
                                                                                 aria-label="Codex 客户端限制"
-                                                                                onChange={(e) => updateRouteTokenClientRestriction(route, 'token_allow_codex', e.target.checked)}
+                                                                                onChange={(e) => updateRouteClientRestriction(route, 'allow_codex', e.target.checked)}
                                                                                 style={{ margin: 0 }}
                                                                             />
                                                                             <span>Codex</span>
@@ -907,7 +907,7 @@ const ModelRoutesTable = () => {
                                                                                 className="routes-token-client-toggle"
                                                                                 checked={tokenAllowCC}
                                                                                 aria-label="CC 客户端限制"
-                                                                                onChange={(e) => updateRouteTokenClientRestriction(route, 'token_allow_cc', e.target.checked)}
+                                                                                onChange={(e) => updateRouteClientRestriction(route, 'allow_cc', e.target.checked)}
                                                                                 style={{ margin: 0 }}
                                                                             />
                                                                             <span>CC</span>
@@ -918,7 +918,7 @@ const ModelRoutesTable = () => {
                                                                                 className="routes-token-client-toggle"
                                                                                 checked={tokenBlockClients}
                                                                                 aria-label="全禁用客户端限制"
-                                                                                onChange={(e) => updateRouteTokenClientRestriction(route, 'token_block_clients', e.target.checked)}
+                                                                                onChange={(e) => updateRouteClientRestriction(route, 'block_clients', e.target.checked)}
                                                                                 style={{ margin: 0 }}
                                                                             />
                                                                             <span>全禁用</span>
