@@ -238,3 +238,140 @@ func TestExtractTextFromJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestDetectPhoneNumbers(t *testing.T) {
+	testCases := []struct {
+		name          string
+		input         string
+		expectedCount int
+		shouldDetect  bool
+	}{
+		{
+			name:          "Real Chinese mobile numbers",
+			input:         "Contact us: 13812345678, 18998765432",
+			expectedCount: 2,
+			shouldDetect:  true,
+		},
+		{
+			name:          "Formatted phone numbers",
+			input:         "Call 138-1234-5678 or 189 9876 5432",
+			expectedCount: 2,
+			shouldDetect:  true,
+		},
+		{
+			name:          "Phone with country code",
+			input:         "International: +86 13812345678",
+			expectedCount: 2, // Matches both "+86 13812345678" and "13812345678"
+			shouldDetect:  true,
+		},
+		{
+			name:          "Technical format (should NOT detect)",
+			input:         "Use format [citation](index:id) for references",
+			expectedCount: 0,
+			shouldDetect:  false,
+		},
+		{
+			name:          "Markdown link (should NOT detect)",
+			input:         "Click [here](https://example.com)",
+			expectedCount: 0,
+			shouldDetect:  false,
+		},
+		{
+			name:          "Code in backticks (should NOT detect)",
+			input:         "Use `13812345678` as example in code",
+			expectedCount: 0,
+			shouldDetect:  false,
+		},
+		{
+			name:          "JSON object (should NOT detect)",
+			input:         `{"index": 123456789012}`,
+			expectedCount: 0,
+			shouldDetect:  false,
+		},
+		{
+			name:          "Coordinates (should NOT detect)",
+			input:         "Location at (116.404, 39.915)",
+			expectedCount: 0,
+			shouldDetect:  false,
+		},
+		{
+			name: "System prompt with citation format (real case)",
+			input: `引用格式为：
+  具体的引用内容 [citation](index:id)
+- 引用必须紧跟在相关内容之后`,
+			expectedCount: 0,
+			shouldDetect:  false,
+		},
+		{
+			name:          "Mixed real and fake",
+			input:         "Call 13812345678 or use format (index:id)",
+			expectedCount: 1,
+			shouldDetect:  true,
+		},
+		{
+			name:          "Code block with phone (should NOT detect)",
+			input:         "```python\nphone = '13812345678'\n```",
+			expectedCount: 0,
+			shouldDetect:  false,
+		},
+		{
+			name:          "Invalid Chinese mobile (wrong prefix)",
+			input:         "12012345678, 10012345678",
+			expectedCount: 0,
+			shouldDetect:  false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			phones := detectPhoneNumbers(tc.input)
+			if len(phones) != tc.expectedCount {
+				t.Errorf("Expected %d phone numbers, got %d: %v", tc.expectedCount, len(phones), phones)
+			}
+			if tc.shouldDetect && len(phones) == 0 {
+				t.Errorf("Expected to detect phone numbers but found none")
+			}
+			if !tc.shouldDetect && len(phones) > 0 {
+				t.Errorf("Should not detect phone numbers but found: %v", phones)
+			}
+		})
+	}
+}
+
+func TestRemoveCodeBlocks(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Inline code",
+			input:    "Use `code` here",
+			expected: "Use  here",
+		},
+		{
+			name:     "Code block",
+			input:    "Text\n```\ncode block\n```\nMore text",
+			expected: "Text\n\nMore text",
+		},
+		{
+			name:     "Mixed",
+			input:    "Use `inline` and\n```\nblock\n```\ncode",
+			expected: "Use  and\n\ncode",
+		},
+		{
+			name:     "No code",
+			input:    "Plain text only",
+			expected: "Plain text only",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := removeCodeBlocks(tc.input)
+			if result != tc.expected {
+				t.Errorf("Expected %q, got %q", tc.expected, result)
+			}
+		})
+	}
+}

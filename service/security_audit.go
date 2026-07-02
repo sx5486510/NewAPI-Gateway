@@ -249,9 +249,8 @@ func checkSensitiveData(result *SecurityAuditResult, request, response string) {
 		updateRiskLevel(result, "medium")
 	}
 
-	// Phone numbers (international format)
-	phonePattern := regexp.MustCompile(`\+?[\d\s\-\(\)]{10,}`)
-	phones := phonePattern.FindAllString(combined, -1)
+	// Phone numbers - improved detection to avoid false positives
+	phones := detectPhoneNumbers(combined)
 	if len(phones) > 5 {
 		result.RiskTags = append(result.RiskTags, "multiple_phones")
 		updateRiskLevel(result, "medium")
@@ -356,6 +355,76 @@ func checkAbnormalToolCalls(result *SecurityAuditResult, request, response strin
 		result.RiskTags = append(result.RiskTags, "repeated_tool_errors")
 		updateRiskLevel(result, "low")
 	}
+}
+
+// detectPhoneNumbers detects real phone numbers while avoiding false positives
+func detectPhoneNumbers(text string) []string {
+	var phones []string
+
+	// Pre-filter: remove markdown code blocks and inline code
+	text = removeCodeBlocks(text)
+
+	// Exclude patterns that look like technical notation
+	excludePatterns := []*regexp.Regexp{
+		regexp.MustCompile(`\(.*?:.*?\)`),           // (index:id), (key:value)
+		regexp.MustCompile(`\[.*?\]\(.*?\)`),        // [text](link) markdown links
+		regexp.MustCompile(`\{.*?:.*?\}`),           // {key:value} JSON
+		regexp.MustCompile(`<.*?:.*?>`),             // <tag:attr> XML/HTML
+		regexp.MustCompile(`\w+:\w+`),               // protocol:value, format:spec
+		regexp.MustCompile(`\(\d+[,\.]\d+\)`),       // (1.5), (10,20) coordinates/tuples
+	}
+
+	// Apply exclusions
+	for _, re := range excludePatterns {
+		text = re.ReplaceAllString(text, "")
+	}
+
+	// Real phone number patterns
+	phonePatterns := []*regexp.Regexp{
+		// Chinese mobile: 1[3-9]xxxxxxxxx
+		regexp.MustCompile(`\b1[3-9]\d{9}\b`),
+		// Chinese with country code: +86 1xxxxxxxxxx or 0086 1xxxxxxxxxx
+		regexp.MustCompile(`\+86\s?1[3-9]\d{9}\b`),
+		regexp.MustCompile(`0086\s?1[3-9]\d{9}\b`),
+		// Formatted: 138-xxxx-xxxx or 138 xxxx xxxx
+		regexp.MustCompile(`\b1[3-9]\d[\s\-]\d{4}[\s\-]\d{4}\b`),
+		// International format with parentheses: +1 (xxx) xxx-xxxx
+		regexp.MustCompile(`\+\d{1,3}\s?\(\d{3}\)\s?\d{3}[\s\-]?\d{4}\b`),
+	}
+
+	seen := make(map[string]bool)
+	for _, re := range phonePatterns {
+		matches := re.FindAllString(text, -1)
+		for _, match := range matches {
+			// Additional validation: must be mostly digits
+			digitCount := 0
+			for _, ch := range match {
+				if ch >= '0' && ch <= '9' {
+					digitCount++
+				}
+			}
+			// At least 10 digits for a valid phone number
+			if digitCount >= 10 && !seen[match] {
+				phones = append(phones, match)
+				seen[match] = true
+			}
+		}
+	}
+
+	return phones
+}
+
+// removeCodeBlocks removes markdown code blocks and inline code
+func removeCodeBlocks(text string) string {
+	// Remove code blocks: ```...``` (must be done first, before inline)
+	re2 := regexp.MustCompile("(?s)```[^`]*```")
+	text = re2.ReplaceAllString(text, "")
+
+	// Remove inline code: `...`
+	re1 := regexp.MustCompile("`[^`]+`")
+	text = re1.ReplaceAllString(text, "")
+
+	return text
 }
 
 // updateRiskLevel updates risk level to higher severity if needed
