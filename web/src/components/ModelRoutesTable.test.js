@@ -26,9 +26,9 @@ const route = {
   provider_token_id: 20,
   token_name: 'primary token',
   token_group_name: 'default',
-  token_allow_codex: false,
-  token_allow_cc: false,
-  token_block_clients: false,
+  allow_codex: false,
+  allow_cc: false,
+  block_clients: false,
   token_status: 1,
   enabled: true,
   priority: 100,
@@ -136,7 +136,7 @@ describe('ModelRoutesTable', () => {
     expect(API.post).not.toHaveBeenCalled();
   });
 
-  it('updates upstream token client restrictions from the route list', async () => {
+  it('updates route client restrictions from the route list', async () => {
     await act(async () => {
       root.render(<ModelRoutesTable />);
     });
@@ -149,9 +149,8 @@ describe('ModelRoutesTable', () => {
       toggles[2].dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(API.put).toHaveBeenCalledWith('/api/provider/token/20', {
-      id: 20,
-      provider_id: 10,
+    expect(API.put).toHaveBeenCalledWith('/api/route/1', {
+      id: 1,
       allow_codex: false,
       allow_cc: false,
       block_clients: true,

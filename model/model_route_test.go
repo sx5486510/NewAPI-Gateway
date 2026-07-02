@@ -104,3 +104,40 @@ func TestComputeRouteContributionIgnoresManualWeight(t *testing.T) {
 		t.Fatalf("expected positive baseline contribution, got %f", lowWeight)
 	}
 }
+
+func TestUpdateModelRouteFieldsNormalizesClientRestrictions(t *testing.T) {
+	setupModelRouteTestDB(t)
+
+	route := ModelRoute{
+		ModelName:       "gpt-test",
+		ProviderId:      1,
+		ProviderTokenId: 101,
+		Enabled:         true,
+		AllowCodex:      true,
+	}
+	if err := DB.Create(&route).Error; err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	if err := UpdateModelRouteFields(route.Id, map[string]interface{}{
+		"allow_codex":   true,
+		"allow_cc":      true,
+		"block_clients": true,
+	}); err != nil {
+		t.Fatalf("update route: %v", err)
+	}
+
+	var stored ModelRoute
+	if err := DB.First(&stored, route.Id).Error; err != nil {
+		t.Fatalf("load route: %v", err)
+	}
+	if stored.AllowCodex {
+		t.Fatal("expected allow_codex to be cleared when block_clients is enabled")
+	}
+	if stored.AllowCC {
+		t.Fatal("expected allow_cc to be cleared when block_clients is enabled")
+	}
+	if !stored.BlockClients {
+		t.Fatal("expected block_clients to be saved")
+	}
+}
