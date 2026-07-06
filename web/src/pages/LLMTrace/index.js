@@ -317,19 +317,28 @@ const LLMTrace = () => {
                 </div>
               </section>
             )}
-            <section>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>请求</h3>
-              <pre className='log-json-detail'>{formatTraceContent(selectedTrace.request_body)}</pre>
-            </section>
-            <section>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>响应</h3>
-              <pre className='log-json-detail'>{formatTraceContent(selectedTrace.response_body)}</pre>
-            </section>
+            <details open className='trace-collapse-container'>
+              <summary className='trace-collapse-summary'>
+                <span className='trace-collapse-arrow'>▶</span>
+                请求
+              </summary>
+              <pre className='log-json-detail' style={{ marginTop: '0.75rem', marginBottom: 0 }}>{formatTraceContent(selectedTrace.request_body)}</pre>
+            </details>
+            <details className='trace-collapse-container'>
+              <summary className='trace-collapse-summary'>
+                <span className='trace-collapse-arrow'>▶</span>
+                响应
+              </summary>
+              <pre className='log-json-detail' style={{ marginTop: '0.75rem', marginBottom: 0 }}>{formatTraceContent(selectedTrace.response_body)}</pre>
+            </details>
             {selectedTrace.error_message && (
-              <section>
-                <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>错误</h3>
-                <pre className='log-json-detail'>{formatTraceContent(selectedTrace.error_message)}</pre>
-              </section>
+              <details className='trace-collapse-container'>
+                <summary className='trace-collapse-summary' style={{ color: 'var(--error)' }}>
+                  <span className='trace-collapse-arrow'>▶</span>
+                  错误
+                </summary>
+                <pre className='log-json-detail' style={{ marginTop: '0.75rem', marginBottom: 0 }}>{formatTraceContent(selectedTrace.error_message)}</pre>
+              </details>
             )}
           </div>
         )}

@@ -216,7 +216,7 @@ echo "Building..."
 # Enable CGO for SQLite
 TMP_BINARY=$(mktemp "${INSTALL_DIR}/bin/${BINARY_NAME}.tmp.XXXXXX")
 GIT_VERSION=$(cat VERSION)+$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")
-BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+BUILD_TIME=$(TZ='Asia/Shanghai' date +%Y-%m-%dT%H:%M:%S+08:00)
 if ! CGO_ENABLED=1 go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=${GIT_VERSION}' -X 'NewAPI-Gateway/common.BuildTime=${BUILD_TIME}'" -o "${TMP_BINARY}"; then
     rm -f "${TMP_BINARY}"
     echo -e "${RED}Error: go build failed.${NC}"

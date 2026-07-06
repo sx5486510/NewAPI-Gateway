@@ -20,7 +20,7 @@ COPY . .
 COPY --from=builder /build/build ./web/build
 RUN go mod download
 RUN VERSION="${GIT_VERSION:-$(cat VERSION)}"; \
-    BUILT="${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"; \
+    BUILT="${BUILD_TIME:-$(TZ='Asia/Shanghai' date +%Y-%m-%dT%H:%M:%S+08:00)}"; \
     go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=${VERSION}' -X 'NewAPI-Gateway/common.BuildTime=${BUILT}' -extldflags '-static'" -o gateway-aggregator
 
 FROM alpine

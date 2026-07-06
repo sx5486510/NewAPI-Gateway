@@ -729,6 +729,46 @@ button {
   word-break: break-all;
 }
 
+/* Trace detail collapse styles */
+.trace-collapse-summary {
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.trace-collapse-summary::-webkit-details-marker {
+  display: none;
+}
+
+.trace-collapse-arrow {
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+
+details[open] .trace-collapse-arrow {
+  transform: rotate(90deg);
+}
+
+.trace-collapse-container {
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  transition: border-color 0.2s ease;
+}
+
+.trace-collapse-container:hover {
+  border-color: var(--gray-400);
+}
+
+.trace-collapse-container[open] {
+  border-color: var(--primary-500);
+}
+
 .logs-pagination {
   border-top: 1px solid var(--border-color);
   padding: 0.75rem 0.95rem;

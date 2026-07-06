@@ -8,7 +8,7 @@
 ### 后端修改
 
 #### 1. `common/constants.go`
-- 添加全局变量 `ProxyEnabled = false`，默认禁用代理
+- 添加全局变量 `ProxyEnabled = true`，默认启用代理
 
 #### 2. `common/proxy.go`
 - 修改 `ProxyFromSettings()` 函数，首先检查 `ProxyEnabled` 开关
