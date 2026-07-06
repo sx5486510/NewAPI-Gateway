@@ -50,6 +50,8 @@ func InitOptionMap() {
 	common.OptionMap["WeChatAccountQRCodeImageURL"] = ""
 	common.OptionMap["TurnstileSiteKey"] = ""
 	common.OptionMap["TurnstileSecretKey"] = ""
+	common.OptionMap["ProxyEnabled"] = strconv.FormatBool(common.ProxyEnabled)
+	common.OptionMap["Proxy"] = ""
 	common.OptionMap["HTTPProxy"] = ""
 	common.OptionMap["HTTPSProxy"] = ""
 	common.OptionMap["RoutingUsageWindowHours"] = strconv.Itoa(24)
@@ -116,6 +118,8 @@ func updateOptionMap(key string, value string) {
 			common.RegisterEnabled = boolValue
 		case "LLMTraceEnabled":
 			common.LLMTraceEnabled = boolValue
+		case "ProxyEnabled":
+			common.ProxyEnabled = boolValue
 		}
 	}
 	switch key {

@@ -7,6 +7,11 @@ import (
 )
 
 func ProxyFromSettings(req *http.Request) (*url.URL, error) {
+	// Check if proxy is enabled
+	if !ProxyEnabled {
+		return http.ProxyFromEnvironment(req)
+	}
+
 	proxy := strings.TrimSpace(Proxy)
 
 	if proxy == "" {

@@ -19,6 +19,7 @@ const SystemSetting = () => {
     SMTPToken: '',
     ServerAddress: '',
     Proxy: '',
+    ProxyEnabled: '',
     Footer: '',
     TurnstileCheckEnabled: '',
     TurnstileSiteKey: '',
@@ -85,6 +86,7 @@ const SystemSetting = () => {
       case 'RegisterEnabled':
       case 'RoutingHealthAdjustmentEnabled':
       case 'LLMTraceEnabled':
+      case 'ProxyEnabled':
         value = inputs[key] === 'true' ? 'false' : 'true';
         break;
       default:
@@ -298,6 +300,14 @@ const SystemSetting = () => {
         </div>
 
         <div style={{ marginBottom: '1rem' }}>
+          <div style={{ marginBottom: '0.75rem' }}>
+            <Checkbox
+              checked={inputs.ProxyEnabled === 'true'}
+              label='启用代理'
+              name='ProxyEnabled'
+              onChange={handleCheckboxChange}
+            />
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
             <Input
               label='代理地址'
@@ -305,11 +315,12 @@ const SystemSetting = () => {
               value={inputs.Proxy}
               name='Proxy'
               onChange={handleInputChange}
+              disabled={inputs.ProxyEnabled !== 'true'}
             />
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <Button onClick={submitProxy} variant="secondary" disabled={loading}>保存代理设置</Button>
-            <Button onClick={testProxy} variant="secondary" disabled={testingProxy || loading}>
+            <Button onClick={submitProxy} variant="secondary" disabled={loading || inputs.ProxyEnabled !== 'true'}>保存代理设置</Button>
+            <Button onClick={testProxy} variant="secondary" disabled={testingProxy || loading || inputs.ProxyEnabled !== 'true'}>
               {testingProxy ? '测试中...' : '测试代理'}
             </Button>
           </div>
