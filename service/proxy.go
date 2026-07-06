@@ -293,11 +293,49 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		streamCapture := newTraceStreamCapture()
 		firstTokenMs := 0
 		eventCount := 0
+		errorMsg := ""
 		for scanner.Scan() {
 			line := scanner.Text()
 			streamCapture.appendLine(line)
 			fmt.Fprintf(c.Writer, "%s\n", line)
 			eventCount++
+
+			// Detect rate limit events (treat as failure)
+			if strings.Contains(line, "event: codex.rate_limits") {
+				if errorMsg == "" {
+					errorMsg = "upstream rate limit event detected"
+				}
+			}
+
+			// Detect SSE error events in data field (e.g., {"type":"error","error":{...}})
+			if strings.HasPrefix(strings.TrimSpace(line), "data:") {
+				dataContent := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
+				if dataContent != "" && dataContent != "[DONE]" {
+					var sseData map[string]interface{}
+					if err := json.Unmarshal([]byte(dataContent), &sseData); err == nil {
+						// Check for {"type":"error",...}
+						if typeVal, ok := sseData["type"].(string); ok && typeVal == "error" {
+							if errorMsg == "" {
+								errorMsg = "upstream SSE error event detected"
+							}
+							// Try to extract detailed error message
+							if errField, ok := sseData["error"].(map[string]interface{}); ok {
+								if errType, ok := errField["type"].(string); ok && errType != "" {
+									errorMsg = fmt.Sprintf("upstream SSE error: type=%s", errType)
+								}
+								if errMsg, ok := errField["message"].(string); ok && errMsg != "" {
+									if strings.Contains(errorMsg, "type=") {
+										errorMsg += fmt.Sprintf(" message=%s", errMsg)
+									} else {
+										errorMsg = fmt.Sprintf("upstream SSE error: %s", errMsg)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
 			currentUsage, hasData := extractUsageAndModelFromSSELine(line)
 			if hasData && firstTokenMs == 0 {
 				firstTokenMs = int(time.Since(startTime).Milliseconds())
@@ -321,7 +359,6 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 				flusher.Flush()
 			}
 		}
-		errorMsg := ""
 		if scanErr := scanner.Err(); scanErr != nil {
 			if errorMsg != "" {
 				errorMsg += "; scanner error: " + scanErr.Error()
