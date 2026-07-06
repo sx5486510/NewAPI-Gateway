@@ -51,7 +51,7 @@ build-fe:
 
 build-be:
 	@mkdir -p ./bin
-	go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$$(cat VERSION)'" -o $(BINARY)
+	go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$$(cat VERSION)+$$(git rev-parse --short HEAD 2>/dev/null || echo nogit)' -X 'NewAPI-Gateway/common.BuildTime=$$(date -u +%Y-%m-%dT%H:%M:%SZ)'" -o $(BINARY)
 
 run: run-be
 

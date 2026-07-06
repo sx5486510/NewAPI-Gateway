@@ -9,6 +9,7 @@ import (
 
 var StartTime = time.Now().Unix() // unit: second
 var Version = "v0.0.1"            // this hard coding will be replaced automatically when building, no need to manually change
+var BuildTime = "unknown"         // build time, will be replaced automatically when building
 var SystemName = "NewAPI Gateway"
 var ServerAddress = "http://localhost:3030"
 var Footer = ""

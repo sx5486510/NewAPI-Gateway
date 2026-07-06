@@ -12,11 +12,16 @@ ENV GO111MODULE=on \
     CGO_ENABLED=1 \
     GOOS=linux
 
+ARG GIT_VERSION
+ARG BUILD_TIME
+
 WORKDIR /build
 COPY . .
 COPY --from=builder /build/build ./web/build
 RUN go mod download
-RUN go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=$(cat VERSION)' -extldflags '-static'" -o gateway-aggregator
+RUN VERSION="${GIT_VERSION:-$(cat VERSION)}"; \
+    BUILT="${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"; \
+    go build -ldflags "-s -w -X 'NewAPI-Gateway/common.Version=${VERSION}' -X 'NewAPI-Gateway/common.BuildTime=${BUILT}' -extldflags '-static'" -o gateway-aggregator
 
 FROM alpine
 

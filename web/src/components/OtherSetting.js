@@ -22,6 +22,10 @@ const OtherSetting = () => {
     tag_name: '',
     content: '',
   });
+  const [versionInfo, setVersionInfo] = useState({
+    version: '',
+    build_time: '',
+  });
 
   const getOptions = useCallback(async () => {
     const res = await API.get('/api/option/');
@@ -41,7 +45,23 @@ const OtherSetting = () => {
 
   useEffect(() => {
     getOptions();
+    fetchVersionInfo();
   }, [getOptions]);
+
+  const fetchVersionInfo = async () => {
+    try {
+      const res = await API.get('/api/status');
+      const { success, data } = res.data;
+      if (success && data) {
+        setVersionInfo({
+          version: data.version || 'unknown',
+          build_time: data.build_time || 'unknown',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch version info:', error);
+    }
+  };
 
   const updateOption = async (key, value) => {
     setLoading(true);
@@ -111,6 +131,25 @@ const OtherSetting = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>通用设置</h3>
           <Button onClick={checkUpdate} size="sm" variant="outline">检查更新</Button>
+        </div>
+
+        <div style={{
+          marginBottom: '1.5rem',
+          padding: '1rem',
+          backgroundColor: 'var(--bg-secondary)',
+          borderRadius: 'var(--radius-md)',
+          display: 'flex',
+          gap: '2rem',
+          fontSize: '0.875rem'
+        }}>
+          <div>
+            <span style={{ color: 'var(--text-secondary)' }}>版本号：</span>
+            <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{versionInfo.version}</span>
+          </div>
+          <div>
+            <span style={{ color: 'var(--text-secondary)' }}>编译时间：</span>
+            <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{versionInfo.build_time}</span>
+          </div>
         </div>
 
         <div style={{ marginBottom: '1rem' }}>
