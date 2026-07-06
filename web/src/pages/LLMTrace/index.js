@@ -317,14 +317,14 @@ const LLMTrace = () => {
                 </div>
               </section>
             )}
-            <details open className='trace-collapse-container'>
+            <details className='trace-collapse-container'>
               <summary className='trace-collapse-summary'>
                 <span className='trace-collapse-arrow'>▶</span>
                 请求
               </summary>
               <pre className='log-json-detail' style={{ marginTop: '0.75rem', marginBottom: 0 }}>{formatTraceContent(selectedTrace.request_body)}</pre>
             </details>
-            <details className='trace-collapse-container'>
+            <details open className='trace-collapse-container'>
               <summary className='trace-collapse-summary'>
                 <span className='trace-collapse-arrow'>▶</span>
                 响应
