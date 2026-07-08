@@ -58,6 +58,8 @@ func InitOptionMap() {
 	common.OptionMap["RoutingBaseWeightFactor"] = "0.2"
 	common.OptionMap["RoutingValueScoreFactor"] = "0.8"
 	common.OptionMap["RoutingHealthAdjustmentEnabled"] = "true"
+	common.OptionMap["RoutingPriceGuardEnabled"] = "true"
+	common.OptionMap["RoutingPriceGuardMaxUnitPrice"] = "75"
 	common.OptionMapRWMutex.Unlock()
 	options, _ := AllOption()
 	for _, option := range options {

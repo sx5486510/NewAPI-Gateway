@@ -14,15 +14,19 @@ import (
 )
 
 const (
-	defaultRoutingUsageWindowHours = 24
-	defaultRoutingBaseWeightFactor = 0.2
-	defaultRoutingValueScoreFactor = 0.8
-	defaultRoutingHealthEnabled    = true
+	defaultRoutingUsageWindowHours       = 24
+	defaultRoutingBaseWeightFactor       = 0.2
+	defaultRoutingValueScoreFactor       = 0.8
+	defaultRoutingHealthEnabled          = true
+	defaultRoutingPriceGuardEnabled      = true
+	defaultRoutingPriceGuardMaxUnitPrice = 75.0
 
-	routingUsageWindowHoursOptionKey = "RoutingUsageWindowHours"
-	routingBaseWeightFactorOptionKey = "RoutingBaseWeightFactor"
-	routingValueScoreFactorOptionKey = "RoutingValueScoreFactor"
-	routingHealthEnabledOptionKey    = "RoutingHealthAdjustmentEnabled"
+	routingUsageWindowHoursOptionKey       = "RoutingUsageWindowHours"
+	routingBaseWeightFactorOptionKey       = "RoutingBaseWeightFactor"
+	routingValueScoreFactorOptionKey       = "RoutingValueScoreFactor"
+	routingHealthEnabledOptionKey          = "RoutingHealthAdjustmentEnabled"
+	routingPriceGuardEnabledOptionKey      = "RoutingPriceGuardEnabled"
+	routingPriceGuardMaxUnitPriceOptionKey = "RoutingPriceGuardMaxUnitPrice"
 
 	sqliteSingleInChunkSize = 800
 	sqlitePairInChunkSize   = 400
@@ -277,6 +281,7 @@ type RouteAttempt struct {
 
 type routeRuntimeMetrics struct {
 	UnitCostUSD        float64
+	MaxUnitPriceUSD    float64
 	ProviderBalanceUSD float64
 	RecentUsageCostUSD float64
 	ValueScore         float64
@@ -287,10 +292,12 @@ type routeRuntimeMetrics struct {
 }
 
 type routingTuningConfig struct {
-	UsageWindowHours int
-	BaseWeightFactor float64
-	ValueScoreFactor float64
-	HealthEnabled    bool
+	UsageWindowHours       int
+	BaseWeightFactor       float64
+	ValueScoreFactor       float64
+	HealthEnabled          bool
+	PriceGuardEnabled      bool
+	PriceGuardMaxUnitPrice float64
 }
 
 type routeHealthStats struct {
@@ -410,6 +417,9 @@ func BuildRouteAttemptsByPriority(modelName string, clientType string) ([][]Rout
 			continue
 		}
 		metric := metricLookup[route.Id]
+		if routeExceedsPriceGuard(metric, config) {
+			continue
+		}
 		if metric.ValueScore > maxScore {
 			maxScore = metric.ValueScore
 		}
@@ -619,6 +629,7 @@ func buildRouteRuntimeMetrics(routes []ModelRoute, providers map[int]*Provider, 
 		balanceUSD := parseBalanceUSD(provider.Balance)
 		tokenGroup := tokenGroupLookup[route.ProviderTokenId]
 		unitCostUSD := calcRouteUnitCostUSD(route.ProviderId, route.ModelName, tokenGroup, groupRatioLookup, pricingLookup)
+		maxUnitPriceUSD := calcRouteMaxUnitPriceUSD(route.ProviderId, route.ModelName, tokenGroup, groupRatioLookup, pricingLookup)
 		recentUsageUSD := usageLookup[routeUsageKey(route.ProviderTokenId, route.ModelName)]
 		valueScore := computeRouteValueScore(unitCostUSD, balanceUSD, recentUsageUSD)
 		healthStats := finalizeRouteHealthStat(
@@ -627,6 +638,7 @@ func buildRouteRuntimeMetrics(routes []ModelRoute, providers map[int]*Provider, 
 		)
 		metrics[route.Id] = routeRuntimeMetrics{
 			UnitCostUSD:        unitCostUSD,
+			MaxUnitPriceUSD:    maxUnitPriceUSD,
 			ProviderBalanceUSD: balanceUSD,
 			RecentUsageCostUSD: recentUsageUSD,
 			ValueScore:         valueScore,
@@ -638,6 +650,13 @@ func buildRouteRuntimeMetrics(routes []ModelRoute, providers map[int]*Provider, 
 	}
 
 	return metrics, nil
+}
+
+func routeExceedsPriceGuard(metric routeRuntimeMetrics, config routingTuningConfig) bool {
+	if !config.PriceGuardEnabled || config.PriceGuardMaxUnitPrice <= 0 || metric.MaxUnitPriceUSD <= 0 {
+		return false
+	}
+	return metric.MaxUnitPriceUSD > config.PriceGuardMaxUnitPrice
 }
 
 func weightedShuffleAttempts(attempts []RouteAttempt) []RouteAttempt {
@@ -754,6 +773,38 @@ func calcRouteUnitCostUSD(providerId int, modelName string, tokenGroup string, g
 	return total
 }
 
+func calcRouteMaxUnitPriceUSD(providerId int, modelName string, tokenGroup string, groupRatioLookup map[int]map[string]float64, pricingLookup map[string]ModelPricing) float64 {
+	pricing, ok := pricingLookup[routePricingKey(providerId, modelName)]
+	if !ok {
+		return 0
+	}
+	groupRatioMap := groupRatioLookup[providerId]
+	groupRatio := getGroupRatio(tokenGroup, groupRatioMap)
+
+	if pricing.ModelPrice > 0 || pricing.QuotaType == 1 {
+		price := pricing.ModelPrice * groupRatio
+		if price < 0 {
+			return 0
+		}
+		return price
+	}
+
+	if pricing.ModelRatio <= 0 {
+		return 0
+	}
+	promptPrice := pricing.ModelRatio * 2 * groupRatio
+	completionRatio := pricing.CompletionRatio
+	if completionRatio <= 0 {
+		completionRatio = 1
+	}
+	completionPrice := promptPrice * completionRatio
+	maxUnitPrice := math.Max(promptPrice, completionPrice)
+	if maxUnitPrice < 0 {
+		return 0
+	}
+	return maxUnitPrice
+}
+
 func computeRouteValueScore(unitCostUSD float64, balanceUSD float64, recentUsageUSD float64) float64 {
 	costScore := 0.5
 	if unitCostUSD > 0 {
@@ -775,10 +826,12 @@ func computeRouteValueScore(unitCostUSD float64, balanceUSD float64, recentUsage
 
 func loadRoutingTuningConfig() routingTuningConfig {
 	config := routingTuningConfig{
-		UsageWindowHours: defaultRoutingUsageWindowHours,
-		BaseWeightFactor: defaultRoutingBaseWeightFactor,
-		ValueScoreFactor: defaultRoutingValueScoreFactor,
-		HealthEnabled:    defaultRoutingHealthEnabled,
+		UsageWindowHours:       defaultRoutingUsageWindowHours,
+		BaseWeightFactor:       defaultRoutingBaseWeightFactor,
+		ValueScoreFactor:       defaultRoutingValueScoreFactor,
+		HealthEnabled:          defaultRoutingHealthEnabled,
+		PriceGuardEnabled:      defaultRoutingPriceGuardEnabled,
+		PriceGuardMaxUnitPrice: defaultRoutingPriceGuardMaxUnitPrice,
 	}
 
 	common.OptionMapRWMutex.RLock()
@@ -805,6 +858,16 @@ func loadRoutingTuningConfig() routingTuningConfig {
 	config.HealthEnabled = parseOptionBool(
 		common.OptionMap[routingHealthEnabledOptionKey],
 		defaultRoutingHealthEnabled,
+	)
+	config.PriceGuardEnabled = parseOptionBool(
+		common.OptionMap[routingPriceGuardEnabledOptionKey],
+		defaultRoutingPriceGuardEnabled,
+	)
+	config.PriceGuardMaxUnitPrice = parseOptionFloatInRange(
+		common.OptionMap[routingPriceGuardMaxUnitPriceOptionKey],
+		defaultRoutingPriceGuardMaxUnitPrice,
+		0.000001,
+		1000000,
 	)
 	if config.BaseWeightFactor == 0 && config.ValueScoreFactor == 0 {
 		config.BaseWeightFactor = defaultRoutingBaseWeightFactor

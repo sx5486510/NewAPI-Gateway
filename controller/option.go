@@ -128,6 +128,24 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "RoutingPriceGuardEnabled":
+		normalized := strings.TrimSpace(strings.ToLower(option.Value))
+		if normalized != "true" && normalized != "false" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "价格保护开关必须是 true 或 false",
+			})
+			return
+		}
+	case "RoutingPriceGuardMaxUnitPrice":
+		value, err := strconv.ParseFloat(strings.TrimSpace(option.Value), 64)
+		if err != nil || value <= 0 || value > 1000000 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "价格保护单价上限必须是大于 0 且不超过 1000000 的数字",
+			})
+			return
+		}
 	case "RoutingBaseWeightFactor", "RoutingValueScoreFactor":
 		value, err := strconv.ParseFloat(strings.TrimSpace(option.Value), 64)
 		if err != nil || value < 0 || value > 10 {

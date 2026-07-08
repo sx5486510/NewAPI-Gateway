@@ -93,6 +93,50 @@ func TestBuildRouteAttemptsIgnoresPriorityTiers(t *testing.T) {
 	}
 }
 
+func TestBuildRouteAttemptsFiltersRoutesAboveDefaultPriceGuardLimit(t *testing.T) {
+	setupModelRouteTestDB(t)
+
+	insertRouteCandidate(t, 1, 101, 0, 10)
+	insertRouteCandidate(t, 2, 102, 0, 10)
+	if err := DB.Create(&ModelPricing{ProviderId: 1, ModelName: "gpt-test", ModelRatio: 10, CompletionRatio: 1}).Error; err != nil {
+		t.Fatalf("create affordable pricing: %v", err)
+	}
+	if err := DB.Create(&ModelPricing{ProviderId: 2, ModelName: "gpt-test", ModelRatio: 40, CompletionRatio: 1}).Error; err != nil {
+		t.Fatalf("create expensive pricing: %v", err)
+	}
+
+	plan, err := BuildRouteAttemptsByPriority("gpt-test", "")
+	if err != nil {
+		t.Fatalf("build route attempts: %v", err)
+	}
+	if len(plan) != 1 || len(plan[0]) != 1 {
+		t.Fatalf("expected only the affordable route to participate, got %#v", plan)
+	}
+	if plan[0][0].Route.ProviderId != 1 {
+		t.Fatalf("expected provider 1 to remain, got provider %d", plan[0][0].Route.ProviderId)
+	}
+}
+
+func TestBuildRouteAttemptsKeepsExpensiveRoutesWhenPriceGuardDisabled(t *testing.T) {
+	setupModelRouteTestDB(t)
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap[routingPriceGuardEnabledOptionKey] = "false"
+	common.OptionMapRWMutex.Unlock()
+
+	insertRouteCandidate(t, 1, 101, 0, 10)
+	if err := DB.Create(&ModelPricing{ProviderId: 1, ModelName: "gpt-test", ModelRatio: 40, CompletionRatio: 1}).Error; err != nil {
+		t.Fatalf("create expensive pricing: %v", err)
+	}
+
+	plan, err := BuildRouteAttemptsByPriority("gpt-test", "")
+	if err != nil {
+		t.Fatalf("build route attempts: %v", err)
+	}
+	if len(plan) != 1 || len(plan[0]) != 1 {
+		t.Fatalf("expected expensive route to participate when price guard is disabled, got %#v", plan)
+	}
+}
+
 func TestComputeRouteContributionIgnoresManualWeight(t *testing.T) {
 	lowWeight := computeRouteContribution(-10, 1, 1, 1, 0)
 	highWeight := computeRouteContribution(100, 1, 1, 1, 0)

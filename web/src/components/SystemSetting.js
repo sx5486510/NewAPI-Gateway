@@ -29,6 +29,8 @@ const SystemSetting = () => {
     RoutingBaseWeightFactor: '0.2',
     RoutingValueScoreFactor: '0.8',
     RoutingHealthAdjustmentEnabled: 'true',
+    RoutingPriceGuardEnabled: 'true',
+    RoutingPriceGuardMaxUnitPrice: '75',
     LLMTraceEnabled: 'false',
   });
   const [originInputs, setOriginInputs] = useState({});
@@ -85,6 +87,7 @@ const SystemSetting = () => {
       case 'TurnstileCheckEnabled':
       case 'RegisterEnabled':
       case 'RoutingHealthAdjustmentEnabled':
+      case 'RoutingPriceGuardEnabled':
       case 'LLMTraceEnabled':
       case 'ProxyEnabled':
         value = inputs[key] === 'true' ? 'false' : 'true';
@@ -119,7 +122,8 @@ const SystemSetting = () => {
       name === 'TurnstileSecretKey' ||
       name === 'RoutingUsageWindowHours' ||
       name === 'RoutingBaseWeightFactor' ||
-      name === 'RoutingValueScoreFactor'
+      name === 'RoutingValueScoreFactor' ||
+      name === 'RoutingPriceGuardMaxUnitPrice'
     ) {
       setInputs((inputs) => ({ ...inputs, [name]: value }));
     } else {
@@ -223,6 +227,7 @@ const SystemSetting = () => {
     const rawWindow = Number.parseInt(String(inputs.RoutingUsageWindowHours || '').trim(), 10);
     const rawBaseFactor = Number.parseFloat(String(inputs.RoutingBaseWeightFactor || '').trim());
     const rawValueFactor = Number.parseFloat(String(inputs.RoutingValueScoreFactor || '').trim());
+    const rawPriceGuardMaxUnitPrice = Number.parseFloat(String(inputs.RoutingPriceGuardMaxUnitPrice || '').trim());
 
     if (!Number.isInteger(rawWindow) || rawWindow < 1 || rawWindow > 720) {
       showError('统计窗口必须是 1 到 720 小时');
@@ -236,11 +241,17 @@ const SystemSetting = () => {
       showError('性价比系数必须在 0 到 10 之间');
       return;
     }
+    if (!Number.isFinite(rawPriceGuardMaxUnitPrice) || rawPriceGuardMaxUnitPrice <= 0 || rawPriceGuardMaxUnitPrice > 1000000) {
+      showError('价格保护单价上限必须大于 0 且不超过 1000000');
+      return;
+    }
 
     const nextWindow = String(rawWindow);
     const nextBaseFactor = String(rawBaseFactor);
     const nextValueFactor = String(rawValueFactor);
     const nextHealthEnabled = inputs.RoutingHealthAdjustmentEnabled === 'true' ? 'true' : 'false';
+    const nextPriceGuardEnabled = inputs.RoutingPriceGuardEnabled === 'true' ? 'true' : 'false';
+    const nextPriceGuardMaxUnitPrice = String(rawPriceGuardMaxUnitPrice);
 
     if (originInputs['RoutingUsageWindowHours'] !== nextWindow) {
       await updateOption('RoutingUsageWindowHours', nextWindow);
@@ -253,6 +264,12 @@ const SystemSetting = () => {
     }
     if (originInputs['RoutingHealthAdjustmentEnabled'] !== nextHealthEnabled) {
       await updateOption('RoutingHealthAdjustmentEnabled', nextHealthEnabled);
+    }
+    if (originInputs['RoutingPriceGuardEnabled'] !== nextPriceGuardEnabled) {
+      await updateOption('RoutingPriceGuardEnabled', nextPriceGuardEnabled);
+    }
+    if (originInputs['RoutingPriceGuardMaxUnitPrice'] !== nextPriceGuardMaxUnitPrice) {
+      await updateOption('RoutingPriceGuardMaxUnitPrice', nextPriceGuardMaxUnitPrice);
     }
   };
 
@@ -423,6 +440,34 @@ const SystemSetting = () => {
             placeholder='默认 0.8'
           />
         </div>
+        <div style={{ borderTop: '1px dashed var(--border-color)', margin: '1rem 0' }}></div>
+        <div style={{ marginBottom: '0.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>价格保护参数</div>
+        <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+          开启后，输入价、输出价或按次价格超过固定单价上限的路由不会参与运行时路由选择；不会修改路由的手工启用状态。
+        </p>
+        <div style={{ marginBottom: '0.75rem' }}>
+          <Checkbox
+            checked={inputs.RoutingPriceGuardEnabled === 'true'}
+            label='启用高价路由保护'
+            name='RoutingPriceGuardEnabled'
+            onChange={handleCheckboxChange}
+          />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+          <Input
+            label='价格保护单价上限'
+            type='number'
+            name='RoutingPriceGuardMaxUnitPrice'
+            onChange={handleInputChange}
+            value={inputs.RoutingPriceGuardMaxUnitPrice}
+            min='0.000001'
+            max='1000000'
+            step='0.1'
+            placeholder='默认 75'
+            disabled={inputs.RoutingPriceGuardEnabled !== 'true'}
+          />
+        </div>
+
         <div style={{ borderTop: '1px dashed var(--border-color)', margin: '1rem 0' }}></div>
         <div style={{ marginBottom: '0.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>故障健康（Beta）参数</div>
         <div style={{ marginBottom: '0.75rem' }}>

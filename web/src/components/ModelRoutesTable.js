@@ -352,7 +352,7 @@ const ModelRoutesTable = () => {
     const [statusFilter, setStatusFilter] = useState('all');
     const [selectedModel, setSelectedModel] = useState('');
     const [drafts, setDrafts] = useState({});
-    const [sortMode, setSortMode] = useState('provider_count');
+    const [sortMode] = useState('provider_count');
     const [changedOnly, setChangedOnly] = useState(false);
     const [detailChangedOnly, setDetailChangedOnly] = useState(false);
     const [ultraCompact, setUltraCompact] = useState(true);
