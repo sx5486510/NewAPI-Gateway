@@ -142,6 +142,68 @@ func TestUpdateModelRouteFieldsNormalizesClientRestrictions(t *testing.T) {
 	}
 }
 
+func TestBatchUpdateModelRoutesSavesDisabledRouteAndOverviewReadsIt(t *testing.T) {
+	setupModelRouteTestDB(t)
+
+	provider := Provider{
+		Id:      1,
+		Name:    "provider",
+		BaseURL: "https://example.com",
+		Status:  common.UserStatusEnabled,
+	}
+	if err := DB.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	token := ProviderToken{
+		Id:         101,
+		ProviderId: 1,
+		Name:       "token",
+		GroupName:  "default",
+		Status:     common.UserStatusEnabled,
+	}
+	if err := DB.Create(&token).Error; err != nil {
+		t.Fatalf("create token: %v", err)
+	}
+
+	route := ModelRoute{
+		ModelName:       "gpt-test",
+		ProviderId:      1,
+		ProviderTokenId: 101,
+		Enabled:         true,
+	}
+	if err := DB.Create(&route).Error; err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	enabled := false
+	if err := BatchUpdateModelRoutes([]ModelRoutePatch{{
+		Id:      route.Id,
+		Enabled: &enabled,
+	}}); err != nil {
+		t.Fatalf("batch update route: %v", err)
+	}
+
+	var stored ModelRoute
+	if err := DB.First(&stored, route.Id).Error; err != nil {
+		t.Fatalf("load route: %v", err)
+	}
+	if stored.Enabled {
+		t.Fatal("expected batch update to persist enabled=false")
+	}
+
+	overview, err := GetModelRouteOverview("", 0, false)
+	if err != nil {
+		t.Fatalf("get route overview: %v", err)
+	}
+	if len(overview) != 1 {
+		t.Fatalf("expected one overview route, got %d", len(overview))
+	}
+	if overview[0].Enabled {
+		t.Fatal("expected overview to read enabled=false")
+	}
+}
+
 func TestRebuildRoutesForProviderPreservesDisabledRoute(t *testing.T) {
 	setupModelRouteTestDB(t)
 

@@ -924,8 +924,28 @@ const ModelRoutesTable = () => {
                                                                         <span style={{ color: 'var(--color-red)' }}>
                                                                             {route.provider_name || `供应商 #${route.provider_id}`} (已删除)
                                                                         </span>
+                                                                    ) : route.provider_base_url ? (
+                                                                        <a
+                                                                            href={route.provider_base_url}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            style={{
+                                                                                color: 'var(--primary-600)',
+                                                                                textDecoration: 'none',
+                                                                                cursor: 'pointer',
+                                                                                transition: 'color 0.2s'
+                                                                            }}
+                                                                            onMouseEnter={(e) => {
+                                                                                e.target.style.textDecoration = 'underline';
+                                                                            }}
+                                                                            onMouseLeave={(e) => {
+                                                                                e.target.style.textDecoration = 'none';
+                                                                            }}
+                                                                        >
+                                                                            {route.provider_name || '未知供应商'}
+                                                                        </a>
                                                                     ) : (
-                                                                        route.provider_name || '未知供应商'
+                                                                        <span>{route.provider_name || '未知供应商'}</span>
                                                                     )}
                                                                 </div>
                                                                 {displayTokenName && (

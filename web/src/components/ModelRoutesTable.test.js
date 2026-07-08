@@ -22,6 +22,7 @@ const route = {
   model_name: 'gpt-4o',
   provider_id: 10,
   provider_name: 'OpenAI',
+  provider_base_url: 'https://api.openai.com/v1',
   provider_status: 1,
   provider_token_id: 20,
   token_name: 'primary token',
@@ -115,6 +116,34 @@ describe('ModelRoutesTable', () => {
     expect(statusSwitch.getAttribute('aria-checked')).toBe('false');
     expect(statusSwitch.textContent).toContain('禁用');
   });
+  it('saves disabled route drafts with enabled false', async () => {
+    await act(async () => {
+      root.render(<ModelRoutesTable />);
+    });
+
+    const statusSwitch = document.querySelector('.routes-status-toggle');
+    await act(async () => {
+      statusSwitch.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const saveButton = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('\u4fdd\u5b58\u53d8\u66f4'));
+    expect(saveButton).not.toBeUndefined();
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(API.post).toHaveBeenCalledWith('/api/route/batch-update', {
+      items: [
+        {
+          id: 1,
+          enabled: false,
+        },
+      ],
+    });
+  });
+
   it('does not render manual priority or weight batch controls', async () => {
     await act(async () => {
       root.render(<ModelRoutesTable />);
