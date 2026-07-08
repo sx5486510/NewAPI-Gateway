@@ -192,6 +192,18 @@ describe('ModelRoutesTable', () => {
     });
   });
 
+  it('shows route prices in the route list', async () => {
+    await act(async () => {
+      root.render(<ModelRoutesTable />);
+    });
+
+    const detailPanelText = document.querySelector('.routes-detail-scroller').textContent;
+
+    expect(detailPanelText).toContain('价格');
+    expect(detailPanelText).toContain('输入 $1.0000 / 1M');
+    expect(detailPanelText).toContain('输出 $2.0000 / 1M');
+  });
+
   it('sorts detail routes when clicking sortable detail headers', async () => {
     API.get.mockResolvedValueOnce({
       data: {
