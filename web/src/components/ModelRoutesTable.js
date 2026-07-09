@@ -609,7 +609,19 @@ const ModelRoutesTable = () => {
         const { success, message } = res.data;
         if (success) {
             showSuccess(`已保存 ${items.length} 条路由变更`);
-            setDrafts({});
+            const savedRouteEnabledById = new Map(items.map((item) => [item.id, item.enabled]));
+            setRoutes((currentRoutes) => currentRoutes.map((route) => (
+                savedRouteEnabledById.has(route.id)
+                    ? { ...route, enabled: savedRouteEnabledById.get(route.id) }
+                    : route
+            )));
+            setDrafts((currentDrafts) => {
+                const remainingDrafts = { ...currentDrafts };
+                items.forEach((item) => {
+                    delete remainingDrafts[item.id];
+                });
+                return remainingDrafts;
+            });
             await loadOverview();
         } else {
             showError(message || '保存失败');

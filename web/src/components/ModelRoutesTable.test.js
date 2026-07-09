@@ -144,6 +144,42 @@ describe('ModelRoutesTable', () => {
     });
   });
 
+  it('keeps saved status visible when overview reload fails after saving', async () => {
+    API.get.mockReset();
+    API.get
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: [route],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: false,
+          message: '未登录或登录已过期，请重新登录',
+        },
+      });
+
+    await act(async () => {
+      root.render(<ModelRoutesTable />);
+    });
+
+    await act(async () => {
+      document.querySelector('.routes-status-toggle').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const saveButton = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('\u4fdd\u5b58\u53d8\u66f4'));
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const statusSwitchAfterFailedReload = document.querySelector('.routes-status-toggle');
+    expect(statusSwitchAfterFailedReload.getAttribute('aria-checked')).toBe('false');
+    expect(statusSwitchAfterFailedReload.textContent).toContain('禁用');
+  });
+
   it('does not render manual priority or weight batch controls', async () => {
     await act(async () => {
       root.render(<ModelRoutesTable />);
