@@ -1,0 +1,8 @@
+data:
+{
+  "type": "ping"
+}
+data: {"type": "ping"}
+
+event: response.failed
+data: {"type":"response.failed","response":{"id":"resp_d1d9d56f37db4b3ca2b239ab1b885835","object":"response","model":"claude-opus-4-8","status":"failed","output":[],"error":{"code":"rate_limit_exceeded","message":"Concurrency limit exceeded for account, please retry later"}}}

@@ -300,43 +300,8 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			fmt.Fprintf(c.Writer, "%s\n", line)
 			eventCount++
 
-			// Detect rate limit events (treat as failure)
-			if strings.Contains(line, "event: codex.rate_limits") {
-				if errorMsg == "" {
-					errorMsg = "upstream rate limit event detected"
-				}
-			}
-
-			// Detect SSE error events in data field (e.g., {"type":"error","error":{...}})
-			if strings.HasPrefix(strings.TrimSpace(line), "data:") {
-				dataContent := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
-				if dataContent != "" && dataContent != "[DONE]" {
-					if bodyError := extractLLMResponseErrorMessage([]byte(dataContent)); bodyError != "" && errorMsg == "" {
-						errorMsg = fmt.Sprintf("upstream SSE response error: %s", bodyError)
-					}
-					var sseData map[string]interface{}
-					if err := json.Unmarshal([]byte(dataContent), &sseData); err == nil {
-						// Check for {"type":"error",...}
-						if typeVal, ok := sseData["type"].(string); ok && typeVal == "error" {
-							if errorMsg == "" {
-								errorMsg = "upstream SSE error event detected"
-							}
-							// Try to extract detailed error message
-							if errField, ok := sseData["error"].(map[string]interface{}); ok {
-								if errType, ok := errField["type"].(string); ok && errType != "" {
-									errorMsg = fmt.Sprintf("upstream SSE error: type=%s", errType)
-								}
-								if errMsg, ok := errField["message"].(string); ok && errMsg != "" {
-									if strings.Contains(errorMsg, "type=") {
-										errorMsg += fmt.Sprintf(" message=%s", errMsg)
-									} else {
-										errorMsg = fmt.Sprintf("upstream SSE error: %s", errMsg)
-									}
-								}
-							}
-						}
-					}
-				}
+			if lineError := extractSSELineErrorMessage(line); lineError != "" && errorMsg == "" {
+				errorMsg = lineError
 			}
 
 			currentUsage, hasData := extractUsageAndModelFromSSELine(line)
@@ -838,6 +803,25 @@ func extractLLMResponseErrorMessage(body []byte) string {
 		return "response success false"
 	}
 
+	return ""
+}
+
+func extractSSELineErrorMessage(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if strings.Contains(trimmed, "event: codex.rate_limits") {
+		return "upstream rate limit event detected"
+	}
+	if !strings.HasPrefix(trimmed, "data:") {
+		return ""
+	}
+
+	dataContent := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+	if dataContent == "" || dataContent == "[DONE]" {
+		return ""
+	}
+	if bodyError := extractLLMResponseErrorMessage([]byte(dataContent)); bodyError != "" {
+		return fmt.Sprintf("upstream SSE response error: %s", bodyError)
+	}
 	return ""
 }
 

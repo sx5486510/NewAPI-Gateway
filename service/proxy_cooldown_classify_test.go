@@ -179,3 +179,41 @@ func TestExtractLLMResponseErrorMessage(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractSSELineErrorMessage(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		want string
+	}{
+		{
+			name: "codex rate limits event",
+			line: "event: codex.rate_limits",
+			want: "upstream rate limit event detected",
+		},
+		{
+			name: "generic type error data",
+			line: `data: {"type":"error","error":{"type":"rate_limit","message":"too many requests"}}`,
+			want: "upstream SSE response error: too many requests",
+		},
+		{
+			name: "responses failed data",
+			line: `data: {"type":"response.failed","response":{"status":"failed","error":{"code":"rate_limit_exceeded","message":"Concurrency limit exceeded"}}}`,
+			want: "upstream SSE response error: Concurrency limit exceeded",
+		},
+		{
+			name: "normal ping",
+			line: `data: {"type":"ping"}`,
+			want: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractSSELineErrorMessage(tc.line)
+			if got != tc.want {
+				t.Fatalf("extractSSELineErrorMessage() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
