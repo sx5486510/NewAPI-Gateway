@@ -240,6 +240,34 @@ describe('ModelRoutesTable', () => {
     expect(detailPanelText).toContain('输出 $2.0000 / 1M');
   });
 
+  it('keeps health value display concise in the route list', async () => {
+    API.get.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: [
+          {
+            ...route,
+            health_value: -2,
+            health_success_count: 5,
+            health_error_count: 2,
+            health_sample_count: 7,
+          },
+        ],
+      },
+    });
+
+    await act(async () => {
+      root.render(<ModelRoutesTable />);
+    });
+
+    const detailPanelText = document.querySelector('.routes-detail-scroller').textContent;
+
+    expect(detailPanelText).toContain('健康值 -2');
+    expect(detailPanelText).not.toContain('每失败');
+    expect(detailPanelText).not.toContain('统计周期');
+    expect(detailPanelText).not.toContain('样本');
+  });
+
   it('sorts detail routes when clicking sortable detail headers', async () => {
     API.get.mockResolvedValueOnce({
       data: {

@@ -311,6 +311,9 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			if strings.HasPrefix(strings.TrimSpace(line), "data:") {
 				dataContent := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
 				if dataContent != "" && dataContent != "[DONE]" {
+					if bodyError := extractLLMResponseErrorMessage([]byte(dataContent)); bodyError != "" && errorMsg == "" {
+						errorMsg = fmt.Sprintf("upstream SSE response error: %s", bodyError)
+					}
 					var sseData map[string]interface{}
 					if err := json.Unmarshal([]byte(dataContent), &sseData); err == nil {
 						// Check for {"type":"error",...}
@@ -449,6 +452,9 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		errorMsg := ""
 		if len(respBody) == 0 {
 			errorMsg = buildErrorMessage("upstream returned empty response body", c, bodyBytes)
+			logProxyErrorTrace(c, requestId, provider, token, errorMsg)
+		} else if bodyError := extractLLMResponseErrorMessage(respBody); bodyError != "" {
+			errorMsg = buildErrorMessage("upstream response error: "+bodyError, c, bodyBytes)
 			logProxyErrorTrace(c, requestId, provider, token, errorMsg)
 		}
 
@@ -728,6 +734,10 @@ func extractUpstreamErrorInfo(body []byte) upstreamErrorInfo {
 		return upstreamErrorInfo{}
 	}
 
+	return extractUpstreamErrorInfoFromPayload(payload)
+}
+
+func extractUpstreamErrorInfoFromPayload(payload map[string]interface{}) upstreamErrorInfo {
 	info := upstreamErrorInfo{}
 	if errField, ok := payload["error"]; ok {
 		switch v := errField.(type) {
@@ -767,6 +777,99 @@ func extractUpstreamErrorInfo(body []byte) upstreamErrorInfo {
 		}
 	}
 	return info
+}
+
+func extractLLMResponseErrorMessage(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+
+	info := extractUpstreamErrorInfo(body)
+	errorText := upstreamErrorText(info)
+	typeValue := strings.ToLower(strings.TrimSpace(getStringValue(payload["type"])))
+	if _, ok := payload["error"]; ok {
+		return errorText
+	}
+
+	if response, ok := payload["response"].(map[string]interface{}); ok {
+		responseInfo := extractUpstreamErrorInfoFromPayload(response)
+		responseErrorText := upstreamErrorText(responseInfo)
+		responseStatus := strings.ToLower(strings.TrimSpace(getStringValue(response["status"])))
+		if responseStatus == "failed" || responseStatus == "error" || typeValue == "response.failed" {
+			if responseErrorText != "" {
+				return responseErrorText
+			}
+			if responseStatus == "failed" || typeValue == "response.failed" {
+				return "response status failed"
+			}
+			return "response status error"
+		}
+		if _, ok := response["error"]; ok {
+			return responseErrorText
+		}
+	}
+
+	status := strings.ToLower(strings.TrimSpace(getStringValue(payload["status"])))
+	if status == "failed" || status == "error" {
+		if errorText != "" {
+			return errorText
+		}
+		if status == "failed" {
+			return "response status failed"
+		}
+		return "response status error"
+	}
+
+	if typeValue == "error" {
+		if errorText != "" {
+			return errorText
+		}
+		return "response type error"
+	}
+
+	if success, ok := getBoolValue(payload["success"]); ok && !success {
+		if errorText != "" {
+			return errorText
+		}
+		return "response success false"
+	}
+
+	return ""
+}
+
+func upstreamErrorText(info upstreamErrorInfo) string {
+	if info.Message != "" {
+		return info.Message
+	}
+	if info.Code != "" {
+		return info.Code
+	}
+	if info.Type != "" {
+		return info.Type
+	}
+	return ""
+}
+
+func getBoolValue(value interface{}) (bool, bool) {
+	switch v := value.(type) {
+	case bool:
+		return v, true
+	case string:
+		trimmed := strings.ToLower(strings.TrimSpace(v))
+		if trimmed == "true" {
+			return true, true
+		}
+		if trimmed == "false" {
+			return false, true
+		}
+		return false, false
+	default:
+		return false, false
+	}
 }
 
 func parseRetryAfterSeconds(raw string) int {

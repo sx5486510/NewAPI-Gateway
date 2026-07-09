@@ -939,7 +939,6 @@ const ModelRoutesTable = () => {
                                                     const healthValue = Number(route.health_value);
                                                     const healthSuccessCount = Number(route.health_success_count);
                                                     const healthErrorCount = Number(route.health_error_count);
-                                                    const healthSampleCount = Number(route.health_sample_count);
                                                     const healthEnabled = route.health_adjustment_enabled === true;
                                                     const successCount = Number.isFinite(healthSuccessCount) ? healthSuccessCount : 0;
                                                     const failCount = Number.isFinite(healthErrorCount) ? healthErrorCount : 0;
@@ -1020,15 +1019,9 @@ const ModelRoutesTable = () => {
                                                                     <div style={{ color: safeHealthValue < 0 ? 'var(--error)' : 'var(--text-primary)', fontWeight: 600 }}>
                                                                         健康值 {safeHealthValue}
                                                                     </div>
-                                                                    <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
-                                                                        每失败 1 次 -1，成功不加不减
-                                                                    </div>
-                                                                    <div style={{ ...helperTextStyle, marginTop: '0.18rem' }}>
-                                                                        统计周期：当前整点小时 | 样本 {Number.isFinite(healthSampleCount) ? healthSampleCount : 0}
-                                                                    </div>
                                                                     {!healthEnabled && (
                                                                         <div style={{ ...helperTextStyle, marginTop: '0.18rem', color: 'var(--warning)' }}>
-                                                                            当前未参与路由优选
+                                                                            未参与优选
                                                                         </div>
                                                                     )}
                                                                 </div>

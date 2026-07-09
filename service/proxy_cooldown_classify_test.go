@@ -137,3 +137,45 @@ func TestIsNonRetryableInvalidRequest(t *testing.T) {
 	}
 }
 
+func TestExtractLLMResponseErrorMessage(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "newapi wrapper failure",
+			body: `{"success":false,"message":"upstream model overloaded","data":null}`,
+			want: "upstream model overloaded",
+		},
+		{
+			name: "openai error object",
+			body: `{"error":{"message":"quota exceeded","type":"insufficient_quota","code":"insufficient_quota"}}`,
+			want: "quota exceeded",
+		},
+		{
+			name: "responses failed status",
+			body: `{"id":"resp_1","status":"failed","error":{"message":"backend unavailable","code":"server_error"}}`,
+			want: "backend unavailable",
+		},
+		{
+			name: "nested response failed event",
+			body: `{"type":"response.failed","response":{"id":"resp_1","status":"failed","output":[],"error":{"code":"rate_limit_exceeded","message":"Concurrency limit exceeded for account, please retry later"}}}`,
+			want: "Concurrency limit exceeded for account, please retry later",
+		},
+		{
+			name: "normal chat completion",
+			body: `{"id":"chatcmpl_1","choices":[{"message":{"content":"ok"}}]}`,
+			want: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractLLMResponseErrorMessage([]byte(tc.body))
+			if got != tc.want {
+				t.Fatalf("extractLLMResponseErrorMessage() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

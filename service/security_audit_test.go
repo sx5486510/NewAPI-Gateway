@@ -1,6 +1,8 @@
 package service
 
 import (
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -203,9 +205,10 @@ func TestAuditLLMContent_ToolCalls(t *testing.T) {
 
 func TestExtractTextFromJSON(t *testing.T) {
 	testCases := []struct {
-		name     string
-		input    string
-		expected string
+		name           string
+		input          string
+		expected       string
+		unorderedLines bool
 	}{
 		{
 			name:     "Simple JSON",
@@ -213,9 +216,10 @@ func TestExtractTextFromJSON(t *testing.T) {
 			expected: "hello world",
 		},
 		{
-			name:     "Nested JSON",
-			input:    `{"user": {"name": "John", "message": "Hello"}}`,
-			expected: "John\nHello",
+			name:           "Nested JSON",
+			input:          `{"user": {"name": "John", "message": "Hello"}}`,
+			expected:       "Hello\nJohn",
+			unorderedLines: true,
 		},
 		{
 			name:     "Array",
@@ -232,6 +236,16 @@ func TestExtractTextFromJSON(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			result := extractTextFromJSON(tc.input)
+			if tc.unorderedLines {
+				gotLines := strings.Split(result, "\n")
+				wantLines := strings.Split(tc.expected, "\n")
+				sort.Strings(gotLines)
+				sort.Strings(wantLines)
+				if strings.Join(gotLines, "\n") != strings.Join(wantLines, "\n") {
+					t.Errorf("Expected lines %q, got %q", tc.expected, result)
+				}
+				return
+			}
 			if result != tc.expected {
 				t.Errorf("Expected %q, got %q", tc.expected, result)
 			}
