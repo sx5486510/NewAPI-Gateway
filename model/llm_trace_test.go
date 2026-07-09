@@ -32,6 +32,7 @@ func TestLLMTraceInsertAndQuery(t *testing.T) {
 		ProviderId:        13,
 		ProviderName:      "openai",
 		ProviderTokenId:   17,
+		TokenGroupName:    "vip",
 		ModelName:         "gpt-4.1",
 		Method:            "POST",
 		Path:              "/v1/chat/completions",
@@ -67,6 +68,9 @@ func TestLLMTraceInsertAndQuery(t *testing.T) {
 	if traces[0].RequestId != "req-123" {
 		t.Fatalf("expected request id req-123, got %q", traces[0].RequestId)
 	}
+	if traces[0].TokenGroupName != "vip" {
+		t.Fatalf("expected list token group vip, got %q", traces[0].TokenGroupName)
+	}
 	if traces[0].RequestBody != "" || traces[0].ResponseBody != "" {
 		t.Fatalf("expected metadata query to omit bodies, got request=%q response=%q", traces[0].RequestBody, traces[0].ResponseBody)
 	}
@@ -77,6 +81,9 @@ func TestLLMTraceInsertAndQuery(t *testing.T) {
 	}
 	if fullTrace.RequestBody != trace.RequestBody {
 		t.Fatalf("expected full request body, got %q", fullTrace.RequestBody)
+	}
+	if fullTrace.TokenGroupName != "vip" {
+		t.Fatalf("expected full token group vip, got %q", fullTrace.TokenGroupName)
 	}
 	if fullTrace.ResponseBody != trace.ResponseBody {
 		t.Fatalf("expected full response body, got %q", fullTrace.ResponseBody)

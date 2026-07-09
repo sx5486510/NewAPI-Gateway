@@ -66,7 +66,7 @@ func TestCaptureLLMTraceEnabledWritesTrace(t *testing.T) {
 	input := llmTraceInput{
 		AggToken:         &model.AggregatedToken{Id: 1, UserId: 2},
 		Provider:         &model.Provider{Id: 3, Name: "openai"},
-		Token:            &model.ProviderToken{Id: 4},
+		Token:            &model.ProviderToken{Id: 4, GroupName: "vip"},
 		Context:          ctx,
 		RequestId:        "req-enabled",
 		ModelName:        "gpt-4.1",
@@ -84,6 +84,9 @@ func TestCaptureLLMTraceEnabledWritesTrace(t *testing.T) {
 	var trace model.LLMTrace
 	if err := model.DB.First(&trace, "request_id = ?", "req-enabled").Error; err != nil {
 		t.Fatalf("find trace: %v", err)
+	}
+	if trace.TokenGroupName != "vip" {
+		t.Fatalf("expected token group vip, got %q", trace.TokenGroupName)
 	}
 	if trace.RequestBody != `{"model":"gpt-4.1"}` || trace.ResponseBody != `{"choices":[]}` {
 		t.Fatalf("unexpected bodies: request=%q response=%q", trace.RequestBody, trace.ResponseBody)

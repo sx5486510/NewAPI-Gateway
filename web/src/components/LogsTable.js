@@ -466,6 +466,10 @@ const LogsTable = ({ selfOnly }) => {
                   <span className='meta-pill-label'>花费</span>
                   <span className='meta-pill-value'>{formatCost(log.cost_usd)}</span>
                 </div>
+                <div className='log-meta-pill'>
+                  <span className='meta-pill-label'>分组</span>
+                  <span className='meta-pill-value'>{log.token_group_name || '-'}</span>
+                </div>
                 {!selfOnly && (
                   <div className='log-meta-pill'>
                     <span className='meta-pill-label'>客户端 IP</span>

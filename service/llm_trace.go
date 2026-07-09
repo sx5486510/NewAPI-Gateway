@@ -88,6 +88,7 @@ func captureLLMTrace(input llmTraceInput) {
 		ProviderId:        input.Provider.Id,
 		ProviderName:      input.Provider.Name,
 		ProviderTokenId:   input.Token.Id,
+		TokenGroupName:    strings.TrimSpace(input.Token.GroupName),
 		ModelName:         input.ModelName,
 		Method:            input.Method,
 		Path:              input.Path,

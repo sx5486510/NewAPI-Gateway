@@ -15,6 +15,7 @@ type UsageLog struct {
 	ProviderId            int     `json:"provider_id" gorm:"index"`
 	ProviderName          string  `json:"provider_name" gorm:"type:varchar(128)"`
 	ProviderTokenId       int     `json:"provider_token_id"`
+	TokenGroupName        string  `json:"token_group_name" gorm:"type:varchar(64);index"`
 	ModelName             string  `json:"model_name" gorm:"type:varchar(255);index"`
 	PromptTokens          int     `json:"prompt_tokens"`
 	CompletionTokens      int     `json:"completion_tokens"`
@@ -47,6 +48,7 @@ func (l *UsageLog) Insert() error {
 		"provider_id":             l.ProviderId,
 		"provider_name":           l.ProviderName,
 		"provider_token_id":       l.ProviderTokenId,
+		"token_group_name":        l.TokenGroupName,
 		"model_name":              l.ModelName,
 		"prompt_tokens":           l.PromptTokens,
 		"completion_tokens":       l.CompletionTokens,

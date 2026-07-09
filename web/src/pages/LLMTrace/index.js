@@ -236,6 +236,10 @@ const LLMTrace = () => {
                       <span className='meta-pill-value'>{trace.path || '-'}</span>
                     </div>
                     <div className='log-meta-pill'>
+                      <span className='meta-pill-label'>分组</span>
+                      <span className='meta-pill-value'>{trace.token_group_name || '-'}</span>
+                    </div>
+                    <div className='log-meta-pill'>
                       <span className='meta-pill-label'>请求</span>
                       <span className='meta-pill-value'>{trace.requested_stream ? '流式' : '非流式'}</span>
                     </div>

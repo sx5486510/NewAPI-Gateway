@@ -13,6 +13,7 @@
 ### Task 1: Backend Tests for Persisted Group Name
 
 **Files:**
+- Create: `model/usage_log_test.go`
 - Modify: `model/llm_trace_test.go`
 - Modify: `service/llm_trace_test.go`
 
@@ -74,7 +75,52 @@ if trace.TokenGroupName != "vip" {
 }
 ```
 
-- [ ] **Step 3: Run tests to verify failure**
+- [ ] **Step 3: Add failing usage-log assertion**
+
+Create `model/usage_log_test.go`:
+
+```go
+package model
+
+import (
+	"testing"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+)
+
+func TestUsageLogInsertStoresTokenGroupName(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open in-memory sqlite: %v", err)
+	}
+	DB = db
+	if err := DB.AutoMigrate(&UsageLog{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	log := &UsageLog{
+		UserId:          1,
+		ProviderTokenId: 2,
+		TokenGroupName:  "vip",
+		RequestId:       "req-usage-group",
+		Status:          1,
+	}
+	if err := log.Insert(); err != nil {
+		t.Fatalf("insert usage log: %v", err)
+	}
+
+	var stored UsageLog
+	if err := DB.First(&stored, "request_id = ?", "req-usage-group").Error; err != nil {
+		t.Fatalf("find usage log: %v", err)
+	}
+	if stored.TokenGroupName != "vip" {
+		t.Fatalf("expected token group vip, got %q", stored.TokenGroupName)
+	}
+}
+```
+
+- [ ] **Step 4: Run tests to verify failure**
 
 Run:
 
@@ -89,6 +135,7 @@ Expected: fail because `TokenGroupName` does not exist on `LLMTrace`.
 **Files:**
 - Modify: `model/usage_log.go`
 - Modify: `model/llm_trace.go`
+- Modify: `service/proxy.go`
 - Modify: `service/llm_trace.go`
 
 - [ ] **Step 1: Add model fields**
