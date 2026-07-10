@@ -1,6 +1,12 @@
 package service
 
-import "testing"
+import (
+	"context"
+	"net/http"
+	"sync/atomic"
+	"testing"
+	"time"
+)
 
 func TestShouldMarkUnsupportedModel_AcrossAll4xx(t *testing.T) {
 	cases := []struct {
@@ -215,5 +221,131 @@ func TestExtractSSELineErrorMessage(t *testing.T) {
 				t.Fatalf("extractSSELineErrorMessage() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSelectProxyHTTPClientForStreamDoesNotUseShortTotalTimeout(t *testing.T) {
+	if got := selectProxyHTTPClient(false); got != proxyHTTPClient {
+		t.Fatalf("non-stream requests should use proxyHTTPClient")
+	}
+	if got := selectProxyHTTPClient(true); got == proxyHTTPClient {
+		t.Fatalf("stream requests should use a dedicated client")
+	}
+	if got := selectProxyHTTPClient(true).Timeout; got != 0 {
+		t.Fatalf("stream client Timeout = %v, want 0", got)
+	}
+	if got := selectProxyHTTPClient(false).Timeout; got != 5*time.Minute {
+		t.Fatalf("non-stream client Timeout = %v, want %v", got, 5*time.Minute)
+	}
+}
+
+func TestExtractSSELineCompletion(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{name: "anthropic message stop event", line: "event: message_stop", want: true},
+		{name: "openai done sentinel", line: "data: [DONE]", want: true},
+		{name: "openai chat finish reason", line: `data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`, want: true},
+		{name: "responses completed data", line: `data: {"type":"response.completed","response":{"status":"completed"}}`, want: true},
+		{name: "responses completed status", line: `data: {"id":"resp_1","status":"completed"}`, want: true},
+		{name: "gemini candidate finish reason", line: `data: {"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}`, want: true},
+		{name: "thinking delta incomplete", line: `data: {"delta":{"thinking":"still working","type":"thinking_delta"},"type":"content_block_delta"}`, want: false},
+		{name: "ping incomplete", line: `data: {"type":"ping"}`, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractSSELineCompletion(tc.line); got != tc.want {
+				t.Fatalf("extractSSELineCompletion(%q) = %v, want %v", tc.line, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFinalizeStreamErrorMarksEOFBeforeCompletion(t *testing.T) {
+	if got := finalizeStreamError("", 12, true); got != "" {
+		t.Fatalf("completed stream error = %q, want empty", got)
+	}
+	if got := finalizeStreamError("", 12, false); got != "" {
+		t.Fatalf("clean EOF after events error = %q, want empty", got)
+	}
+	if got := finalizeStreamError("upstream SSE response error: bad", 12, false); got != "upstream SSE response error: bad" {
+		t.Fatalf("existing error = %q, want existing error unchanged", got)
+	}
+	if got := finalizeStreamError("", 0, false); got != "stream ended without receiving any events" {
+		t.Fatalf("empty stream error = %q, want stream ended without receiving any events", got)
+	}
+}
+
+func TestNewStreamIdleTimerDoesNotRunBeforeFirstReset(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var reason atomic.Value
+	timer := newStreamIdleTimer(10*time.Millisecond, cancel, &reason)
+	defer timer.Stop()
+
+	time.Sleep(30 * time.Millisecond)
+	if ctx.Err() != nil {
+		t.Fatalf("idle timer canceled before the stream body became active")
+	}
+	if got := loadStreamTimeoutReason(&reason); got != "" {
+		t.Fatalf("idle timeout reason before first reset = %q, want empty", got)
+	}
+
+	timer.Reset(10 * time.Millisecond)
+	select {
+	case <-ctx.Done():
+	case <-time.After(100 * time.Millisecond):
+		t.Fatalf("idle timer did not cancel after being reset")
+	}
+	if got := loadStreamTimeoutReason(&reason); got != "stream idle timeout" {
+		t.Fatalf("idle timeout reason after reset = %q, want stream idle timeout", got)
+	}
+}
+
+func TestStreamTimeoutDefaultsAreLongerThanShortProxyTimeout(t *testing.T) {
+	if streamMaxDuration <= proxyHTTPClient.Timeout {
+		t.Fatalf("streamMaxDuration = %v, want greater than %v", streamMaxDuration, proxyHTTPClient.Timeout)
+	}
+	if streamIdleTimeout <= 0 {
+		t.Fatalf("streamIdleTimeout = %v, want positive timeout", streamIdleTimeout)
+	}
+	if _, ok := streamProxyHTTPClient.Transport.(*http.Transport); !ok {
+		t.Fatalf("stream client should use an http.Transport")
+	}
+}
+
+func TestStreamRouteOutcomeSkipsClientCanceled(t *testing.T) {
+	if got := streamRouteOutcome("", false); got != streamRouteOutcomeSuccess {
+		t.Fatalf("completed stream outcome = %v, want success", got)
+	}
+	if got := streamRouteOutcome("stream ended before completion", false); got != streamRouteOutcomeFailure {
+		t.Fatalf("failed stream outcome = %v, want failure", got)
+	}
+	if got := streamRouteOutcome("client canceled", true); got != streamRouteOutcomeSkip {
+		t.Fatalf("client canceled stream outcome = %v, want skip", got)
+	}
+}
+
+func TestStreamRouteOutcomeFailureTakesPrecedenceOverClientCanceled(t *testing.T) {
+	if got := streamRouteOutcome("upstream SSE response error: bad", true); got != streamRouteOutcomeFailure {
+		t.Fatalf("upstream error with client cancel outcome = %v, want failure", got)
+	}
+}
+
+func TestClassifyProxyRequestErrorTreatsProxyStreamTimeoutAsRouteFailure(t *testing.T) {
+	outcome := classifyProxyRequestError(context.Canceled, nil, "stream idle timeout")
+
+	if outcome.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status code = %d, want %d", outcome.StatusCode, http.StatusBadGateway)
+	}
+	if !outcome.Retryable {
+		t.Fatalf("retryable = false, want true")
+	}
+	if !outcome.RecordRouteFailure {
+		t.Fatalf("record route failure = false, want true")
 	}
 }

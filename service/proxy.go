@@ -17,6 +17,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +34,20 @@ var proxyHTTPClient = &http.Client{
 	},
 }
 
+var streamProxyHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy:               common.ProxyFromSettings,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 20,
+		IdleConnTimeout:     90 * time.Second,
+	},
+}
+
+var (
+	streamMaxDuration = 30 * time.Minute
+	streamIdleTimeout = 3 * time.Minute
+)
+
 type ProxyAttemptError struct {
 	StatusCode int
 	Message    string
@@ -48,6 +63,21 @@ type ProxyAttemptError struct {
 	UpstreamContentType string
 	UpstreamErrorCode   string
 	UpstreamErrorType   string
+}
+
+type streamRouteCooldownOutcome int
+
+const (
+	streamRouteOutcomeSkip streamRouteCooldownOutcome = iota
+	streamRouteOutcomeSuccess
+	streamRouteOutcomeFailure
+)
+
+type proxyRequestErrorOutcome struct {
+	StatusCode         int
+	Message            string
+	Retryable          bool
+	RecordRouteFailure bool
 }
 
 func (e *ProxyAttemptError) Error() string {
@@ -109,8 +139,29 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		upstreamURL += "?" + c.Request.URL.RawQuery
 	}
 
+	requestCtx := c.Request.Context()
+	var streamCancel context.CancelFunc
+	var streamTimeoutReason atomic.Value
+	var streamMaxTimer *time.Timer
+	var streamIdleTimer *time.Timer
+	if requestedStream {
+		requestCtx, streamCancel = context.WithCancel(requestCtx)
+		defer streamCancel()
+		if streamMaxDuration > 0 {
+			streamMaxTimer = time.AfterFunc(streamMaxDuration, func() {
+				streamTimeoutReason.Store("stream max duration exceeded")
+				streamCancel()
+			})
+			defer streamMaxTimer.Stop()
+		}
+		if streamIdleTimeout > 0 {
+			streamIdleTimer = newStreamIdleTimer(streamIdleTimeout, streamCancel, &streamTimeoutReason)
+			defer streamIdleTimer.Stop()
+		}
+	}
+
 	// 3. Create upstream request
-	req, err := http.NewRequest(c.Request.Method, upstreamURL, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(requestCtx, c.Request.Method, upstreamURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		errorMsg := buildErrorMessage("failed to create upstream request: "+err.Error(), c, bodyBytes)
 		logProxyErrorTrace(c, requestId, provider, token, errorMsg)
@@ -158,9 +209,14 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 	req.Header.Del("Forwarded")
 
 	// 9. Send request
-	resp, err := proxyHTTPClient.Do(req)
+	resp, err := selectProxyHTTPClient(requestedStream).Do(req)
 	if err != nil {
-		errorMsg := buildErrorMessage(err.Error(), c, bodyBytes)
+		timeoutReason := loadStreamTimeoutReason(&streamTimeoutReason)
+		errorText := err.Error()
+		if timeoutReason != "" {
+			errorText = timeoutReason + ": " + errorText
+		}
+		errorMsg := buildErrorMessage(errorText, c, bodyBytes)
 		logProxyErrorTrace(c, requestId, provider, token, errorMsg)
 		logUsage(
 			aggToken,
@@ -189,19 +245,15 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			RequestBody:     bodyBytes,
 			ErrorMessage:    errorMsg,
 		})
-		if isClientCanceledError(err, c) {
-			return &ProxyAttemptError{
-				StatusCode: 499,
-				Message:    "client canceled",
-				Retryable:  false,
-			}
+		outcome := classifyProxyRequestError(err, c, timeoutReason)
+		if outcome.RecordRouteFailure {
+			common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
 		}
 
-		common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
 		return &ProxyAttemptError{
-			StatusCode: http.StatusBadGateway,
-			Message:    "upstream request failed: " + err.Error(),
-			Retryable:  true,
+			StatusCode: outcome.StatusCode,
+			Message:    outcome.Message,
+			Retryable:  outcome.Retryable,
 		}
 	}
 	defer resp.Body.Close()
@@ -294,14 +346,22 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		firstTokenMs := 0
 		eventCount := 0
 		errorMsg := ""
+		streamCompleted := false
+		clientCanceled := false
 		for scanner.Scan() {
 			line := scanner.Text()
+			if streamIdleTimer != nil {
+				streamIdleTimer.Reset(streamIdleTimeout)
+			}
 			streamCapture.appendLine(line)
 			fmt.Fprintf(c.Writer, "%s\n", line)
 			eventCount++
 
 			if lineError := extractSSELineErrorMessage(line); lineError != "" && errorMsg == "" {
 				errorMsg = lineError
+			}
+			if extractSSELineCompletion(line) {
+				streamCompleted = true
 			}
 
 			currentUsage, hasData := extractUsageAndModelFromSSELine(line)
@@ -328,20 +388,17 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			}
 		}
 		if scanErr := scanner.Err(); scanErr != nil {
-			if errorMsg != "" {
-				errorMsg += "; scanner error: " + scanErr.Error()
+			if reason := loadStreamTimeoutReason(&streamTimeoutReason); reason != "" {
+				errorMsg = appendStreamError(errorMsg, reason+": "+scanErr.Error())
+			} else if isClientCanceledError(scanErr, c) {
+				clientCanceled = true
+				errorMsg = appendStreamError(errorMsg, "client canceled")
 			} else {
-				errorMsg = "stream scanner error: " + scanErr.Error()
+				errorMsg = appendStreamError(errorMsg, "stream scanner error: "+scanErr.Error())
 			}
 		}
-		// Check if stream ended without any events
-		if eventCount == 0 {
-			if errorMsg != "" {
-				errorMsg += "; stream ended without receiving any events"
-			} else {
-				errorMsg = "stream ended without receiving any events"
-			}
-		}
+		errorMsg = finalizeStreamError(errorMsg, eventCount, streamCompleted)
+		routeErrorMsg := errorMsg
 		if errorMsg != "" {
 			errorMsg = buildErrorMessage(errorMsg, c, bodyBytes)
 			logProxyErrorTrace(c, requestId, provider, token, errorMsg)
@@ -370,9 +427,10 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			ResponseBody:     []byte(streamCapture.String()),
 			ErrorMessage:     errorMsg,
 		})
-		if errorMsg != "" {
+		switch streamRouteOutcome(routeErrorMsg, clientCanceled) {
+		case streamRouteOutcomeFailure:
 			common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
-		} else {
+		case streamRouteOutcomeSuccess:
 			common.GlobalRouteCooldown.RecordRouteSuccess(token.Id, resolvedModel)
 		}
 	} else {
@@ -493,6 +551,101 @@ func rewriteRequestModel(body []byte, targetModel string) []byte {
 		return body
 	}
 	return updatedBody
+}
+
+func selectProxyHTTPClient(stream bool) *http.Client {
+	if stream {
+		return streamProxyHTTPClient
+	}
+	return proxyHTTPClient
+}
+
+func newStreamIdleTimer(timeout time.Duration, cancel context.CancelFunc, reason *atomic.Value) *time.Timer {
+	if timeout <= 0 || cancel == nil {
+		return nil
+	}
+	timer := time.AfterFunc(timeout, func() {
+		if reason != nil {
+			reason.Store("stream idle timeout")
+		}
+		cancel()
+	})
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	return timer
+}
+
+func appendStreamError(existing string, next string) string {
+	next = strings.TrimSpace(next)
+	if next == "" {
+		return existing
+	}
+	if existing == "" {
+		return next
+	}
+	return existing + "; " + next
+}
+
+func finalizeStreamError(errorMsg string, eventCount int, streamCompleted bool) string {
+	if errorMsg != "" {
+		return errorMsg
+	}
+	if eventCount == 0 {
+		return "stream ended without receiving any events"
+	}
+	return ""
+}
+
+func loadStreamTimeoutReason(reason *atomic.Value) string {
+	if reason == nil {
+		return ""
+	}
+	value, ok := reason.Load().(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+func classifyProxyRequestError(err error, c *gin.Context, streamTimeoutReason string) proxyRequestErrorOutcome {
+	if streamTimeoutReason != "" {
+		return proxyRequestErrorOutcome{
+			StatusCode:         http.StatusBadGateway,
+			Message:            "upstream request failed: " + streamTimeoutReason + ": " + err.Error(),
+			Retryable:          true,
+			RecordRouteFailure: true,
+		}
+	}
+	if isClientCanceledError(err, c) {
+		return proxyRequestErrorOutcome{
+			StatusCode: 499,
+			Message:    "client canceled",
+			Retryable:  false,
+		}
+	}
+	return proxyRequestErrorOutcome{
+		StatusCode:         http.StatusBadGateway,
+		Message:            "upstream request failed: " + err.Error(),
+		Retryable:          true,
+		RecordRouteFailure: true,
+	}
+}
+
+func streamRouteOutcome(errorMsg string, clientCanceled bool) streamRouteCooldownOutcome {
+	if clientCanceled && strings.TrimSpace(errorMsg) == "client canceled" {
+		return streamRouteOutcomeSkip
+	}
+	if errorMsg != "" {
+		return streamRouteOutcomeFailure
+	}
+	if clientCanceled {
+		return streamRouteOutcomeSkip
+	}
+	return streamRouteOutcomeSuccess
 }
 
 func getRequestBodyBytes(c *gin.Context) ([]byte, error) {
@@ -824,6 +977,72 @@ func extractSSELineErrorMessage(line string) string {
 		return fmt.Sprintf("upstream SSE response error: %s", bodyError)
 	}
 	return ""
+}
+
+func extractSSELineCompletion(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "event: message_stop" {
+		return true
+	}
+	if !strings.HasPrefix(trimmed, "data:") {
+		return false
+	}
+
+	dataContent := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+	if dataContent == "[DONE]" {
+		return true
+	}
+	if dataContent == "" {
+		return false
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(dataContent), &payload); err != nil {
+		return false
+	}
+
+	typeValue := strings.ToLower(strings.TrimSpace(getStringValue(payload["type"])))
+	if typeValue == "message_stop" || typeValue == "response.completed" {
+		return true
+	}
+
+	status := strings.ToLower(strings.TrimSpace(getStringValue(payload["status"])))
+	if status == "completed" {
+		return true
+	}
+
+	if response, ok := payload["response"].(map[string]interface{}); ok {
+		responseStatus := strings.ToLower(strings.TrimSpace(getStringValue(response["status"])))
+		if responseStatus == "completed" {
+			return true
+		}
+	}
+
+	if hasFinishReason(payload["choices"], "finish_reason") {
+		return true
+	}
+	if hasFinishReason(payload["candidates"], "finishReason") {
+		return true
+	}
+
+	return false
+}
+
+func hasFinishReason(value interface{}, key string) bool {
+	items, ok := value.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		entry, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if getStringValue(entry[key]) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func upstreamErrorText(info upstreamErrorInfo) string {
