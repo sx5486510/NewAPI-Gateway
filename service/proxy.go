@@ -427,7 +427,7 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 			ResponseBody:     []byte(streamCapture.String()),
 			ErrorMessage:     errorMsg,
 		})
-		switch streamRouteOutcome(routeErrorMsg, clientCanceled) {
+		switch streamRouteOutcome(routeErrorMsg, clientCanceled, streamCompleted) {
 		case streamRouteOutcomeFailure:
 			common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
 		case streamRouteOutcomeSuccess:
@@ -635,7 +635,13 @@ func classifyProxyRequestError(err error, c *gin.Context, streamTimeoutReason st
 	}
 }
 
-func streamRouteOutcome(errorMsg string, clientCanceled bool) streamRouteCooldownOutcome {
+func streamRouteOutcome(errorMsg string, clientCanceled bool, streamCompleted bool) streamRouteCooldownOutcome {
+	// 如果流已经完成（收到了 response.completed 等完成标记），
+	// 即使后续客户端断开连接，也应视为成功
+	if streamCompleted {
+		return streamRouteOutcomeSuccess
+	}
+
 	if clientCanceled && strings.TrimSpace(errorMsg) == "client canceled" {
 		return streamRouteOutcomeSkip
 	}
