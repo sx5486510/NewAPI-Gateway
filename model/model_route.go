@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -1074,6 +1076,25 @@ func (r *ModelRoute) Update() error {
 	return DB.Model(r).Updates(r).Error
 }
 
+func updateModelRouteFieldsWithDB(db *gorm.DB, id int, updates map[string]interface{}) error {
+	result := db.Model(&ModelRoute{}).Where("id = ?", id).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+
+	var count int64
+	if err := db.Model(&ModelRoute{}).Where("id = ?", id).Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return errors.New("模型路由不存在")
+	}
+	return nil
+}
+
 func UpdateModelRouteFields(id int, updates map[string]interface{}) error {
 	if id <= 0 {
 		return errors.New("无效的路由 ID")
@@ -1082,7 +1103,7 @@ func UpdateModelRouteFields(id int, updates map[string]interface{}) error {
 		return errors.New("没有可更新的字段")
 	}
 	normalizeModelRouteClientRestrictionUpdates(updates)
-	return DB.Model(&ModelRoute{}).Where("id = ?", id).Updates(updates).Error
+	return updateModelRouteFieldsWithDB(DB, id, updates)
 }
 
 func BatchUpdateModelRoutes(patches []ModelRoutePatch) error {
@@ -1100,7 +1121,7 @@ func BatchUpdateModelRoutes(patches []ModelRoutePatch) error {
 		if len(updates) == 0 {
 			continue
 		}
-		if err := tx.Model(&ModelRoute{}).Where("id = ?", patch.Id).Updates(updates).Error; err != nil {
+		if err := updateModelRouteFieldsWithDB(tx, patch.Id, updates); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -1395,31 +1416,33 @@ func RebuildRoutesForProvider(providerId int, routes []ModelRoute) error {
 		existingMap[routeModelTokenKey(route.ModelName, route.ProviderTokenId)] = route
 	}
 
-	for i := range routes {
-		key := routeModelTokenKey(routes[i].ModelName, routes[i].ProviderTokenId)
+	generatedKeys := make(map[string]struct{}, len(routes))
+	newRoutes := make([]ModelRoute, 0, len(routes))
+	for _, route := range routes {
+		key := routeModelTokenKey(route.ModelName, route.ProviderTokenId)
+		generatedKeys[key] = struct{}{}
 		if previous, ok := existingMap[key]; ok {
-			routes[i].Enabled = previous.Enabled
-			routes[i].AllowCodex = previous.AllowCodex
-			routes[i].AllowCC = previous.AllowCC
-			routes[i].BlockClients = previous.BlockClients
+			if err := tx.Model(&ModelRoute{}).Where("id = ?", previous.Id).Updates(map[string]interface{}{
+				"priority": route.Priority,
+				"weight":   route.Weight,
+			}).Error; err != nil {
+				tx.Rollback()
+				return err
+			}
+			continue
 		}
-	}
-
-	// Delete old routes
-	if err := tx.Where("provider_id = ?", providerId).Delete(&ModelRoute{}).Error; err != nil {
-		tx.Rollback()
-		return err
+		newRoutes = append(newRoutes, route)
 	}
 
 	// Insert new routes in batches
 	batchSize := 50
-	for i := 0; i < len(routes); i += batchSize {
+	for i := 0; i < len(newRoutes); i += batchSize {
 		end := i + batchSize
-		if end > len(routes) {
-			end = len(routes)
+		if end > len(newRoutes) {
+			end = len(newRoutes)
 		}
 		batch := make([]routeInsert, 0, end-i)
-		for _, route := range routes[i:end] {
+		for _, route := range newRoutes[i:end] {
 			enabled := route.Enabled
 			batch = append(batch, routeInsert{
 				ModelName:       route.ModelName,
@@ -1434,6 +1457,19 @@ func RebuildRoutesForProvider(providerId int, routes []ModelRoute) error {
 			})
 		}
 		if err := tx.Table("model_routes").Create(&batch).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	staleIDs := make([]int, 0)
+	for key, route := range existingMap {
+		if _, ok := generatedKeys[key]; !ok {
+			staleIDs = append(staleIDs, route.Id)
+		}
+	}
+	if len(staleIDs) > 0 {
+		if err := tx.Where("id IN ?", staleIDs).Delete(&ModelRoute{}).Error; err != nil {
 			tx.Rollback()
 			return err
 		}

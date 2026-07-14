@@ -283,3 +283,127 @@ func TestRebuildRoutesForProviderPreservesDisabledRoute(t *testing.T) {
 		t.Fatal("expected disabled route to remain disabled after rebuild")
 	}
 }
+
+func TestRebuildRoutesForProviderPreservesExistingRouteIDAndSettings(t *testing.T) {
+	setupModelRouteTestDB(t)
+
+	route := ModelRoute{
+		ModelName:       "gpt-test",
+		ProviderId:      1,
+		ProviderTokenId: 101,
+		Enabled:         false,
+		Priority:        1,
+		Weight:          2,
+		AllowCodex:      true,
+		AllowCC:         true,
+	}
+	if err := DB.Create(&route).Error; err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+	otherRoute := ModelRoute{
+		ModelName:       "other-model",
+		ProviderId:      2,
+		ProviderTokenId: 201,
+		Enabled:         true,
+	}
+	if err := DB.Create(&otherRoute).Error; err != nil {
+		t.Fatalf("create other provider route: %v", err)
+	}
+	if err := UpdateModelRouteFields(route.Id, map[string]interface{}{"enabled": false}); err != nil {
+		t.Fatalf("disable route: %v", err)
+	}
+
+	if err := RebuildRoutesForProvider(1, []ModelRoute{{
+		ModelName:       "gpt-test",
+		ProviderId:      1,
+		ProviderTokenId: 101,
+		Enabled:         true,
+		Priority:        9,
+		Weight:          10,
+	}}); err != nil {
+		t.Fatalf("rebuild routes: %v", err)
+	}
+
+	var stored ModelRoute
+	if err := DB.First(&stored, "provider_id = ? AND provider_token_id = ? AND model_name = ?", 1, 101, "gpt-test").Error; err != nil {
+		t.Fatalf("load rebuilt route: %v", err)
+	}
+	if stored.Id != route.Id {
+		t.Fatalf("expected route ID %d to be preserved, got %d", route.Id, stored.Id)
+	}
+	if stored.Enabled {
+		t.Fatal("expected enabled setting to be preserved")
+	}
+	if !stored.AllowCodex || !stored.AllowCC || stored.BlockClients {
+		t.Fatalf("expected client restrictions to be preserved, got codex=%v cc=%v block=%v", stored.AllowCodex, stored.AllowCC, stored.BlockClients)
+	}
+	if stored.Priority != 9 || stored.Weight != 10 {
+		t.Fatalf("expected generated priority and weight to refresh, got priority=%d weight=%d", stored.Priority, stored.Weight)
+	}
+}
+
+func TestRebuildRoutesForProviderAddsAndRemovesRoutes(t *testing.T) {
+	setupModelRouteTestDB(t)
+
+	existing := []ModelRoute{
+		{ModelName: "keep", ProviderId: 1, ProviderTokenId: 101, Enabled: true},
+		{ModelName: "remove", ProviderId: 1, ProviderTokenId: 102, Enabled: true},
+	}
+	if err := DB.Create(&existing).Error; err != nil {
+		t.Fatalf("create existing routes: %v", err)
+	}
+
+	if err := RebuildRoutesForProvider(1, []ModelRoute{
+		{ModelName: "keep", ProviderId: 1, ProviderTokenId: 101, Enabled: true},
+		{ModelName: "add", ProviderId: 1, ProviderTokenId: 103, Enabled: true},
+	}); err != nil {
+		t.Fatalf("rebuild routes: %v", err)
+	}
+
+	var routes []ModelRoute
+	if err := DB.Where("provider_id = ?", 1).Order("model_name").Find(&routes).Error; err != nil {
+		t.Fatalf("load routes: %v", err)
+	}
+	if len(routes) != 2 || routes[0].ModelName != "add" || routes[1].ModelName != "keep" {
+		t.Fatalf("expected add and keep routes, got %#v", routes)
+	}
+}
+
+func TestUpdateModelRouteFieldsRejectsMissingRoute(t *testing.T) {
+	setupModelRouteTestDB(t)
+
+	if err := UpdateModelRouteFields(999, map[string]interface{}{"enabled": false}); err == nil {
+		t.Fatal("expected missing route update to fail")
+	}
+}
+
+func TestBatchUpdateModelRoutesRollsBackWhenRouteMissing(t *testing.T) {
+	setupModelRouteTestDB(t)
+
+	route := ModelRoute{
+		ModelName:       "gpt-test",
+		ProviderId:      1,
+		ProviderTokenId: 101,
+		Enabled:         true,
+	}
+	if err := DB.Create(&route).Error; err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	disabled := false
+	err := BatchUpdateModelRoutes([]ModelRoutePatch{
+		{Id: route.Id, Enabled: &disabled},
+		{Id: 999, Enabled: &disabled},
+	})
+	if err == nil {
+		t.Fatal("expected batch with missing route to fail")
+	}
+
+	var stored ModelRoute
+	if err := DB.First(&stored, route.Id).Error; err != nil {
+		t.Fatalf("load route: %v", err)
+	}
+	if !stored.Enabled {
+		t.Fatal("expected valid route update to be rolled back")
+	}
+}
