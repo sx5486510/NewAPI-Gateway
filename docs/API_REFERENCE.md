@@ -233,6 +233,135 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | POST | `/api/route/batch-update` | 批量更新路由 |
 | POST | `/api/route/rebuild` | 触发全量路由重建 |
 
+### 路由系统提示词绑定
+
+`PUT /api/route/:id` 和 `POST /api/route/batch-update` 的更新对象支持可空字段 `system_prompt_id`：
+
+- 省略 `system_prompt_id`：不修改现有绑定。
+- `"system_prompt_id": null`：清除现有绑定。
+- `"system_prompt_id": 12`：绑定 ID 为 `12` 的系统提示词。
+
+绑定时，系统提示词必须存在，并且其 `model_name` 必须与路由的模型名称完全相同（区分大小写，不进行别名或模糊匹配）。单条更新示例：
+
+```http
+PUT /api/route/42
+Content-Type: application/json
+Cookie: session=<admin-session>
+
+{"system_prompt_id":12}
+```
+
+批量更新示例：
+
+```http
+POST /api/route/batch-update
+Content-Type: application/json
+Cookie: session=<admin-session>
+
+{"items":[{"id":42,"system_prompt_id":12},{"id":43,"system_prompt_id":null}]}
+```
+
+### 系统提示词 API（Session，`AdminAuth + NoTokenAuth`）
+
+这些接口仅供管理员使用，需要管理员 Session Cookie，不接受用户 Token 代替 Session。
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| GET | `/api/system-prompt/` | 列出系统提示词；支持 `model` 和 `keyword` 筛选 |
+| POST | `/api/system-prompt/` | 创建系统提示词 |
+| PUT | `/api/system-prompt/:id` | 更新系统提示词 |
+| DELETE | `/api/system-prompt/:id` | 删除未被引用的系统提示词 |
+| DELETE | `/api/system-prompt/:id?unbind=true` | 原子清除所有路由引用后删除系统提示词 |
+
+`GET /api/system-prompt/` 的 `model` 参数按 `model_name` 精确筛选；`keyword` 参数在名称中进行包含匹配。两个参数可以同时使用。列表项中的 `route_count` 表示引用该提示词的路由数。
+
+创建或更新请求体：
+
+```json
+{
+  "name": "Production assistant",
+  "model_name": "gpt-4o",
+  "content": "Answer concisely and cite uncertainty."
+}
+```
+
+创建成功响应示例：
+
+```json
+{
+  "success": true,
+  "message": "",
+  "data": {
+    "id": 12,
+    "name": "Production assistant",
+    "model_name": "gpt-4o",
+    "content": "Answer concisely and cite uncertainty."
+  }
+}
+```
+
+筛选和列表响应示例：
+
+```http
+GET /api/system-prompt/?model=gpt-4o&keyword=Production
+Cookie: session=<admin-session>
+```
+
+```json
+{
+  "success": true,
+  "message": "",
+  "data": [
+    {
+      "id": 12,
+      "name": "Production assistant",
+      "model_name": "gpt-4o",
+      "content": "Answer concisely and cite uncertainty.",
+      "route_count": 2
+    }
+  ]
+}
+```
+
+更新使用路径中的 `:id`，请求体中的 `id`（如存在）不会选择其他记录。成功响应的 `data` 是更新后的系统提示词。
+
+删除被路由引用的提示词时，普通 `DELETE` 不会修改数据，并返回引用数：
+
+```json
+{
+  "success": false,
+  "message": "system prompt is in use",
+  "data": {"route_count": 2}
+}
+```
+
+只有显式传递 `unbind=true` 才会在同一事务中清除引用并删除提示词；成功响应中的 `unbound` 是被清除的路由绑定数：
+
+```json
+{
+  "success": true,
+  "message": "",
+  "data": {"unbound": 2}
+}
+```
+
+业务错误使用 HTTP 200 和 `success: false`。客户端可以依赖以下稳定的 `message`：
+
+| `message` | 场景 |
+| --- | --- |
+| `invalid system prompt parameters` | 请求体不是有效 JSON 或字段类型错误 |
+| `invalid system prompt ID` | 路径 ID 不是正整数 |
+| `system prompt name, model name, and content are required` | 必填内容为空 |
+| `system prompt name already exists for this model` | 同一模型下名称重复 |
+| `system prompt not found` | 记录不存在 |
+| `system prompt is in use` | 删除仍被引用的提示词 |
+| `system prompt model does not match bound route model` | 更新会使已绑定路由的模型不再匹配 |
+| `system prompt operation failed` | 未公开内部细节的服务端错误 |
+
+### Relay 注入行为
+
+路由绑定的系统提示词只应用于路径和方法完全匹配的 `POST /v1/chat/completions`。网关将其作为第一条 `system` 消息插入，客户端原有的 `messages` 按原顺序完整保留。未绑定路由以及其他方法或路径（包括相似路径和其他 Relay 协议）保持原有转发行为不变。
+
 ## 日志与统计 API
 
 ### 日志查询（Session）
