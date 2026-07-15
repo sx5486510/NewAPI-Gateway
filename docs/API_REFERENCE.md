@@ -295,7 +295,10 @@ Cookie: session=<admin-session>
     "id": 12,
     "name": "Production assistant",
     "model_name": "gpt-4o",
-    "content": "Answer concisely and cite uncertainty."
+    "content": "Answer concisely and cite uncertainty.",
+    "created_at": 1784073600,
+    "updated_at": 1784073600,
+    "route_count": 0
   }
 }
 ```
@@ -317,6 +320,8 @@ Cookie: session=<admin-session>
       "name": "Production assistant",
       "model_name": "gpt-4o",
       "content": "Answer concisely and cite uncertainty.",
+      "created_at": 1784073600,
+      "updated_at": 1784073600,
       "route_count": 2
     }
   ]

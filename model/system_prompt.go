@@ -114,7 +114,7 @@ func ListSystemPrompts(modelName, keyword string) ([]*SystemPrompt, error) {
 	}
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		query = query.Where("system_prompts.name LIKE ? OR system_prompts.content LIKE ?", like, like)
+		query = query.Where("system_prompts.name LIKE ?", like)
 	}
 	var prompts []*SystemPrompt
 	if err := query.Order("system_prompts.id ASC").Find(&prompts).Error; err != nil || len(prompts) == 0 {

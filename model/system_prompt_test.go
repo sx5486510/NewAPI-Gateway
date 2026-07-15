@@ -65,6 +65,26 @@ func TestListSystemPromptsIncludesRouteCount(t *testing.T) {
 	}
 }
 
+func TestListSystemPromptsKeywordMatchesNameOnly(t *testing.T) {
+	setupSystemPromptTestDB(t)
+	for _, prompt := range []*SystemPrompt{
+		{Name: "Alpha helper", ModelName: "gpt-4", Content: "ordinary content"},
+		{Name: "Beta", ModelName: "gpt-4", Content: "helper appears only in content"},
+	} {
+		if err := CreateSystemPrompt(prompt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	items, err := ListSystemPrompts("gpt-4", "helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Name != "Alpha helper" {
+		t.Fatalf("keyword should match prompt names only: %+v", items)
+	}
+}
+
 func TestUpdateAndGetSystemPromptNormalizeValues(t *testing.T) {
 	setupSystemPromptTestDB(t)
 	prompt := &SystemPrompt{Name: "main", ModelName: "gpt-4", Content: "old"}

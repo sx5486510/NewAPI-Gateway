@@ -99,7 +99,7 @@ func TestSystemPromptListFiltersExactModelAndNameKeyword(t *testing.T) {
 	for _, prompt := range []*model.SystemPrompt{
 		{Name: "Alpha helper", ModelName: "gpt-4", Content: "one"},
 		{Name: "Beta helper", ModelName: "gpt-4o", Content: "two"},
-		{Name: "Gamma", ModelName: "gpt-4", Content: "three"},
+		{Name: "Gamma", ModelName: "gpt-4", Content: "helper appears only in content"},
 	} {
 		if err := model.CreateSystemPrompt(prompt); err != nil {
 			t.Fatal(err)
