@@ -40,7 +40,7 @@ Because a token can back several model routes, repeated values across those rows
 
 ## Error and compatibility behavior
 
-The overview query continues using a left join so orphaned routes remain visible. A nullable token identifier from the join distinguishes a missing token from a real finite quota of zero.
+The overview query continues using a left join so orphaned routes remain visible. Nullable token quota columns from the join distinguish a missing token from a real finite quota of zero.
 
 Existing API consumers remain compatible because the response only gains fields. Key-only providers keep their current synthetic unlimited token behavior.
 
