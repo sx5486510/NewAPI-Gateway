@@ -167,12 +167,23 @@ const formatPriceWithUnit = (value, unit) => {
 };
 
 const formatTokenQuota = (route) => {
-    if (route.token_unlimited_quota == null) return { type: 'missing', label: '—' };
-    if (route.token_unlimited_quota === true) return { type: 'unlimited', label: '无限' };
-    if (route.token_remain_quota == null) return { type: 'missing', label: '—' };
-    const rawQuota = Number(route.token_remain_quota);
-    if (!Number.isFinite(rawQuota)) return { type: 'missing', label: '—' };
-    return { type: 'finite', label: `$${(rawQuota / 500000).toFixed(2)}` };
+    // 优先检查 remain_quota：如果有有效值就显示（即使 unlimited_quota 为 true）
+    if (route.token_remain_quota != null) {
+        const rawQuota = Number(route.token_remain_quota);
+        if (Number.isFinite(rawQuota)) {
+            if (rawQuota < 0) {
+                // 负数表示使用账户余额，显示占位符
+                return { type: 'missing', label: '—' };
+            }
+            return { type: 'finite', label: `$${(rawQuota / 500000).toFixed(2)}` };
+        }
+    }
+    // remain_quota 无效时，检查 unlimited_quota
+    if (route.token_unlimited_quota === true) {
+        return { type: 'unlimited', label: '无限' };
+    }
+    // 两者都缺失
+    return { type: 'missing', label: '—' };
 };
 
 const buildRoutePriceLines = (route) => {

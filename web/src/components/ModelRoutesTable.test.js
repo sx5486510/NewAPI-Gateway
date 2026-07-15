@@ -253,18 +253,38 @@ describe('ModelRoutesTable', () => {
             ...route,
             id: 2,
             provider_id: 11,
-            provider_name: 'Unlimited',
+            provider_name: 'AccountBalance',
             provider_token_id: 21,
             token_unlimited_quota: true,
-            token_remain_quota: 0,
+            token_remain_quota: 1500000,
             token_used_quota: 0,
           },
           {
             ...route,
             id: 3,
             provider_id: 12,
-            provider_name: 'Missing',
+            provider_name: 'TrueUnlimited',
             provider_token_id: 22,
+            token_unlimited_quota: true,
+            token_remain_quota: null,
+            token_used_quota: null,
+          },
+          {
+            ...route,
+            id: 4,
+            provider_id: 13,
+            provider_name: 'KeyOnly',
+            provider_token_id: 23,
+            token_unlimited_quota: false,
+            token_remain_quota: -1,
+            token_used_quota: 0,
+          },
+          {
+            ...route,
+            id: 5,
+            provider_id: 14,
+            provider_name: 'Missing',
+            provider_token_id: 24,
             token_unlimited_quota: null,
             token_remain_quota: null,
             token_used_quota: null,
@@ -281,7 +301,10 @@ describe('ModelRoutesTable', () => {
       .toContain('\u4ee4\u724c\u989d\u5ea6');
     const quotaValues = [...document.querySelectorAll('.routes-token-quota')]
       .map((node) => node.textContent.trim());
-    expect(quotaValues).toEqual(expect.arrayContaining(['$0.50', '\u65e0\u9650', '\u2014']));
+    expect(quotaValues).toContain('$0.50');
+    expect(quotaValues).toContain('$3.00');
+    expect(quotaValues).toContain('\u65e0\u9650');
+    expect(quotaValues.filter(v => v === '\u2014')).toHaveLength(2);
   });
 
   it('keeps health value display concise in the route list', async () => {
