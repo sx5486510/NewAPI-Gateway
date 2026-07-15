@@ -51,9 +51,16 @@ func UpdateSystemPrompt(prompt *SystemPrompt) error {
 		return err
 	}
 	prompt.UpdatedAt = time.Now().Unix()
-	return DB.Model(&SystemPrompt{}).Where("id = ?", prompt.Id).Updates(map[string]interface{}{
+	result := DB.Model(&SystemPrompt{}).Where("id = ?", prompt.Id).Updates(map[string]interface{}{
 		"name": prompt.Name, "model_name": prompt.ModelName, "content": prompt.Content, "updated_at": prompt.UpdatedAt,
-	}).Error
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func ListSystemPrompts(modelName, keyword string) ([]*SystemPrompt, error) {
@@ -117,7 +124,14 @@ func DeleteSystemPrompt(id int, unbind bool) (int64, error) {
 			}
 			unbound = result.RowsAffected
 		}
-		return tx.Delete(&SystemPrompt{}, id).Error
+		result := tx.Delete(&SystemPrompt{}, id)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
 	})
 	return unbound, err
 }

@@ -90,6 +90,25 @@ func TestUpdateAndGetSystemPromptNormalizeValues(t *testing.T) {
 	}
 }
 
+func TestUpdateSystemPromptReturnsNotFoundForMissingID(t *testing.T) {
+	setupSystemPromptTestDB(t)
+	err := UpdateSystemPrompt(&SystemPrompt{Id: 999, Name: "missing", ModelName: "gpt-4", Content: "content"})
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected gorm.ErrRecordNotFound, got %v", err)
+	}
+}
+
+func TestDeleteSystemPromptReturnsNotFoundForMissingID(t *testing.T) {
+	setupSystemPromptTestDB(t)
+	unbound, err := DeleteSystemPrompt(999, true)
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected gorm.ErrRecordNotFound, got %v", err)
+	}
+	if unbound != 0 {
+		t.Fatalf("unbound = %d, want 0", unbound)
+	}
+}
+
 func TestDeleteSystemPromptRequiresUnbindAndUnbindsTransactionally(t *testing.T) {
 	setupSystemPromptTestDB(t)
 	prompt := &SystemPrompt{Name: "main", ModelName: "gpt-4", Content: "content"}
