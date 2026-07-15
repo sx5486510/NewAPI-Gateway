@@ -10,6 +10,15 @@
 
 ---
 
+### Task 0: Repair the pre-existing stream outcome tests
+
+**Files:**
+- Modify: `service/proxy_cooldown_classify_test.go`
+
+- [ ] Add `streamCompleted=false` to the four legacy `streamRouteOutcome` calls.
+- [ ] Add a regression assertion that a completed stream remains successful after client cancellation.
+- [ ] Run `go test ./service -run '^TestStreamRouteOutcome' -count=1` and commit separately.
+
 ### Task 1: Expose token quota through the route overview API
 
 **Files:**

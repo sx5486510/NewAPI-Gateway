@@ -319,20 +319,26 @@ func TestStreamTimeoutDefaultsAreLongerThanShortProxyTimeout(t *testing.T) {
 }
 
 func TestStreamRouteOutcomeSkipsClientCanceled(t *testing.T) {
-	if got := streamRouteOutcome("", false); got != streamRouteOutcomeSuccess {
+	if got := streamRouteOutcome("", false, false); got != streamRouteOutcomeSuccess {
 		t.Fatalf("completed stream outcome = %v, want success", got)
 	}
-	if got := streamRouteOutcome("stream ended before completion", false); got != streamRouteOutcomeFailure {
+	if got := streamRouteOutcome("stream ended before completion", false, false); got != streamRouteOutcomeFailure {
 		t.Fatalf("failed stream outcome = %v, want failure", got)
 	}
-	if got := streamRouteOutcome("client canceled", true); got != streamRouteOutcomeSkip {
+	if got := streamRouteOutcome("client canceled", true, false); got != streamRouteOutcomeSkip {
 		t.Fatalf("client canceled stream outcome = %v, want skip", got)
 	}
 }
 
 func TestStreamRouteOutcomeFailureTakesPrecedenceOverClientCanceled(t *testing.T) {
-	if got := streamRouteOutcome("upstream SSE response error: bad", true); got != streamRouteOutcomeFailure {
+	if got := streamRouteOutcome("upstream SSE response error: bad", true, false); got != streamRouteOutcomeFailure {
 		t.Fatalf("upstream error with client cancel outcome = %v, want failure", got)
+	}
+}
+
+func TestStreamRouteOutcomeCompletedTakesPrecedenceOverClientCanceled(t *testing.T) {
+	if got := streamRouteOutcome("client canceled", true, true); got != streamRouteOutcomeSuccess {
+		t.Fatalf("completed stream with client cancel outcome = %v, want success", got)
 	}
 }
 
