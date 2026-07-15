@@ -234,6 +234,12 @@ const compareNullableNumber = (a, b) => {
     return aNum - bNum;
 };
 
+const normalizeSystemPromptId = (value) => {
+    if (value == null || value === '') return null;
+    const numericId = Number(value);
+    return Number.isFinite(numericId) ? numericId : value;
+};
+
 const normalizeModelName = (value) => {
     const text = String(value || '').trim().toLowerCase();
     if (!text) return '';
@@ -451,7 +457,27 @@ const ModelRoutesTable = () => {
                 showError(message || '加载路由总览失败');
                 return;
             }
-            setRoutes(Array.isArray(data) ? data : []);
+            const nextRoutes = Array.isArray(data) ? data : [];
+            const nextRouteMap = new Map(nextRoutes.map((route) => [String(route.id), route]));
+            setRoutes(nextRoutes);
+            setDrafts((currentDrafts) => {
+                const reconciledDrafts = {};
+                Object.entries(currentDrafts).forEach(([id, draft]) => {
+                    const freshRoute = nextRouteMap.get(id);
+                    if (!freshRoute) return;
+                    const remaining = {};
+                    if (Object.prototype.hasOwnProperty.call(draft, 'enabled') && draft.enabled !== freshRoute.enabled) {
+                        remaining.enabled = draft.enabled;
+                    }
+                    if (Object.prototype.hasOwnProperty.call(draft, 'system_prompt_id')) {
+                        const draftPromptId = normalizeSystemPromptId(draft.system_prompt_id);
+                        const freshPromptId = normalizeSystemPromptId(freshRoute.system_prompt_id);
+                        if (draftPromptId !== freshPromptId) remaining.system_prompt_id = draftPromptId;
+                    }
+                    if (Object.keys(remaining).length > 0) reconciledDrafts[id] = remaining;
+                });
+                return reconciledDrafts;
+            });
         } catch (e) {
             showError('加载路由总览失败');
         } finally {
@@ -644,15 +670,14 @@ const ModelRoutesTable = () => {
         setDrafts((prev) => {
             const original = routeMap[routeId];
             if (!original) return prev;
-            const baseDraft = prev[routeId]
-                ? { ...prev[routeId] }
-                : {
-                    enabled: original.enabled,
-                    system_prompt_id: original.system_prompt_id ?? null
-                };
+            const baseDraft = {
+                enabled: original.enabled,
+                system_prompt_id: normalizeSystemPromptId(original.system_prompt_id),
+                ...(prev[routeId] || {})
+            };
             const nextDraft = { ...baseDraft, ...patch };
             const unchanged = nextDraft.enabled === original.enabled
-                && nextDraft.system_prompt_id === (original.system_prompt_id ?? null);
+                && normalizeSystemPromptId(nextDraft.system_prompt_id) === normalizeSystemPromptId(original.system_prompt_id);
             if (unchanged) {
                 const next = { ...prev };
                 delete next[routeId];
@@ -670,15 +695,14 @@ const ModelRoutesTable = () => {
             selectedEntry.routes.forEach((route) => {
                 const original = routeMap[route.id];
                 if (!original) return;
-                const current = next[route.id]
-                    ? { ...next[route.id] }
-                    : {
-                        enabled: original.enabled,
-                        system_prompt_id: original.system_prompt_id ?? null
-                    };
+                const current = {
+                    enabled: original.enabled,
+                    system_prompt_id: normalizeSystemPromptId(original.system_prompt_id),
+                    ...(next[route.id] || {})
+                };
                 current.enabled = enabled;
                 const unchanged = current.enabled === original.enabled
-                    && current.system_prompt_id === (original.system_prompt_id ?? null);
+                    && normalizeSystemPromptId(current.system_prompt_id) === normalizeSystemPromptId(original.system_prompt_id);
                 if (unchanged) {
                     delete next[route.id];
                 } else {
@@ -694,9 +718,13 @@ const ModelRoutesTable = () => {
         const items = Object.entries(drafts).map(([id, value]) => {
             const original = routeMap[id];
             const item = { id: Number(id) };
-            if (value.enabled !== original.enabled) item.enabled = value.enabled;
-            if (value.system_prompt_id !== (original.system_prompt_id ?? null)) {
-                item.system_prompt_id = value.system_prompt_id;
+            if (Object.prototype.hasOwnProperty.call(value, 'enabled') && value.enabled !== original.enabled) {
+                item.enabled = value.enabled;
+            }
+            const draftPromptId = normalizeSystemPromptId(value.system_prompt_id);
+            if (Object.prototype.hasOwnProperty.call(value, 'system_prompt_id')
+                && draftPromptId !== normalizeSystemPromptId(original.system_prompt_id)) {
+                item.system_prompt_id = draftPromptId;
             }
             return item;
         });
@@ -1061,7 +1089,7 @@ const ModelRoutesTable = () => {
                                                     const routePriceLines = buildRoutePriceLines(route);
                                                     const tokenQuota = formatTokenQuota(route);
                                                     const promptOptions = systemPromptsByModel.get(String(route.model_name || '')) || [];
-                                                    const currentPromptId = route.system_prompt_id ?? null;
+                                                    const currentPromptId = normalizeSystemPromptId(route.system_prompt_id);
                                                     const selectedPrompt = promptOptions.find((prompt) => Number(prompt.id) === currentPromptId);
                                                     const promptBindingUnavailable = currentPromptId !== null && !selectedPrompt;
 

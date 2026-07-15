@@ -552,4 +552,36 @@ describe('ModelRoutesTable', () => {
     expect(document.querySelector('.routes-status-toggle').getAttribute('aria-checked')).toBe('false');
     expect(document.body.textContent).toContain('待保存 1 条');
   });
+
+  it('clears drafts when refreshed server values match enabled and prompt edits', async () => {
+    let overviewRequests = 0;
+    API.get.mockImplementation((url) => {
+      if (url === '/api/system-prompt/') return Promise.resolve(promptResponse([
+        { id: 7, name: 'GPT preset', model_name: 'gpt-4o' },
+      ]));
+      overviewRequests += 1;
+      return Promise.resolve(promptResponse([overviewRequests === 1
+        ? route
+        : { ...route, enabled: false, system_prompt_id: '7' }]));
+    });
+    await act(async () => root.render(<ModelRoutesTable />));
+    await act(async () => {
+      document.querySelector('.routes-status-toggle').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const selector = document.querySelector('.routes-system-prompt-select');
+      selector.value = '7';
+      selector.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(document.body.textContent).toContain('待保存 1 条');
+
+    const refreshButton = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent.trim() === '刷新');
+    await act(async () => refreshButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    const saveButton = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('保存变更'));
+    expect(document.body.textContent).toContain('待保存 0 条');
+    expect(saveButton.disabled).toBe(true);
+    saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(API.post).not.toHaveBeenCalled();
+  });
 });
