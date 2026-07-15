@@ -2,13 +2,18 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 )
 
-var ErrSystemPromptInUse = errors.New("system prompt is in use")
+var (
+	ErrInvalidSystemPrompt   = errors.New("invalid system prompt")
+	ErrDuplicateSystemPrompt = errors.New("duplicate system prompt")
+	ErrSystemPromptInUse     = errors.New("system prompt is in use")
+)
 
 type SystemPrompt struct {
 	Id         int    `json:"id"`
@@ -25,14 +30,14 @@ func normalizeSystemPrompt(prompt *SystemPrompt) error {
 	prompt.ModelName = strings.TrimSpace(prompt.ModelName)
 	prompt.Content = strings.TrimSpace(prompt.Content)
 	if prompt.Name == "" || prompt.ModelName == "" || prompt.Content == "" {
-		return errors.New("system prompt name, model name, and content are required")
+		return fmt.Errorf("%w: name, model name, and content are required", ErrInvalidSystemPrompt)
 	}
 	return nil
 }
 
 func CreateSystemPrompt(prompt *SystemPrompt) error {
 	if prompt == nil {
-		return errors.New("system prompt is required")
+		return fmt.Errorf("%w: system prompt is required", ErrInvalidSystemPrompt)
 	}
 	if err := normalizeSystemPrompt(prompt); err != nil {
 		return err
@@ -40,21 +45,44 @@ func CreateSystemPrompt(prompt *SystemPrompt) error {
 	now := time.Now().Unix()
 	prompt.CreatedAt = now
 	prompt.UpdatedAt = now
-	return DB.Create(prompt).Error
+	duplicate, err := systemPromptNameExists(prompt.ModelName, prompt.Name, 0)
+	if err != nil {
+		return err
+	}
+	if duplicate {
+		return ErrDuplicateSystemPrompt
+	}
+	if err := DB.Create(prompt).Error; err != nil {
+		if duplicate, checkErr := systemPromptNameExists(prompt.ModelName, prompt.Name, 0); checkErr == nil && duplicate {
+			return ErrDuplicateSystemPrompt
+		}
+		return err
+	}
+	return nil
 }
 
 func UpdateSystemPrompt(prompt *SystemPrompt) error {
 	if prompt == nil || prompt.Id <= 0 {
-		return errors.New("valid system prompt is required")
+		return fmt.Errorf("%w: valid system prompt is required", ErrInvalidSystemPrompt)
 	}
 	if err := normalizeSystemPrompt(prompt); err != nil {
 		return err
+	}
+	duplicate, err := systemPromptNameExists(prompt.ModelName, prompt.Name, prompt.Id)
+	if err != nil {
+		return err
+	}
+	if duplicate {
+		return ErrDuplicateSystemPrompt
 	}
 	prompt.UpdatedAt = time.Now().Unix()
 	result := DB.Model(&SystemPrompt{}).Where("id = ?", prompt.Id).Updates(map[string]interface{}{
 		"name": prompt.Name, "model_name": prompt.ModelName, "content": prompt.Content, "updated_at": prompt.UpdatedAt,
 	})
 	if result.Error != nil {
+		if duplicate, checkErr := systemPromptNameExists(prompt.ModelName, prompt.Name, prompt.Id); checkErr == nil && duplicate {
+			return ErrDuplicateSystemPrompt
+		}
 		return result.Error
 	}
 	if result.RowsAffected > 0 {
@@ -115,13 +143,14 @@ func GetSystemPromptByID(id int) (*SystemPrompt, error) {
 }
 
 func DeleteSystemPrompt(id int, unbind bool) (int64, error) {
-	var unbound int64
+	var resultCount int64
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&ModelRoute{}).Where("system_prompt_id = ?", id).Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 && !unbind {
+			resultCount = count
 			return ErrSystemPromptInUse
 		}
 		if count > 0 {
@@ -129,7 +158,7 @@ func DeleteSystemPrompt(id int, unbind bool) (int64, error) {
 			if result.Error != nil {
 				return result.Error
 			}
-			unbound = result.RowsAffected
+			resultCount = result.RowsAffected
 		}
 		result := tx.Delete(&SystemPrompt{}, id)
 		if result.Error != nil {
@@ -140,5 +169,17 @@ func DeleteSystemPrompt(id int, unbind bool) (int64, error) {
 		}
 		return nil
 	})
-	return unbound, err
+	return resultCount, err
+}
+
+func systemPromptNameExists(modelName, name string, excludeID int) (bool, error) {
+	query := DB.Model(&SystemPrompt{}).Where("model_name = ? AND name = ?", modelName, name)
+	if excludeID > 0 {
+		query = query.Where("id <> ?", excludeID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }

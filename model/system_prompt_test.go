@@ -138,8 +138,12 @@ func TestDeleteSystemPromptRequiresUnbindAndUnbindsTransactionally(t *testing.T)
 	if err := DB.Create(&route).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := DeleteSystemPrompt(prompt.Id, false); !errors.Is(err, ErrSystemPromptInUse) {
+	referenced, err := DeleteSystemPrompt(prompt.Id, false)
+	if !errors.Is(err, ErrSystemPromptInUse) {
 		t.Fatalf("expected ErrSystemPromptInUse, got %v", err)
+	}
+	if referenced != 1 {
+		t.Fatalf("referenced route count = %d, want 1", referenced)
 	}
 	if _, err := GetSystemPromptByID(prompt.Id); err != nil {
 		t.Fatalf("prompt should remain after rejected delete: %v", err)

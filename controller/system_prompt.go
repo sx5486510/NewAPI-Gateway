@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/model"
 
 	"github.com/gin-gonic/gin"
@@ -21,7 +22,7 @@ type systemPromptInput struct {
 func GetSystemPrompts(c *gin.Context) {
 	prompts, err := model.ListSystemPrompts(c.Query("model"), c.Query("keyword"))
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		respondSystemPromptError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": prompts})
@@ -35,7 +36,7 @@ func CreateSystemPrompt(c *gin.Context) {
 	}
 	prompt := &model.SystemPrompt{Name: input.Name, ModelName: input.ModelName, Content: input.Content}
 	if err := model.CreateSystemPrompt(prompt); err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		respondSystemPromptError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": prompt})
@@ -53,12 +54,12 @@ func UpdateSystemPrompt(c *gin.Context) {
 	}
 	prompt := &model.SystemPrompt{Id: id, Name: input.Name, ModelName: input.ModelName, Content: input.Content}
 	if err := model.UpdateSystemPrompt(prompt); err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": systemPromptErrorMessage(err)})
+		respondSystemPromptError(c, err)
 		return
 	}
 	updated, err := model.GetSystemPromptByID(id)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": systemPromptErrorMessage(err)})
+		respondSystemPromptError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": updated})
@@ -69,21 +70,20 @@ func DeleteSystemPrompt(c *gin.Context) {
 	if !ok {
 		return
 	}
-	unbound, err := model.DeleteSystemPrompt(id, strings.EqualFold(c.Query("unbind"), "true"))
+	resultCount, err := model.DeleteSystemPrompt(id, strings.EqualFold(c.Query("unbind"), "true"))
 	if errors.Is(err, model.ErrSystemPromptInUse) {
-		routeCount := systemPromptRouteCount(id)
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": err.Error(),
-			"data":    gin.H{"route_count": routeCount},
+			"message": "system prompt is in use",
+			"data":    gin.H{"route_count": resultCount},
 		})
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": systemPromptErrorMessage(err)})
+		respondSystemPromptError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{"unbound": unbound}})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{"unbound": resultCount}})
 }
 
 func parsePositiveSystemPromptID(c *gin.Context) (int, bool) {
@@ -95,26 +95,19 @@ func parsePositiveSystemPromptID(c *gin.Context) (int, bool) {
 	return id, true
 }
 
-func systemPromptErrorMessage(err error) string {
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return "system prompt not found"
+func respondSystemPromptError(c *gin.Context, err error) {
+	message := "system prompt operation failed"
+	switch {
+	case errors.Is(err, model.ErrInvalidSystemPrompt):
+		message = "system prompt name, model name, and content are required"
+	case errors.Is(err, model.ErrDuplicateSystemPrompt):
+		message = "system prompt name already exists for this model"
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		message = "system prompt not found"
+	case errors.Is(err, model.ErrSystemPromptInUse):
+		message = "system prompt is in use"
+	default:
+		common.SysLog("system prompt operation failed: " + err.Error())
 	}
-	return err.Error()
-}
-
-func systemPromptRouteCount(id int) int64 {
-	prompt, err := model.GetSystemPromptByID(id)
-	if err != nil {
-		return 0
-	}
-	prompts, err := model.ListSystemPrompts(prompt.ModelName, "")
-	if err != nil {
-		return 0
-	}
-	for _, item := range prompts {
-		if item.Id == id {
-			return item.RouteCount
-		}
-	}
-	return 0
+	c.JSON(http.StatusOK, gin.H{"success": false, "message": message})
 }

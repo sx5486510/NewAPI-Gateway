@@ -121,8 +121,30 @@ func TestSystemPromptDuplicateNameReturnsUsefulError(t *testing.T) {
 		t.Fatal("initial create failed")
 	}
 	response := performSystemPromptRequest(t, router, http.MethodPost, "/api/system-prompt/", `{"name":"main","model_name":"gpt-4","content":"two"}`)
-	if response.Success || response.Message == "" {
+	if response.Success || response.Message != "system prompt name already exists for this model" {
 		t.Fatalf("expected duplicate-name error, got %+v", response)
+	}
+	if bytes.Contains([]byte(response.Message), []byte("UNIQUE constraint")) || bytes.Contains([]byte(response.Message), []byte("idx_system_prompts")) {
+		t.Fatalf("response leaked database details: %q", response.Message)
+	}
+}
+
+func TestSystemPromptUnexpectedDatabaseErrorIsNotExposed(t *testing.T) {
+	router := setupSystemPromptControllerTest(t)
+	sqlDB, err := model.DB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	response := performSystemPromptRequest(t, router, http.MethodGet, "/api/system-prompt/", "")
+	if response.Success || response.Message != "system prompt operation failed" {
+		t.Fatalf("expected generic database failure, got %+v", response)
+	}
+	if bytes.Contains([]byte(response.Message), []byte("database is closed")) {
+		t.Fatalf("response leaked database details: %q", response.Message)
 	}
 }
 
