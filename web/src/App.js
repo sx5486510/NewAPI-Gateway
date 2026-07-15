@@ -3,6 +3,7 @@ import { Route, Routes, Outlet } from 'react-router-dom';
 import Loading from './components/Loading';
 import User from './pages/User';
 import { PrivateRoute } from './components/PrivateRoute';
+import { AdminRoute } from './components/AdminRoute';
 import RegisterForm from './components/RegisterForm';
 import LoginForm from './components/LoginForm';
 import NotFound from './pages/NotFound';
@@ -123,7 +124,7 @@ function App() {
         <Route path='/routes' element={<RoutesPage />} />
         <Route path='/log' element={<Log />} />
         <Route path='/llm-trace' element={<LLMTrace />} />
-        <Route path='/system-prompts' element={<SystemPrompt />} />
+        <Route path='/system-prompts' element={<AdminRoute><SystemPrompt /></AdminRoute>} />
         <Route path='/user' element={<User />} />
         <Route path='/user/edit/:id' element={<EditUser />} />
         <Route path='/user/edit' element={<EditUser />} />

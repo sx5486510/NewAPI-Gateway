@@ -27,11 +27,18 @@ func TestCreateSystemPromptNormalizesAndEnforcesModelScopedName(t *testing.T) {
 	if err := CreateSystemPrompt(first); err != nil {
 		t.Fatalf("create first prompt: %v", err)
 	}
-	if first.Id == 0 || first.Name != "general" || first.ModelName != "gpt-4" || first.Content != "Be helpful." {
+	if first.Id == 0 || first.Name != "general" || first.ModelName != "gpt-4" || first.Content != " Be helpful. " {
 		t.Fatalf("prompt was not persisted and normalized: %+v", first)
 	}
 	if first.CreatedAt == 0 || first.UpdatedAt == 0 {
 		t.Fatalf("timestamps were not set: %+v", first)
+	}
+	stored, err := GetSystemPromptByID(first.Id)
+	if err != nil {
+		t.Fatalf("reload first prompt: %v", err)
+	}
+	if stored.Content != " Be helpful. " {
+		t.Fatalf("stored content = %q, want exact whitespace preserved", stored.Content)
 	}
 
 	if err := CreateSystemPrompt(&SystemPrompt{Name: "general", ModelName: "claude-3", Content: "Helpful"}); err != nil {
@@ -101,7 +108,7 @@ func TestUpdateAndGetSystemPromptNormalizeValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Name != "revised" || got.ModelName != "gpt-4o" || got.Content != "new content" || got.UpdatedAt == 0 {
+	if got.Name != "revised" || got.ModelName != "gpt-4o" || got.Content != " new content " || got.UpdatedAt == 0 {
 		t.Fatalf("unexpected updated prompt: %+v", got)
 	}
 	prompt.Content = " "

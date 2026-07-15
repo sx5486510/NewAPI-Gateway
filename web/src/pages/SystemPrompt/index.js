@@ -62,9 +62,9 @@ const SystemPrompt = () => {
     const payload = {
       name: String(form.name || '').trim(),
       model_name: String(form.model_name || '').trim(),
-      content: String(form.content || '').trim(),
+      content: String(form.content || ''),
     };
-    if (!payload.name || !payload.model_name || !payload.content) {
+    if (!payload.name || !payload.model_name || !payload.content.trim()) {
       showError('名称、模型和提示词内容不能为空');
       return;
     }

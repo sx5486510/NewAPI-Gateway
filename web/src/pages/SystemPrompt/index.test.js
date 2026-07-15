@@ -114,7 +114,7 @@ describe('SystemPrompt', () => {
     expect(API.post).toHaveBeenCalledWith('/api/system-prompt/', {
       name: '通用',
       model_name: 'gpt-4o',
-      content: '保持简洁',
+      content: '  保持简洁  ',
     });
     expect(API.get).toHaveBeenCalledTimes(2);
   });
@@ -134,7 +134,37 @@ describe('SystemPrompt', () => {
     expect(API.put).toHaveBeenCalledWith('/api/system-prompt/7', {
       name: '客服助手',
       model_name: 'gpt-4o',
-      content: '更新内容',
+      content: '  更新内容  ',
+    });
+  });
+
+  it('rejects content containing only whitespace', async () => {
+    await act(async () => root.render(<SystemPrompt />));
+    await click(container.querySelector('button'));
+
+    const modal = document.querySelector('.modal-content');
+    await change(modal.querySelector('input[name="name"]'), 'name');
+    await change(modal.querySelector('input[name="model_name"]'), 'model');
+    await change(modal.querySelector('textarea[name="content"]'), ' \n ');
+    await click([...modal.querySelectorAll('button')].at(-1));
+
+    expect(API.post).not.toHaveBeenCalled();
+  });
+
+  it('preserves leading and trailing whitespace in submitted content', async () => {
+    await act(async () => root.render(<SystemPrompt />));
+    await click(container.querySelector('button'));
+
+    const modal = document.querySelector('.modal-content');
+    await change(modal.querySelector('input[name="name"]'), '  exact-name  ');
+    await change(modal.querySelector('input[name="model_name"]'), '  exact-model  ');
+    await change(modal.querySelector('textarea[name="content"]'), '\n  exact content  \n');
+    await click([...modal.querySelectorAll('button')].at(-1));
+
+    expect(API.post).toHaveBeenCalledWith('/api/system-prompt/', {
+      name: 'exact-name',
+      model_name: 'exact-model',
+      content: '\n  exact content  \n',
     });
   });
 

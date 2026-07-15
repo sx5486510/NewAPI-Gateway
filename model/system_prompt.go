@@ -30,8 +30,7 @@ type SystemPrompt struct {
 func normalizeSystemPrompt(prompt *SystemPrompt) error {
 	prompt.Name = strings.TrimSpace(prompt.Name)
 	prompt.ModelName = strings.TrimSpace(prompt.ModelName)
-	prompt.Content = strings.TrimSpace(prompt.Content)
-	if prompt.Name == "" || prompt.ModelName == "" || prompt.Content == "" {
+	if prompt.Name == "" || prompt.ModelName == "" || strings.TrimSpace(prompt.Content) == "" {
 		return fmt.Errorf("%w: name, model name, and content are required", ErrInvalidSystemPrompt)
 	}
 	return nil

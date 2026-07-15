@@ -68,11 +68,18 @@ func TestSystemPromptCreateListAndUpdate(t *testing.T) {
 	if err := json.Unmarshal(created.Data, &prompt); err != nil {
 		t.Fatalf("decode created prompt: %v", err)
 	}
-	if prompt.Id <= 0 || prompt.Name != "main" || prompt.ModelName != "gpt-4" || prompt.Content != "old" {
+	if prompt.Id <= 0 || prompt.Name != "main" || prompt.ModelName != "gpt-4" || prompt.Content != " old " {
 		t.Fatalf("unexpected created prompt: %+v", prompt)
 	}
+	stored, err := model.GetSystemPromptByID(prompt.Id)
+	if err != nil {
+		t.Fatalf("reload created prompt: %v", err)
+	}
+	if stored.Content != " old " {
+		t.Fatalf("stored created content = %q, want exact request content", stored.Content)
+	}
 
-	updated := performSystemPromptRequest(t, router, http.MethodPut, "/api/system-prompt/"+strconv.Itoa(prompt.Id), `{"id":999,"name":"revised","model_name":"gpt-4o","content":"new"}`)
+	updated := performSystemPromptRequest(t, router, http.MethodPut, "/api/system-prompt/"+strconv.Itoa(prompt.Id), `{"id":999,"name":"revised","model_name":"gpt-4o","content":"\nnew\n"}`)
 	if !updated.Success {
 		t.Fatalf("update failed: %s", updated.Message)
 	}
@@ -80,7 +87,7 @@ func TestSystemPromptCreateListAndUpdate(t *testing.T) {
 	if err := json.Unmarshal(updated.Data, &updatedPrompt); err != nil {
 		t.Fatalf("decode updated prompt: %v", err)
 	}
-	if updatedPrompt.Id != prompt.Id || updatedPrompt.Name != "revised" || updatedPrompt.ModelName != "gpt-4o" || updatedPrompt.Content != "new" {
+	if updatedPrompt.Id != prompt.Id || updatedPrompt.Name != "revised" || updatedPrompt.ModelName != "gpt-4o" || updatedPrompt.Content != "\nnew\n" {
 		t.Fatalf("path id was not authoritative or fields not updated: %+v", updatedPrompt)
 	}
 
