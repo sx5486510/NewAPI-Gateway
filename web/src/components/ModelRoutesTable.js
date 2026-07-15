@@ -167,14 +167,14 @@ const formatPriceWithUnit = (value, unit) => {
 };
 
 const formatTokenQuota = (route) => {
-    // 使用账户余额模式：unlimited_quota=true 且 remain_quota<=0
+    // 使用账户余额模式：unlimited_quota=true
     if (route.token_unlimited_quota === true) {
         const rawQuota = route.token_remain_quota != null ? Number(route.token_remain_quota) : null;
+        // unlimited_quota=true 但有正数配额，说明令牌有独立配额限制
         if (rawQuota != null && Number.isFinite(rawQuota) && rawQuota > 0) {
-            // unlimited_quota=true 但有正数配额，说明令牌有独立配额限制
             return { type: 'finite', label: `$${(rawQuota / 500000).toFixed(2)}` };
         }
-        // unlimited_quota=true 且配额<=0或null，使用账户余额
+        // unlimited_quota=true 且配额<=0（含负数）或null，使用账户余额
         const balance = String(route.provider_balance || '').trim();
         if (balance) {
             const match = balance.match(/[\d,.]+/);
