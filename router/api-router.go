@@ -104,6 +104,16 @@ func SetApiRouter(router *gin.Engine) {
 			routeGroup.POST("/rebuild", controller.RebuildRoutes)
 		}
 
+		// === System Prompts (Admin) ===
+		systemPromptRoute := apiRouter.Group("/system-prompt")
+		systemPromptRoute.Use(middleware.AdminAuth(), middleware.NoTokenAuth())
+		{
+			systemPromptRoute.GET("/", controller.GetSystemPrompts)
+			systemPromptRoute.POST("/", controller.CreateSystemPrompt)
+			systemPromptRoute.PUT("/:id", controller.UpdateSystemPrompt)
+			systemPromptRoute.DELETE("/:id", controller.DeleteSystemPrompt)
+		}
+
 		// === Logs (User sees own, Admin sees all) ===
 		logRoute := apiRouter.Group("/log")
 		logRoute.Use(middleware.UserAuth(), middleware.NoTokenAuth())
