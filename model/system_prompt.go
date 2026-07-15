@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
-	ErrInvalidSystemPrompt   = errors.New("invalid system prompt")
-	ErrDuplicateSystemPrompt = errors.New("duplicate system prompt")
-	ErrSystemPromptInUse     = errors.New("system prompt is in use")
+	ErrInvalidSystemPrompt       = errors.New("invalid system prompt")
+	ErrDuplicateSystemPrompt     = errors.New("duplicate system prompt")
+	ErrSystemPromptInUse         = errors.New("system prompt is in use")
+	ErrSystemPromptModelMismatch = errors.New("system prompt model does not match bound route model")
 )
 
 type SystemPrompt struct {
@@ -68,34 +70,41 @@ func UpdateSystemPrompt(prompt *SystemPrompt) error {
 	if err := normalizeSystemPrompt(prompt); err != nil {
 		return err
 	}
-	duplicate, err := systemPromptNameExists(prompt.ModelName, prompt.Name, prompt.Id)
-	if err != nil {
-		return err
-	}
-	if duplicate {
-		return ErrDuplicateSystemPrompt
-	}
 	prompt.UpdatedAt = time.Now().Unix()
-	result := DB.Model(&SystemPrompt{}).Where("id = ?", prompt.Id).Updates(map[string]interface{}{
-		"name": prompt.Name, "model_name": prompt.ModelName, "content": prompt.Content, "updated_at": prompt.UpdatedAt,
-	})
-	if result.Error != nil {
-		if duplicate, checkErr := systemPromptNameExists(prompt.ModelName, prompt.Name, prompt.Id); checkErr == nil && duplicate {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		existing, err := lockSystemPromptByID(tx, prompt.Id)
+		if err != nil {
+			return err
+		}
+		duplicate, err := systemPromptNameExistsWithDB(tx, prompt.ModelName, prompt.Name, prompt.Id)
+		if err != nil {
+			return err
+		}
+		if duplicate {
 			return ErrDuplicateSystemPrompt
 		}
-		return result.Error
-	}
-	if result.RowsAffected > 0 {
+		if existing.ModelName != prompt.ModelName {
+			var bound int64
+			if err := tx.Model(&ModelRoute{}).
+				Where("system_prompt_id = ?", prompt.Id).
+				Count(&bound).Error; err != nil {
+				return err
+			}
+			if bound > 0 {
+				return ErrSystemPromptModelMismatch
+			}
+		}
+		result := tx.Model(&SystemPrompt{}).Where("id = ?", prompt.Id).Updates(map[string]interface{}{
+			"name": prompt.Name, "model_name": prompt.ModelName, "content": prompt.Content, "updated_at": prompt.UpdatedAt,
+		})
+		if result.Error != nil {
+			if duplicate, checkErr := systemPromptNameExistsWithDB(tx, prompt.ModelName, prompt.Name, prompt.Id); checkErr == nil && duplicate {
+				return ErrDuplicateSystemPrompt
+			}
+			return result.Error
+		}
 		return nil
-	}
-	var count int64
-	if err := DB.Model(&SystemPrompt{}).Where("id = ?", prompt.Id).Count(&count).Error; err != nil {
-		return err
-	}
-	if count == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+	})
 }
 
 func ListSystemPrompts(modelName, keyword string) ([]*SystemPrompt, error) {
@@ -145,6 +154,9 @@ func GetSystemPromptByID(id int) (*SystemPrompt, error) {
 func DeleteSystemPrompt(id int, unbind bool) (int64, error) {
 	var resultCount int64
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := lockSystemPromptByID(tx, id); err != nil {
+			return err
+		}
 		var count int64
 		if err := tx.Model(&ModelRoute{}).Where("system_prompt_id = ?", id).Count(&count).Error; err != nil {
 			return err
@@ -172,8 +184,21 @@ func DeleteSystemPrompt(id int, unbind bool) (int64, error) {
 	return resultCount, err
 }
 
+// All prompt-binding mutations acquire this row lock before reading or changing route bindings.
+func lockSystemPromptByID(db *gorm.DB, id int) (*SystemPrompt, error) {
+	var prompt SystemPrompt
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).First(&prompt, id).Error; err != nil {
+		return nil, err
+	}
+	return &prompt, nil
+}
+
 func systemPromptNameExists(modelName, name string, excludeID int) (bool, error) {
-	query := DB.Model(&SystemPrompt{}).Where("model_name = ? AND name = ?", modelName, name)
+	return systemPromptNameExistsWithDB(DB, modelName, name, excludeID)
+}
+
+func systemPromptNameExistsWithDB(db *gorm.DB, modelName, name string, excludeID int) (bool, error) {
+	query := db.Model(&SystemPrompt{}).Where("model_name = ? AND name = ?", modelName, name)
 	if excludeID > 0 {
 		query = query.Where("id <> ?", excludeID)
 	}

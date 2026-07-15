@@ -90,6 +90,30 @@ func TestUpdateAndGetSystemPromptNormalizeValues(t *testing.T) {
 	}
 }
 
+func TestUpdateSystemPromptRejectsBoundModelChange(t *testing.T) {
+	setupSystemPromptTestDB(t)
+	prompt := &SystemPrompt{Name: "main", ModelName: "gpt-4", Content: "old"}
+	if err := CreateSystemPrompt(prompt); err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.Create(&ModelRoute{ModelName: "gpt-4", ProviderId: 1, ProviderTokenId: 1, SystemPromptId: &prompt.Id}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	prompt.ModelName = "gpt-4o"
+	prompt.Content = "new"
+	if err := UpdateSystemPrompt(prompt); !errors.Is(err, ErrSystemPromptModelMismatch) {
+		t.Fatalf("expected ErrSystemPromptModelMismatch, got %v", err)
+	}
+	stored, err := GetSystemPromptByID(prompt.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.ModelName != "gpt-4" || stored.Content != "old" {
+		t.Fatalf("rejected update changed prompt: %+v", stored)
+	}
+}
+
 func TestUpdateSystemPromptReturnsNotFoundForMissingID(t *testing.T) {
 	setupSystemPromptTestDB(t)
 	err := UpdateSystemPrompt(&SystemPrompt{Id: 999, Name: "missing", ModelName: "gpt-4", Content: "content"})

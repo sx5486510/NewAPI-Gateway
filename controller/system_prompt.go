@@ -106,6 +106,8 @@ func respondSystemPromptError(c *gin.Context, err error) {
 		message = "system prompt not found"
 	case errors.Is(err, model.ErrSystemPromptInUse):
 		message = "system prompt is in use"
+	case errors.Is(err, model.ErrSystemPromptModelMismatch):
+		message = "system prompt model does not match bound route model"
 	default:
 		common.SysLog("system prompt operation failed: " + err.Error())
 	}

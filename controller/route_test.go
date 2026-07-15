@@ -54,10 +54,8 @@ func TestRouteSystemPromptNumericSelectionAndNullClear(t *testing.T) {
 	router := gin.New()
 	router.POST("/api/route/:id", UpdateRoute)
 
-	for _, body := range []string{
-		`{"system_prompt_id":` + strconv.Itoa(prompt.Id) + `}`,
-		`{"system_prompt_id":null}`,
-	} {
+	updateBinding := func(body string) {
+		t.Helper()
 		recorder := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/route/"+strconv.Itoa(route.Id), bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -73,7 +71,18 @@ func TestRouteSystemPromptNumericSelectionAndNullClear(t *testing.T) {
 			t.Fatalf("body %s failed: %s", body, payload.Message)
 		}
 	}
+
+	updateBinding(`{"system_prompt_id":` + strconv.Itoa(prompt.Id) + `}`)
 	var stored model.ModelRoute
+	if err := model.DB.First(&stored, route.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.SystemPromptId == nil || *stored.SystemPromptId != prompt.Id {
+		t.Fatalf("expected binding to prompt %d, got %+v", prompt.Id, stored.SystemPromptId)
+	}
+
+	updateBinding(`{"system_prompt_id":null}`)
+	stored = model.ModelRoute{}
 	if err := model.DB.First(&stored, route.Id).Error; err != nil {
 		t.Fatal(err)
 	}

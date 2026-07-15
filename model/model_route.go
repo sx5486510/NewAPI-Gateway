@@ -1134,13 +1134,6 @@ func updateModelRouteFieldsWithDB(db *gorm.DB, id int, updates map[string]interf
 }
 
 func validateModelRoutePromptBinding(db *gorm.DB, id int, updates map[string]interface{}) error {
-	var route ModelRoute
-	if err := db.Select("id", "model_name").First(&route, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("model route not found")
-		}
-		return err
-	}
 	value, selected := updates["system_prompt_id"]
 	if !selected || value == nil {
 		return nil
@@ -1149,10 +1142,17 @@ func validateModelRoutePromptBinding(db *gorm.DB, id int, updates map[string]int
 	if !ok || promptID <= 0 {
 		return errors.New("invalid system prompt binding")
 	}
-	var prompt SystemPrompt
-	if err := db.Select("id", "model_name").First(&prompt, promptID).Error; err != nil {
+	prompt, err := lockSystemPromptByID(db, promptID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("system prompt not found")
+		}
+		return err
+	}
+	var route ModelRoute
+	if err := db.Select("id", "model_name").First(&route, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("model route not found")
 		}
 		return err
 	}

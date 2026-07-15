@@ -75,10 +75,18 @@ func TestRouteSystemPromptBindingRequiresMatchingExistingPreset(t *testing.T) {
 	if err := UpdateModelRouteFields(route.Id, map[string]interface{}{"system_prompt_id": matching.Id}); err != nil {
 		t.Fatalf("bind matching preset: %v", err)
 	}
-	for _, id := range []int{other.Id, 99999} {
-		if err := UpdateModelRouteFields(route.Id, map[string]interface{}{"system_prompt_id": id}); err == nil {
-			t.Fatalf("expected preset %d to be rejected", id)
-		}
+	var stored ModelRoute
+	if err := DB.First(&stored, route.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.SystemPromptId == nil || *stored.SystemPromptId != matching.Id {
+		t.Fatalf("matching binding was not stored: %+v", stored)
+	}
+	if err := UpdateModelRouteFields(route.Id, map[string]interface{}{"system_prompt_id": other.Id}); err == nil {
+		t.Fatal("expected cross-model preset to be rejected")
+	}
+	if err := UpdateModelRouteFields(route.Id, map[string]interface{}{"system_prompt_id": 99999}); err == nil || err.Error() != "system prompt not found" {
+		t.Fatalf("expected stable missing preset error, got %v", err)
 	}
 }
 
