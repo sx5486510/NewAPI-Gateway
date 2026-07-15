@@ -27,7 +27,7 @@ const Layout = ({ children }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const roleName = getRoleName(userState.user?.role);
 
-    const isAdmin = userState.user && userState.user.role >= 1;
+    const isAdmin = userState.user && userState.user.role >= 10;
 
     const navItems = [
         { name: '仪表盘', path: '/', icon: LayoutDashboard, admin: true },
