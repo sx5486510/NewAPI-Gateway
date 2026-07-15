@@ -254,6 +254,7 @@ describe('ModelRoutesTable', () => {
             id: 2,
             provider_id: 11,
             provider_name: 'AccountBalance',
+            provider_balance: '$5041.04',
             provider_token_id: 21,
             token_unlimited_quota: true,
             token_remain_quota: 1500000,
@@ -273,7 +274,8 @@ describe('ModelRoutesTable', () => {
             ...route,
             id: 4,
             provider_id: 13,
-            provider_name: 'KeyOnly',
+            provider_name: 'UseProviderBalance',
+            provider_balance: '$123.45',
             provider_token_id: 23,
             token_unlimited_quota: false,
             token_remain_quota: -1,
@@ -304,7 +306,8 @@ describe('ModelRoutesTable', () => {
     expect(quotaValues).toContain('$0.50');
     expect(quotaValues).toContain('$3.00');
     expect(quotaValues).toContain('\u65e0\u9650');
-    expect(quotaValues.filter(v => v === '\u2014')).toHaveLength(2);
+    expect(quotaValues).toContain('$123.45');
+    expect(quotaValues.filter(v => v === '\u2014')).toHaveLength(1);
   });
 
   it('keeps health value display concise in the route list', async () => {

@@ -172,7 +172,19 @@ const formatTokenQuota = (route) => {
         const rawQuota = Number(route.token_remain_quota);
         if (Number.isFinite(rawQuota)) {
             if (rawQuota < 0) {
-                // 负数表示使用账户余额，显示占位符
+                // 负数表示使用账户余额，显示供应商余额
+                const balance = String(route.provider_balance || '').trim();
+                if (balance) {
+                    // 解析 provider_balance（可能是 "$5041.04" 或 "5041.04" 等格式）
+                    const match = balance.match(/[\d,.]+/);
+                    if (match) {
+                        const numStr = match[0].replace(/,/g, '');
+                        const num = parseFloat(numStr);
+                        if (Number.isFinite(num)) {
+                            return { type: 'finite', label: `$${num.toFixed(2)}` };
+                        }
+                    }
+                }
                 return { type: 'missing', label: '—' };
             }
             return { type: 'finite', label: `$${(rawQuota / 500000).toFixed(2)}` };
