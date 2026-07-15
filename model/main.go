@@ -245,6 +245,10 @@ func InitDB() (err error) {
 		if err != nil {
 			return err
 		}
+		err = db.AutoMigrate(&SystemPrompt{})
+		if err != nil {
+			return err
+		}
 		err = db.AutoMigrate(&ModelPricing{})
 		if err != nil {
 			return err

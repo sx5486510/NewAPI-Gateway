@@ -83,6 +83,7 @@ type ModelRoute struct {
 	AllowCodex      bool   `json:"allow_codex" gorm:"default:false"`
 	AllowCC         bool   `json:"allow_cc" gorm:"default:false"`
 	BlockClients    bool   `json:"block_clients" gorm:"default:false"`
+	SystemPromptId  *int   `json:"system_prompt_id" gorm:"index"`
 }
 
 // IsClientAllowed checks if a route allows the specified client type
@@ -121,13 +122,14 @@ func (mr *ModelRoute) NormalizeClientRestrictions() {
 }
 
 type ModelRoutePatch struct {
-	Id           int   `json:"id"`
-	Priority     *int  `json:"priority,omitempty"`
-	Weight       *int  `json:"weight,omitempty"`
-	Enabled      *bool `json:"enabled,omitempty"`
-	AllowCodex   *bool `json:"allow_codex,omitempty"`
-	AllowCC      *bool `json:"allow_cc,omitempty"`
-	BlockClients *bool `json:"block_clients,omitempty"`
+	Id             int   `json:"id"`
+	Priority       *int  `json:"priority,omitempty"`
+	Weight         *int  `json:"weight,omitempty"`
+	Enabled        *bool `json:"enabled,omitempty"`
+	AllowCodex     *bool `json:"allow_codex,omitempty"`
+	AllowCC        *bool `json:"allow_cc,omitempty"`
+	BlockClients   *bool `json:"block_clients,omitempty"`
+	SystemPromptId *int  `json:"system_prompt_id"`
 }
 
 func (p *ModelRoutePatch) ToUpdates() map[string]interface{} {
@@ -149,6 +151,9 @@ func (p *ModelRoutePatch) ToUpdates() map[string]interface{} {
 	}
 	if p.BlockClients != nil {
 		updates["block_clients"] = *p.BlockClients
+	}
+	if p.SystemPromptId != nil {
+		updates["system_prompt_id"] = *p.SystemPromptId
 	}
 	return updates
 }
@@ -204,6 +209,7 @@ type ModelRouteOverviewItem struct {
 	Id                      int      `json:"id"`
 	DisplayModelName        string   `json:"display_model_name"`
 	ModelName               string   `json:"model_name"`
+	SystemPromptId          *int     `json:"system_prompt_id"`
 	ProviderId              int      `json:"provider_id"`
 	ProviderName            string   `json:"provider_name"`
 	ProviderBaseURL         string   `json:"provider_base_url"`
@@ -250,6 +256,7 @@ type ModelRouteOverviewItem struct {
 type modelRouteOverviewRow struct {
 	Id                  int     `gorm:"column:id"`
 	ModelName           string  `gorm:"column:model_name"`
+	SystemPromptId      *int    `gorm:"column:system_prompt_id"`
 	ProviderId          int     `gorm:"column:provider_id"`
 	ProviderName        string  `gorm:"column:provider_name"`
 	ProviderBaseURL     string  `gorm:"column:provider_base_url"`
@@ -1142,6 +1149,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 		Select(strings.Join([]string{
 			"mr.id",
 			"mr.model_name",
+			"mr.system_prompt_id",
 			"mr.provider_id",
 			"COALESCE(p.name, '') AS provider_name",
 			"COALESCE(p.base_url, '') AS provider_base_url",
@@ -1224,6 +1232,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			Id:                      row.Id,
 			DisplayModelName:        "",
 			ModelName:               row.ModelName,
+			SystemPromptId:          row.SystemPromptId,
 			ProviderId:              row.ProviderId,
 			ProviderName:            row.ProviderName,
 			ProviderBaseURL:         row.ProviderBaseURL,
