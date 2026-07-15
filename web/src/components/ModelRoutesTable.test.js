@@ -61,6 +61,15 @@ const route = {
 };
 
 const promptResponse = (data) => ({ data: { success: true, data } });
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
 
 const setApiLists = (routes, prompts) => {
   API.get.mockImplementation((url) => Promise.resolve(
@@ -79,12 +88,7 @@ describe('ModelRoutesTable', () => {
   let root;
 
   beforeEach(() => {
-    API.get.mockResolvedValue({
-      data: {
-        success: true,
-        data: [route],
-      },
-    });
+    setApiLists([route], []);
     API.post.mockResolvedValue({
       data: {
         success: true,
@@ -157,20 +161,14 @@ describe('ModelRoutesTable', () => {
   });
 
   it('keeps saved status visible when overview reload fails after saving', async () => {
-    API.get.mockReset();
-    API.get
-      .mockResolvedValueOnce({
-        data: {
-          success: true,
-          data: [route],
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          success: false,
-          message: '未登录或登录已过期，请重新登录',
-        },
+    let overviewRequests = 0;
+    API.get.mockImplementation((url) => {
+      if (url === '/api/system-prompt/') return Promise.resolve(promptResponse([]));
+      overviewRequests += 1;
+      return Promise.resolve(overviewRequests === 1 ? promptResponse([route]) : {
+        data: { success: false, message: '未登录或登录已过期，请重新登录' },
       });
+    });
 
     await act(async () => {
       root.render(<ModelRoutesTable />);
@@ -253,10 +251,7 @@ describe('ModelRoutesTable', () => {
   });
 
   it('shows synchronized token quota for every route row', async () => {
-    API.get.mockResolvedValueOnce({
-      data: {
-        success: true,
-        data: [
+    setApiLists([
           route,
           {
             ...route,
@@ -300,9 +295,7 @@ describe('ModelRoutesTable', () => {
             token_remain_quota: null,
             token_used_quota: null,
           },
-        ],
-      },
-    });
+        ], []);
 
     await act(async () => {
       root.render(<ModelRoutesTable />);
@@ -320,10 +313,7 @@ describe('ModelRoutesTable', () => {
   });
 
   it('keeps health value display concise in the route list', async () => {
-    API.get.mockResolvedValueOnce({
-      data: {
-        success: true,
-        data: [
+    setApiLists([
           {
             ...route,
             health_value: -2,
@@ -331,9 +321,7 @@ describe('ModelRoutesTable', () => {
             health_error_count: 2,
             health_sample_count: 7,
           },
-        ],
-      },
-    });
+        ], []);
 
     await act(async () => {
       root.render(<ModelRoutesTable />);
@@ -348,10 +336,7 @@ describe('ModelRoutesTable', () => {
   });
 
   it('sorts detail routes when clicking sortable detail headers', async () => {
-    API.get.mockResolvedValueOnce({
-      data: {
-        success: true,
-        data: [
+    setApiLists([
           route,
           {
             ...route,
@@ -362,9 +347,7 @@ describe('ModelRoutesTable', () => {
             token_name: 'backup token',
             health_success_count: 0,
           },
-        ],
-      },
-    });
+        ], []);
 
     await act(async () => {
       root.render(<ModelRoutesTable />);
@@ -475,9 +458,98 @@ describe('ModelRoutesTable', () => {
     expect(showError).toHaveBeenCalledWith('prompt service unavailable');
     const selector = document.querySelector('.routes-system-prompt-select');
     expect(selector.value).toBe('7');
+    expect(selector.disabled).toBe(true);
     expect([...selector.options].map((option) => option.textContent)).toEqual([
-      '无系统提示词',
-      '当前绑定不可用 (#7)',
+      '系统提示词加载失败 (#7)',
     ]);
+  });
+
+  it('preserves unsaved status and prompt drafts across manual refresh', async () => {
+    setApiLists([{ ...route, system_prompt_id: null }], [
+      { id: 7, name: 'GPT preset', model_name: 'gpt-4o' },
+    ]);
+    await act(async () => root.render(<ModelRoutesTable />));
+
+    const selector = document.querySelector('.routes-system-prompt-select');
+    await act(async () => {
+      selector.value = '7';
+      selector.dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelector('.routes-status-toggle').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const refreshButton = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent.trim() === '刷新');
+    await act(async () => refreshButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(document.querySelector('.routes-status-toggle').getAttribute('aria-checked')).toBe('false');
+    expect(document.querySelector('.routes-system-prompt-select').value).toBe('7');
+    expect(document.body.textContent).toContain('待保存 1 条');
+  });
+
+  it('disables all draft controls through save and overview reload', async () => {
+    const saveRequest = deferred();
+    const reloadRequest = deferred();
+    let overviewRequests = 0;
+    API.post.mockReturnValue(saveRequest.promise);
+    API.get.mockImplementation((url) => {
+      if (url === '/api/system-prompt/') return Promise.resolve(promptResponse([
+        { id: 7, name: 'GPT preset', model_name: 'gpt-4o' },
+      ]));
+      overviewRequests += 1;
+      return overviewRequests === 1 ? Promise.resolve(promptResponse([route])) : reloadRequest.promise;
+    });
+    await act(async () => root.render(<ModelRoutesTable />));
+    await act(async () => document.querySelector('.routes-status-toggle')
+      .dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    const saveButton = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('保存变更'));
+
+    act(() => saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(document.querySelector('.routes-status-toggle').disabled).toBe(true);
+    expect(document.querySelector('.routes-system-prompt-select').disabled).toBe(true);
+    expect([...document.querySelectorAll('.routes-batch-status-button')].every((button) => button.disabled)).toBe(true);
+
+    await act(async () => saveRequest.resolve({ data: { success: true } }));
+    expect(document.querySelector('.routes-status-toggle').disabled).toBe(true);
+    expect(document.querySelector('.routes-system-prompt-select').disabled).toBe(true);
+
+    await act(async () => reloadRequest.resolve(promptResponse([{ ...route, enabled: false }])));
+    expect(document.querySelector('.routes-status-toggle').disabled).toBe(false);
+    expect(document.querySelector('.routes-status-toggle').getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('shows a disabled loading state until the prompt request completes', async () => {
+    const promptRequest = deferred();
+    API.get.mockImplementation((url) => (
+      url === '/api/system-prompt/' ? promptRequest.promise : Promise.resolve(promptResponse([{ ...route, system_prompt_id: 7 }]))
+    ));
+
+    await act(async () => root.render(<ModelRoutesTable />));
+    let selector = document.querySelector('.routes-system-prompt-select');
+    expect(selector.disabled).toBe(true);
+    expect([...selector.options].map((option) => option.textContent)).toEqual(['系统提示词加载中...']);
+
+    await act(async () => promptRequest.resolve(promptResponse([
+      { id: 7, name: 'GPT preset', model_name: 'gpt-4o' },
+    ])));
+    selector = document.querySelector('.routes-system-prompt-select');
+    expect(selector.disabled).toBe(false);
+    expect(selector.value).toBe('7');
+    expect([...selector.options].map((option) => option.textContent)).toEqual(['无系统提示词', 'GPT preset']);
+  });
+
+  it('keeps drafts and unlocks controls when the save request rejects', async () => {
+    API.post.mockRejectedValue(new Error('network down'));
+    await act(async () => root.render(<ModelRoutesTable />));
+    await act(async () => document.querySelector('.routes-status-toggle')
+      .dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    const saveButton = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('保存变更'));
+
+    await act(async () => saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(showError).toHaveBeenCalledWith('保存失败');
+    expect(document.querySelector('.routes-status-toggle').disabled).toBe(false);
+    expect(document.querySelector('.routes-status-toggle').getAttribute('aria-checked')).toBe('false');
+    expect(document.body.textContent).toContain('待保存 1 条');
   });
 });

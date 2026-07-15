@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCcw, RotateCcw, Save, Search } from 'lucide-react';
 import { API, copy, showError, showSuccess } from '../helpers';
 import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
@@ -402,6 +402,9 @@ const ModelRoutesTable = () => {
     const [ultraCompact, setUltraCompact] = useState(true);
     const [detailSort, setDetailSort] = useState({ column: null, direction: 'asc' });
     const [systemPrompts, setSystemPrompts] = useState([]);
+    const [promptsLoading, setPromptsLoading] = useState(true);
+    const [promptsError, setPromptsError] = useState('');
+    const promptRequestId = useRef(0);
 
     const handleDetailSort = useCallback((column) => {
         setDetailSort((prev) => {
@@ -439,8 +442,8 @@ const ModelRoutesTable = () => {
             .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
     }, [routes]);
 
-    const loadOverview = useCallback(async () => {
-        setLoading(true);
+    const loadOverview = useCallback(async (showLoading = true) => {
+        if (showLoading) setLoading(true);
         try {
             const res = await API.get('/api/route/overview');
             const { success, data, message } = res.data;
@@ -449,11 +452,10 @@ const ModelRoutesTable = () => {
                 return;
             }
             setRoutes(Array.isArray(data) ? data : []);
-            setDrafts({});
         } catch (e) {
             showError('加载路由总览失败');
         } finally {
-            setLoading(false);
+            if (showLoading) setLoading(false);
         }
     }, []);
 
@@ -462,20 +464,35 @@ const ModelRoutesTable = () => {
     }, [loadOverview]);
 
     useEffect(() => {
+        const requestId = ++promptRequestId.current;
+        let mounted = true;
         const loadSystemPrompts = async () => {
+            setPromptsLoading(true);
+            setPromptsError('');
             try {
                 const res = await API.get('/api/system-prompt/');
                 const { success, data, message } = res.data;
+                if (!mounted || requestId !== promptRequestId.current) return;
                 if (!success) {
-                    showError(message || '加载系统提示词失败');
+                    const errorMessage = message || '加载系统提示词失败';
+                    setPromptsError(errorMessage);
+                    showError(errorMessage);
                     return;
                 }
                 setSystemPrompts(Array.isArray(data) ? data : []);
             } catch (e) {
+                if (!mounted || requestId !== promptRequestId.current) return;
+                setPromptsError('加载系统提示词失败');
                 showError('加载系统提示词失败');
+            } finally {
+                if (mounted && requestId === promptRequestId.current) setPromptsLoading(false);
             }
         };
         loadSystemPrompts();
+        return () => {
+            mounted = false;
+            promptRequestId.current += 1;
+        };
     }, []);
 
     const systemPromptsByModel = useMemo(() => {
@@ -688,28 +705,33 @@ const ModelRoutesTable = () => {
             return;
         }
         setSaving(true);
-        const res = await API.post('/api/route/batch-update', { items });
-        const { success, message } = res.data;
-        if (success) {
-            showSuccess(`已保存 ${items.length} 条路由变更`);
-            const savedItemsById = new Map(items.map((item) => [item.id, item]));
-            setRoutes((currentRoutes) => currentRoutes.map((route) => (
-                savedItemsById.has(route.id)
-                    ? { ...route, ...savedItemsById.get(route.id) }
-                    : route
-            )));
-            setDrafts((currentDrafts) => {
-                const remainingDrafts = { ...currentDrafts };
-                items.forEach((item) => {
-                    delete remainingDrafts[item.id];
+        try {
+            const res = await API.post('/api/route/batch-update', { items });
+            const { success, message } = res.data;
+            if (success) {
+                showSuccess(`已保存 ${items.length} 条路由变更`);
+                const savedItemsById = new Map(items.map((item) => [item.id, item]));
+                setRoutes((currentRoutes) => currentRoutes.map((route) => (
+                    savedItemsById.has(route.id)
+                        ? { ...route, ...savedItemsById.get(route.id) }
+                        : route
+                )));
+                setDrafts((currentDrafts) => {
+                    const remainingDrafts = { ...currentDrafts };
+                    items.forEach((item) => {
+                        delete remainingDrafts[item.id];
+                    });
+                    return remainingDrafts;
                 });
-                return remainingDrafts;
-            });
-            await loadOverview();
-        } else {
-            showError(message || '保存失败');
+                await loadOverview(false);
+            } else {
+                showError(message || '保存失败');
+            }
+        } catch (e) {
+            showError('保存失败');
+        } finally {
+            setSaving(false);
         }
-        setSaving(false);
     };
 
     const updateRouteClientRestriction = async (route, field, value) => {
@@ -797,7 +819,7 @@ const ModelRoutesTable = () => {
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <Button variant="secondary" onClick={loadOverview} icon={RefreshCcw} disabled={loading}>刷新</Button>
+                    <Button variant="secondary" onClick={() => loadOverview()} icon={RefreshCcw} disabled={loading || saving}>刷新</Button>
                     <Button variant="outline" onClick={rebuildRoutes} icon={RefreshCcw}>重建路由</Button>
                     <Button variant="secondary" onClick={() => setDrafts({})} icon={RotateCcw} disabled={dirtyCount === 0 || saving}>撤销未保存</Button>
                     <Button variant="primary" onClick={saveChanges} icon={Save} loading={saving} disabled={dirtyCount === 0}>保存变更</Button>
@@ -946,6 +968,7 @@ const ModelRoutesTable = () => {
                                             size="sm"
                                             className="routes-batch-status-button"
                                             onClick={() => applyBatchEnabledDraft(true)}
+                                            disabled={saving}
                                         >
                                             全部启用
                                         </Button>
@@ -955,6 +978,7 @@ const ModelRoutesTable = () => {
                                             size="sm"
                                             className="routes-batch-status-button"
                                             onClick={() => applyBatchEnabledDraft(false)}
+                                            disabled={saving}
                                         >
                                             全部禁用
                                         </Button>
@@ -1143,6 +1167,7 @@ const ModelRoutesTable = () => {
                                                                     aria-checked={route.enabled}
                                                                     aria-label={`${route.provider_name || '路由'}状态：${route.enabled ? '启用' : '禁用'}`}
                                                                     onClick={() => updateDraft(route.id, { enabled: !route.enabled })}
+                                                                    disabled={saving}
                                                                     style={getStatusToggleStyle(route.enabled)}
                                                                 >
                                                                     <span>{route.enabled ? '启用' : '禁用'}</span>
@@ -1153,20 +1178,37 @@ const ModelRoutesTable = () => {
                                                                 <select
                                                                     className="routes-system-prompt-select"
                                                                     aria-label={`${route.provider_name || '路由'}系统提示词`}
-                                                                    title={selectedPrompt ? selectedPrompt.name : (promptBindingUnavailable ? `当前绑定不可用 (#${currentPromptId})` : '无系统提示词')}
+                                                                    title={promptsLoading
+                                                                        ? '系统提示词加载中'
+                                                                        : promptsError
+                                                                            ? '系统提示词加载失败'
+                                                                            : selectedPrompt
+                                                                                ? selectedPrompt.name
+                                                                                : (promptBindingUnavailable ? `当前绑定不可用 (#${currentPromptId})` : '无系统提示词')}
                                                                     value={currentPromptId === null ? '' : String(currentPromptId)}
+                                                                    disabled={saving || promptsLoading || Boolean(promptsError)}
                                                                     onChange={(e) => updateDraft(route.id, {
                                                                         system_prompt_id: e.target.value === '' ? null : Number(e.target.value)
                                                                     })}
                                                                     style={promptSelectStyle}
                                                                 >
-                                                                    <option value="">无系统提示词</option>
-                                                                    {promptBindingUnavailable && (
-                                                                        <option value={String(currentPromptId)} disabled>当前绑定不可用 (#{currentPromptId})</option>
+                                                                    {promptsLoading ? (
+                                                                        <option value={currentPromptId === null ? '' : String(currentPromptId)}>系统提示词加载中...</option>
+                                                                    ) : promptsError ? (
+                                                                        <option value={currentPromptId === null ? '' : String(currentPromptId)}>
+                                                                            系统提示词加载失败{currentPromptId === null ? '' : ` (#${currentPromptId})`}
+                                                                        </option>
+                                                                    ) : (
+                                                                        <>
+                                                                            <option value="">无系统提示词</option>
+                                                                            {promptBindingUnavailable && (
+                                                                                <option value={String(currentPromptId)} disabled>当前绑定不可用 (#{currentPromptId})</option>
+                                                                            )}
+                                                                            {promptOptions.map((prompt) => (
+                                                                                <option key={prompt.id} value={String(prompt.id)} title={prompt.name}>{prompt.name}</option>
+                                                                            ))}
+                                                                        </>
                                                                     )}
-                                                                    {promptOptions.map((prompt) => (
-                                                                        <option key={prompt.id} value={String(prompt.id)} title={prompt.name}>{prompt.name}</option>
-                                                                    ))}
                                                                 </select>
                                                             </Td>
                                                             <Td style={cellTopStyle}>
