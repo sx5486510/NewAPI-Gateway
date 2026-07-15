@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Edit3, FileType2, Plus, Search, Trash2 } from 'lucide-react';
 import { API, showError, showSuccess } from '../../helpers';
 import Button from '../../components/ui/Button';
@@ -25,26 +25,31 @@ const SystemPrompt = () => {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [unbindTarget, setUnbindTarget] = useState(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const listRequestId = useRef(0);
 
-  const loadPrompts = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (model.trim()) params.set('model', model.trim());
-      if (keyword.trim()) params.set('keyword', keyword.trim());
-      const query = params.toString();
-      const res = await API.get(`/api/system-prompt/${query ? `?${query}` : ''}`);
-      const { success, data, message } = res.data;
-      if (!success) return showError(message || '加载系统提示词失败');
-      setPrompts(Array.isArray(data) ? data : []);
-    } catch (error) {
-      showError('加载系统提示词失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [keyword, model]);
-
-  useEffect(() => { loadPrompts(); }, [loadPrompts]);
+  useEffect(() => {
+    const requestId = ++listRequestId.current;
+    const loadPrompts = async () => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (model.trim()) params.set('model', model.trim());
+        if (keyword.trim()) params.set('keyword', keyword.trim());
+        const query = params.toString();
+        const res = await API.get(`/api/system-prompt/${query ? `?${query}` : ''}`);
+        const { success, data, message } = res.data;
+        if (requestId !== listRequestId.current) return;
+        if (!success) return showError(message || '加载系统提示词失败');
+        setPrompts(Array.isArray(data) ? data : []);
+      } catch (error) {
+        if (requestId === listRequestId.current) showError('加载系统提示词失败');
+      } finally {
+        if (requestId === listRequestId.current) setLoading(false);
+      }
+    };
+    loadPrompts();
+  }, [keyword, model, refreshNonce]);
 
   const openCreate = () => { setEditing(null); setForm(EMPTY_FORM); };
   const openEdit = (prompt) => {
@@ -73,7 +78,7 @@ const SystemPrompt = () => {
       showSuccess(editing ? '系统提示词已更新' : '系统提示词已创建');
       setEditing(null);
       setForm(null);
-      await loadPrompts();
+      setRefreshNonce((value) => value + 1);
     } catch (error) {
       showError('保存系统提示词失败');
     } finally {
@@ -95,7 +100,7 @@ const SystemPrompt = () => {
       }
       setUnbindTarget(null);
       showSuccess(unbind ? '已自动解绑路由并删除提示词' : '系统提示词已删除');
-      await loadPrompts();
+      setRefreshNonce((value) => value + 1);
     } catch (error) {
       showError('删除系统提示词失败');
     } finally {

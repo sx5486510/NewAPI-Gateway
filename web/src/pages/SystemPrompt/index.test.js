@@ -46,6 +46,12 @@ const change = async (element, value) => {
 const button = (text, scope = document) =>
   [...scope.querySelectorAll('button')].find((item) => item.textContent.includes(text));
 
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+};
+
 describe('SystemPrompt', () => {
   let container;
   let root;
@@ -162,5 +168,49 @@ describe('SystemPrompt', () => {
     await click(button('删除', container));
     await click(button('自动解绑并删除', document.querySelector('.modal-content')));
     expect(API.delete).toHaveBeenLastCalledWith('/api/system-prompt/7?unbind=true');
+  });
+
+  it('keeps the newest filter result when an older request finishes last', async () => {
+    const oldRequest = deferred();
+    const newRequest = deferred();
+    API.get
+      .mockResolvedValueOnce({ data: { success: true, data: [prompt] } })
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockReturnValueOnce(newRequest.promise);
+
+    await act(async () => root.render(<SystemPrompt />));
+    await change(container.querySelector('input[aria-label="模型筛选"]'), 'old-model');
+    await change(container.querySelector('input[aria-label="模型筛选"]'), 'new-model');
+
+    await act(async () => newRequest.resolve({
+      data: { success: true, data: [{ ...prompt, id: 9, name: '最新结果', model_name: 'new-model' }] },
+    }));
+    expect(container.textContent).toContain('最新结果');
+    expect(container.textContent).not.toContain('加载中...');
+
+    await act(async () => oldRequest.resolve({
+      data: { success: true, data: [{ ...prompt, id: 8, name: '过期结果', model_name: 'old-model' }] },
+    }));
+    expect(container.textContent).toContain('最新结果');
+    expect(container.textContent).not.toContain('过期结果');
+    expect(container.textContent).not.toContain('加载中...');
+  });
+
+  it('refreshes with the current filter after a pending mutation completes', async () => {
+    const createRequest = deferred();
+    API.post.mockReturnValueOnce(createRequest.promise);
+
+    await act(async () => root.render(<SystemPrompt />));
+    await click(button('新建提示词', container));
+    const modal = document.querySelector('.modal-content');
+    await change(modal.querySelector('input[name="name"]'), '通用');
+    await change(modal.querySelector('input[name="model_name"]'), 'gpt-4o');
+    await change(modal.querySelector('textarea[name="content"]'), '保持简洁');
+    await click(button('创建', modal));
+    await change(container.querySelector('input[aria-label="模型筛选"]'), 'claude-3');
+
+    await act(async () => createRequest.resolve({ data: { success: true, data: prompt } }));
+
+    expect(API.get).toHaveBeenLastCalledWith('/api/system-prompt/?model=claude-3');
   });
 });
