@@ -98,6 +98,25 @@ func TestUpdateSystemPromptReturnsNotFoundForMissingID(t *testing.T) {
 	}
 }
 
+func TestUpdateSystemPromptSucceedsWhenExistingRowReportsZeroAffected(t *testing.T) {
+	setupSystemPromptTestDB(t)
+	prompt := &SystemPrompt{Name: "main", ModelName: "gpt-4", Content: "content"}
+	if err := CreateSystemPrompt(prompt); err != nil {
+		t.Fatal(err)
+	}
+
+	const callbackName = "test:force_zero_update_rows_affected"
+	if err := DB.Callback().Update().After("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		tx.Statement.RowsAffected = 0
+	}); err != nil {
+		t.Fatalf("register update callback: %v", err)
+	}
+
+	if err := UpdateSystemPrompt(prompt); err != nil {
+		t.Fatalf("idempotent update of existing prompt: %v", err)
+	}
+}
+
 func TestDeleteSystemPromptReturnsNotFoundForMissingID(t *testing.T) {
 	setupSystemPromptTestDB(t)
 	unbound, err := DeleteSystemPrompt(999, true)

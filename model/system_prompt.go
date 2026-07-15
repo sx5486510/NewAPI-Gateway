@@ -57,7 +57,14 @@ func UpdateSystemPrompt(prompt *SystemPrompt) error {
 	if result.Error != nil {
 		return result.Error
 	}
-	if result.RowsAffected == 0 {
+	if result.RowsAffected > 0 {
+		return nil
+	}
+	var count int64
+	if err := DB.Model(&SystemPrompt{}).Where("id = ?", prompt.Id).Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
 		return gorm.ErrRecordNotFound
 	}
 	return nil
