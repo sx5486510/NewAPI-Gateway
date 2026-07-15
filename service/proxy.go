@@ -88,7 +88,7 @@ func (e *ProxyAttemptError) Error() string {
 }
 
 // ProxyToUpstream forwards the request once. It writes to client only on success.
-func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model.Provider) *ProxyAttemptError {
+func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.ProviderToken, provider *model.Provider) *ProxyAttemptError {
 	startTime := time.Now()
 	requestId := uuid.New().String()[:8]
 
@@ -130,7 +130,31 @@ func ProxyToUpstream(c *gin.Context, token *model.ProviderToken, provider *model
 		}
 	}
 
-	bodyBytes = rewriteRequestModel(bodyBytes, resolvedModel)
+	bodyBytes, err = prepareRouteRequestBody(c.Request.Method, c.Request.URL.Path, bodyBytes, route)
+	if err != nil {
+		var invalidRequest *RouteSystemPromptInvalidRequestError
+		if errors.As(err, &invalidRequest) {
+			responseBody, _ := json.Marshal(map[string]any{
+				"error": map[string]any{
+					"message": invalidRequest.Error(),
+					"type":    "invalid_request_error",
+					"code":    "invalid_messages",
+				},
+			})
+			return &ProxyAttemptError{
+				StatusCode:          http.StatusBadRequest,
+				Message:             invalidRequest.Error(),
+				Retryable:           false,
+				UpstreamBody:        responseBody,
+				UpstreamContentType: "application/json",
+			}
+		}
+		common.SysLog(fmt.Sprintf("[relay-route] route_id=%d model=%s system_prompt_id=%v unavailable: %v", route.Id, route.ModelName, route.SystemPromptId, err))
+		return &ProxyAttemptError{
+			Message:   "route system prompt unavailable",
+			Retryable: true,
+		}
+	}
 	requestedStream := extractRequestedStream(bodyBytes)
 
 	// 2. Construct upstream URL

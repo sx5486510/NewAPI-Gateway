@@ -73,7 +73,7 @@ func Relay(c *gin.Context) {
 					c.Set("request_model", attempt.Route.ModelName)
 				}
 
-				if proxyErr := service.ProxyToUpstream(c, attempt.Token, attempt.Provider); proxyErr == nil {
+				if proxyErr := service.ProxyToUpstream(c, attempt.Route, attempt.Token, attempt.Provider); proxyErr == nil {
 					return
 				} else {
 					lastErr = proxyErr
