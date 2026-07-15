@@ -19,6 +19,15 @@
 - [ ] Add a regression assertion that a completed stream remains successful after client cancellation.
 - [ ] Run `go test ./service -run '^TestStreamRouteOutcome' -count=1` and commit separately.
 
+### Task 0b: Remove stale provider token restriction expectations
+
+**Files:**
+- Modify: `web/src/pages/Provider/ProviderDetail.test.js`
+
+- [ ] Replace the two tests for controls removed by `915377b` with an assertion that provider token management does not render route client-restriction controls.
+- [ ] Keep the edit-modal absence assertion and run the focused provider detail suite.
+- [ ] Commit this pre-existing test repair separately.
+
 ### Task 1: Expose token quota through the route overview API
 
 **Files:**

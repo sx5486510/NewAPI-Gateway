@@ -95,78 +95,13 @@ describe('ProviderDetail token client restrictions', () => {
     jest.clearAllMocks();
   });
 
-  it('edits client restrictions directly from the upstream token list', async () => {
+  it('keeps route client restrictions out of the upstream token list', async () => {
     await act(async () => {
       root.render(<ProviderDetail />);
     });
 
-    const restrictionSwitches = Array.from(
-      container.querySelectorAll('.provider-token-client-toggle')
-    );
-    expect(restrictionSwitches).toHaveLength(3);
-    expect(restrictionSwitches[0].tagName).toBe('INPUT');
-    expect(restrictionSwitches[0].getAttribute('type')).toBe('checkbox');
-    expect(restrictionSwitches[0].checked).toBe(false);
-
-    await act(async () => {
-      restrictionSwitches[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(API.put).toHaveBeenCalledWith('/api/provider/token/11', {
-      ...providerToken,
-      allow_codex: true,
-      block_clients: false,
-    });
-  });
-
-  it('clears codex and cc restrictions when all-disabled is selected', async () => {
-    API.get.mockImplementation((url) => {
-      if (url === '/api/provider/7') {
-        return Promise.resolve({ data: { success: true, data: provider } });
-      }
-      if (url === '/api/provider/7/tokens') {
-        return Promise.resolve({
-          data: {
-            success: true,
-            data: [{ ...providerToken, allow_codex: true, allow_cc: true }],
-          },
-        });
-      }
-      if (url === '/api/provider/7/pricing') {
-        return Promise.resolve({
-          data: {
-            success: true,
-            data: [pricing],
-            group_ratio: { default: 1 },
-            supported_endpoint: {},
-          },
-        });
-      }
-      if (url === '/api/provider/7/model-alias-mapping') {
-        return Promise.resolve({ data: { success: true, data: {} } });
-      }
-      return Promise.resolve({ data: { success: true, data: null } });
-    });
-
-    await act(async () => {
-      root.render(<ProviderDetail />);
-    });
-
-    const allDisabledSwitch = container.querySelector(
-      '.provider-token-client-toggle[aria-label="全禁用 客户端限制"]'
-    );
-    expect(allDisabledSwitch).not.toBeNull();
-
-    await act(async () => {
-      allDisabledSwitch.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(API.put).toHaveBeenCalledWith('/api/provider/token/11', {
-      ...providerToken,
-      allow_codex: false,
-      allow_cc: false,
-      block_clients: true,
-    });
+    expect(container.querySelectorAll('.provider-token-client-toggle')).toHaveLength(0);
+    expect(container.textContent).not.toContain('客户端限制');
   });
 
   it('does not keep client restriction controls inside the edit token modal', async () => {
