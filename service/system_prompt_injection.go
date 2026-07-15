@@ -45,7 +45,7 @@ func prepareRouteRequestBody(method, path string, original []byte, route model.M
 }
 
 func injectRouteSystemPrompt(method, path string, body []byte, content string) ([]byte, error) {
-	if content == "" || method != http.MethodPost || path != "/v1/chat/completions" {
+	if method != http.MethodPost || path != "/v1/chat/completions" {
 		return body, nil
 	}
 

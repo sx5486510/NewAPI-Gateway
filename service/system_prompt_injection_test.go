@@ -18,7 +18,6 @@ func TestRouteSystemPromptInactiveReturnsOriginalBody(t *testing.T) {
 	for _, tc := range []struct {
 		name, method, path, content string
 	}{
-		{name: "empty content", method: http.MethodPost, path: "/v1/chat/completions"},
 		{name: "other method", method: http.MethodGet, path: "/v1/chat/completions", content: "preset"},
 		{name: "other path", method: http.MethodPost, path: "/v1/responses", content: "preset"},
 		{name: "non-exact path", method: http.MethodPost, path: "/v1/chat/completions/", content: "preset"},
@@ -32,6 +31,31 @@ func TestRouteSystemPromptInactiveReturnsOriginalBody(t *testing.T) {
 				t.Fatalf("body changed: got %s want %s", got, body)
 			}
 		})
+	}
+}
+
+func TestRouteSystemPromptBoundEmptyContentInjectsEmptySystemMessage(t *testing.T) {
+	got, err := injectRouteSystemPrompt(http.MethodPost, "/v1/chat/completions", []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}`), "")
+	if err != nil {
+		t.Fatalf("injectRouteSystemPrompt: %v", err)
+	}
+	assertRoutePromptMessages(t, got, "", "hello")
+}
+
+func TestRouteSystemPromptStreamingRequestIsInjected(t *testing.T) {
+	got, err := injectRouteSystemPrompt(http.MethodPost, "/v1/chat/completions", []byte(`{"model":"gpt-4","stream":true,"messages":[]}`), "preset")
+	if err != nil {
+		t.Fatalf("injectRouteSystemPrompt: %v", err)
+	}
+	var request struct {
+		Stream   bool                `json:"stream"`
+		Messages []map[string]string `json:"messages"`
+	}
+	if err := json.Unmarshal(got, &request); err != nil {
+		t.Fatal(err)
+	}
+	if !request.Stream || !reflect.DeepEqual(request.Messages, []map[string]string{{"role": "system", "content": "preset"}}) {
+		t.Fatalf("unexpected streaming request: %s", got)
 	}
 }
 
