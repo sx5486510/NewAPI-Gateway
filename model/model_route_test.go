@@ -248,6 +248,85 @@ func TestBatchUpdateModelRoutesSavesDisabledRouteAndOverviewReadsIt(t *testing.T
 	}
 }
 
+func TestGetModelRouteOverviewIncludesTokenQuota(t *testing.T) {
+	setupModelRouteTestDB(t)
+
+	provider := Provider{
+		Id:     1,
+		Name:   "provider",
+		Status: common.UserStatusEnabled,
+	}
+	if err := DB.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	tokens := []ProviderToken{
+		{
+			Id:          101,
+			ProviderId:  1,
+			Name:        "limited",
+			Status:      common.UserStatusEnabled,
+			RemainQuota: 250000,
+			UsedQuota:   750000,
+		},
+		{
+			Id:             102,
+			ProviderId:     1,
+			Name:           "unlimited",
+			Status:         common.UserStatusEnabled,
+			UnlimitedQuota: true,
+		},
+	}
+	if err := DB.Create(&tokens).Error; err != nil {
+		t.Fatalf("create tokens: %v", err)
+	}
+
+	routes := []ModelRoute{
+		{ModelName: "finite-model", ProviderId: 1, ProviderTokenId: 101, Enabled: true},
+		{ModelName: "unlimited-model", ProviderId: 1, ProviderTokenId: 102, Enabled: true},
+		{ModelName: "orphan-model", ProviderId: 1, ProviderTokenId: 103, Enabled: true},
+	}
+	if err := DB.Create(&routes).Error; err != nil {
+		t.Fatalf("create routes: %v", err)
+	}
+
+	overview, err := GetModelRouteOverview("", 0, false)
+	if err != nil {
+		t.Fatalf("get route overview: %v", err)
+	}
+	if len(overview) != 3 {
+		t.Fatalf("expected three overview routes, got %d", len(overview))
+	}
+
+	byModel := make(map[string]*ModelRouteOverviewItem, len(overview))
+	for _, item := range overview {
+		byModel[item.ModelName] = item
+	}
+
+	finite := byModel["finite-model"]
+	if finite == nil {
+		t.Fatal("finite route missing from overview")
+	}
+	if finite.TokenUnlimitedQuota == nil || *finite.TokenUnlimitedQuota ||
+		finite.TokenRemainQuota == nil || *finite.TokenRemainQuota != 250000 ||
+		finite.TokenUsedQuota == nil || *finite.TokenUsedQuota != 750000 {
+		t.Fatalf("unexpected finite token quota: %+v", finite)
+	}
+
+	unlimited := byModel["unlimited-model"]
+	if unlimited == nil || unlimited.TokenUnlimitedQuota == nil || !*unlimited.TokenUnlimitedQuota {
+		t.Fatalf("expected unlimited token quota: %+v", unlimited)
+	}
+
+	orphan := byModel["orphan-model"]
+	if orphan == nil {
+		t.Fatal("orphan route missing from overview")
+	}
+	if orphan.TokenUnlimitedQuota != nil || orphan.TokenRemainQuota != nil || orphan.TokenUsedQuota != nil {
+		t.Fatalf("expected missing token quota to remain nil: %+v", orphan)
+	}
+}
+
 func TestRebuildRoutesForProviderPreservesDisabledRoute(t *testing.T) {
 	setupModelRouteTestDB(t)
 

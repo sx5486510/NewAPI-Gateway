@@ -214,6 +214,9 @@ type ModelRouteOverviewItem struct {
 	TokenName               string   `json:"token_name"`
 	TokenGroupName          string   `json:"token_group_name"`
 	TokenStatus             int      `json:"token_status"`
+	TokenUnlimitedQuota     *bool    `json:"token_unlimited_quota"`
+	TokenRemainQuota        *int64   `json:"token_remain_quota"`
+	TokenUsedQuota          *int64   `json:"token_used_quota"`
 	AllowCodex              bool     `json:"allow_codex"`
 	AllowCC                 bool     `json:"allow_cc"`
 	BlockClients            bool     `json:"block_clients"`
@@ -245,29 +248,32 @@ type ModelRouteOverviewItem struct {
 }
 
 type modelRouteOverviewRow struct {
-	Id                int     `gorm:"column:id"`
-	ModelName         string  `gorm:"column:model_name"`
-	ProviderId        int     `gorm:"column:provider_id"`
-	ProviderName      string  `gorm:"column:provider_name"`
-	ProviderBaseURL   string  `gorm:"column:provider_base_url"`
-	ProviderBalance   string  `gorm:"column:provider_balance"`
-	ProviderStatus    int     `gorm:"column:provider_status"`
-	ProviderIdExists  *int    `gorm:"column:provider_id_exists"` // p.id IS NOT NULL 判断供应商是否存在
-	ProviderTokenId   int     `gorm:"column:provider_token_id"`
-	TokenName         string  `gorm:"column:token_name"`
-	TokenGroupName    string  `gorm:"column:token_group_name"`
-	TokenStatus       int     `gorm:"column:token_status"`
-	AllowCodex        bool    `gorm:"column:allow_codex"`
-	AllowCC           bool    `gorm:"column:allow_cc"`
-	BlockClients      bool    `gorm:"column:block_clients"`
-	Enabled           bool    `gorm:"column:enabled"`
-	Priority          int     `gorm:"column:priority"`
-	Weight            int     `gorm:"column:weight"`
-	PricingGroupRatio string  `gorm:"column:pricing_group_ratio"`
-	QuotaType         int     `gorm:"column:quota_type"`
-	ModelRatio        float64 `gorm:"column:model_ratio"`
-	CompletionRatio   float64 `gorm:"column:completion_ratio"`
-	ModelPrice        float64 `gorm:"column:model_price"`
+	Id                  int     `gorm:"column:id"`
+	ModelName           string  `gorm:"column:model_name"`
+	ProviderId          int     `gorm:"column:provider_id"`
+	ProviderName        string  `gorm:"column:provider_name"`
+	ProviderBaseURL     string  `gorm:"column:provider_base_url"`
+	ProviderBalance     string  `gorm:"column:provider_balance"`
+	ProviderStatus      int     `gorm:"column:provider_status"`
+	ProviderIdExists    *int    `gorm:"column:provider_id_exists"` // p.id IS NOT NULL 判断供应商是否存在
+	ProviderTokenId     int     `gorm:"column:provider_token_id"`
+	TokenName           string  `gorm:"column:token_name"`
+	TokenGroupName      string  `gorm:"column:token_group_name"`
+	TokenStatus         int     `gorm:"column:token_status"`
+	TokenUnlimitedQuota *bool   `gorm:"column:token_unlimited_quota"`
+	TokenRemainQuota    *int64  `gorm:"column:token_remain_quota"`
+	TokenUsedQuota      *int64  `gorm:"column:token_used_quota"`
+	AllowCodex          bool    `gorm:"column:allow_codex"`
+	AllowCC             bool    `gorm:"column:allow_cc"`
+	BlockClients        bool    `gorm:"column:block_clients"`
+	Enabled             bool    `gorm:"column:enabled"`
+	Priority            int     `gorm:"column:priority"`
+	Weight              int     `gorm:"column:weight"`
+	PricingGroupRatio   string  `gorm:"column:pricing_group_ratio"`
+	QuotaType           int     `gorm:"column:quota_type"`
+	ModelRatio          float64 `gorm:"column:model_ratio"`
+	CompletionRatio     float64 `gorm:"column:completion_ratio"`
+	ModelPrice          float64 `gorm:"column:model_price"`
 }
 
 type RouteAttempt struct {
@@ -1146,6 +1152,9 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			"COALESCE(pt.name, '') AS token_name",
 			"COALESCE(pt.group_name, '') AS token_group_name",
 			"COALESCE(pt.status, 0) AS token_status",
+			"pt.unlimited_quota AS token_unlimited_quota",
+			"pt.remain_quota AS token_remain_quota",
+			"pt.used_quota AS token_used_quota",
 			"mr.allow_codex",
 			"mr.allow_cc",
 			"mr.block_clients",
@@ -1225,6 +1234,9 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			TokenName:               row.TokenName,
 			TokenGroupName:          row.TokenGroupName,
 			TokenStatus:             row.TokenStatus,
+			TokenUnlimitedQuota:     row.TokenUnlimitedQuota,
+			TokenRemainQuota:        row.TokenRemainQuota,
+			TokenUsedQuota:          row.TokenUsedQuota,
 			AllowCodex:              row.AllowCodex,
 			AllowCC:                 row.AllowCC,
 			BlockClients:            row.BlockClients,
