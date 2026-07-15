@@ -27,6 +27,9 @@ const route = {
   provider_token_id: 20,
   token_name: 'primary token',
   token_group_name: 'default',
+  token_unlimited_quota: false,
+  token_remain_quota: 250000,
+  token_used_quota: 750000,
   allow_codex: false,
   allow_cc: false,
   block_clients: false,
@@ -238,6 +241,47 @@ describe('ModelRoutesTable', () => {
     expect(detailPanelText).toContain('价格');
     expect(detailPanelText).toContain('输入 $1.0000 / 1M');
     expect(detailPanelText).toContain('输出 $2.0000 / 1M');
+  });
+
+  it('shows synchronized token quota for every route row', async () => {
+    API.get.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: [
+          route,
+          {
+            ...route,
+            id: 2,
+            provider_id: 11,
+            provider_name: 'Unlimited',
+            provider_token_id: 21,
+            token_unlimited_quota: true,
+            token_remain_quota: 0,
+            token_used_quota: 0,
+          },
+          {
+            ...route,
+            id: 3,
+            provider_id: 12,
+            provider_name: 'Missing',
+            provider_token_id: 22,
+            token_unlimited_quota: null,
+            token_remain_quota: null,
+            token_used_quota: null,
+          },
+        ],
+      },
+    });
+
+    await act(async () => {
+      root.render(<ModelRoutesTable />);
+    });
+
+    expect(document.querySelector('.routes-detail-scroller thead').textContent)
+      .toContain('\u4ee4\u724c\u989d\u5ea6');
+    const quotaValues = [...document.querySelectorAll('.routes-token-quota')]
+      .map((node) => node.textContent.trim());
+    expect(quotaValues).toEqual(expect.arrayContaining(['$0.50', '\u65e0\u9650', '\u2014']));
   });
 
   it('keeps health value display concise in the route list', async () => {

@@ -166,6 +166,15 @@ const formatPriceWithUnit = (value, unit) => {
     return `${formattedPrice} ${unit}`;
 };
 
+const formatTokenQuota = (route) => {
+    if (route.token_unlimited_quota == null) return { type: 'missing', label: '—' };
+    if (route.token_unlimited_quota === true) return { type: 'unlimited', label: '无限' };
+    if (route.token_remain_quota == null) return { type: 'missing', label: '—' };
+    const rawQuota = Number(route.token_remain_quota);
+    if (!Number.isFinite(rawQuota)) return { type: 'missing', label: '—' };
+    return { type: 'finite', label: `$${(rawQuota / 500000).toFixed(2)}` };
+};
+
 const buildRoutePriceLines = (route) => {
     if (route.billing_type === 'per_call') {
         return [
@@ -889,18 +898,20 @@ const ModelRoutesTable = () => {
                                 <div className="routes-detail-scroller">
                                 <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '900px' : '1150px'}>
                                     <colgroup>
-                                        <col style={{ width: '18%' }} />
-                                        <col style={{ width: '12%' }} />
-                                        <col style={{ width: '8%' }} />
-                                        <col style={{ width: '8%' }} />
-                                        <col style={{ width: '17%' }} />
-                                        <col style={{ width: '15%' }} />
+                                        <col style={{ width: '16%' }} />
+                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '11%' }} />
+                                        <col style={{ width: '7%' }} />
+                                        <col style={{ width: '7%' }} />
+                                        <col style={{ width: '14%' }} />
+                                        <col style={{ width: '13%' }} />
                                         <col style={{ width: '9%' }} />
                                         <col style={{ width: '13%' }} />
                                     </colgroup>
                                     <Thead>
                                         <Tr>
                                             {renderSortableDetailHeader('provider', '供应商 / 令牌')}
+                                            <Th style={stickyHeaderCellStyle}>令牌额度</Th>
                                             <Th style={stickyHeaderCellStyle}>价格</Th>
                                             {renderSortableDetailHeader('success', '成功数')}
                                             {renderSortableDetailHeader('fail', '失败数')}
@@ -913,14 +924,14 @@ const ModelRoutesTable = () => {
                                     <Tbody>
                                         {selectedGroupedRoutes.length === 0 ? (
                                             <Tr>
-                                                <Td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
+                                                <Td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
                                                     当前模型没有符合条件的路由
                                                 </Td>
                                             </Tr>
                                         ) : selectedGroupedRoutes.map((group) => (
                                             <React.Fragment key={group.key}>
                                                 <Tr style={{ backgroundColor: 'var(--gray-50)' }}>
-                                                    <Td colSpan={8} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
+                                                    <Td colSpan={9} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                             <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>候选路由</div>
                                                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -948,6 +959,7 @@ const ModelRoutesTable = () => {
                                                     const tokenAllowCC = route.allow_cc || false;
                                                     const tokenBlockClients = route.block_clients || false;
                                                     const routePriceLines = buildRoutePriceLines(route);
+                                                    const tokenQuota = formatTokenQuota(route);
 
                                                     return (
                                                         <Tr key={route.id} style={isDirty ? { backgroundColor: 'rgba(245, 158, 11, 0.06)' } : undefined}>
@@ -990,6 +1002,20 @@ const ModelRoutesTable = () => {
                                                                     {tokenGroup ? <Badge color="gray">组: {tokenGroup}</Badge> : <Badge color="gray">未分组</Badge>}
                                                                     <Badge color={health.color}>{health.label}</Badge>
                                                                     {isDirty && <Badge color="yellow">已修改</Badge>}
+                                                                </div>
+                                                            </Td>
+                                                            <Td style={cellMiddleStyle}>
+                                                                <div className="routes-token-quota">
+                                                                    {tokenQuota.type === 'unlimited' ? (
+                                                                        <Badge color="green">{tokenQuota.label}</Badge>
+                                                                    ) : (
+                                                                        <span style={{
+                                                                            color: tokenQuota.type === 'missing' ? 'var(--text-secondary)' : 'var(--text-primary)',
+                                                                            fontWeight: tokenQuota.type === 'finite' ? 600 : 400
+                                                                        }}>
+                                                                            {tokenQuota.label}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                             </Td>
                                                             <Td style={cellTopStyle}>
