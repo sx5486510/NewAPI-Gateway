@@ -2,6 +2,7 @@ package model
 
 import (
 	"NewAPI-Gateway/common"
+	"encoding/json"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -17,7 +18,7 @@ func setupModelRouteTestDB(t *testing.T) {
 	}
 
 	DB = db
-	if err := DB.AutoMigrate(&Provider{}, &ProviderToken{}, &ModelRoute{}, &ModelPricing{}, &UsageLog{}, &Option{}); err != nil {
+	if err := DB.AutoMigrate(&Provider{}, &ProviderToken{}, &ModelRoute{}, &ModelPricing{}, &UsageLog{}, &Option{}, &SystemPrompt{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 
@@ -32,6 +33,125 @@ func setupModelRouteTestDB(t *testing.T) {
 	common.GlobalRouteCooldown = common.NewRouteCooldownManager(func() common.RouteCooldownConfig {
 		return common.RouteCooldownConfig{Enabled: false}
 	})
+}
+
+func TestRouteSystemPromptPatchDistinguishesOmittedNullAndNumeric(t *testing.T) {
+	tests := []struct {
+		body       string
+		wantUpdate bool
+		wantValue  interface{}
+	}{
+		{body: `{}`, wantUpdate: false},
+		{body: `{"system_prompt_id":null}`, wantUpdate: true, wantValue: nil},
+		{body: `{"system_prompt_id":12}`, wantUpdate: true, wantValue: 12},
+	}
+	for _, tt := range tests {
+		var patch ModelRoutePatch
+		if err := json.Unmarshal([]byte(tt.body), &patch); err != nil {
+			t.Fatalf("unmarshal %s: %v", tt.body, err)
+		}
+		value, ok := patch.ToUpdates()["system_prompt_id"]
+		if ok != tt.wantUpdate || (ok && value != tt.wantValue) {
+			t.Fatalf("patch %s produced value %#v, present %v", tt.body, value, ok)
+		}
+	}
+}
+
+func TestRouteSystemPromptBindingRequiresMatchingExistingPreset(t *testing.T) {
+	setupModelRouteTestDB(t)
+	route := ModelRoute{ModelName: "gpt-4", ProviderId: 1, ProviderTokenId: 1, Enabled: true}
+	if err := DB.Create(&route).Error; err != nil {
+		t.Fatal(err)
+	}
+	matching := SystemPrompt{Name: "matching", ModelName: "gpt-4", Content: "content"}
+	other := SystemPrompt{Name: "other", ModelName: "gpt-4o", Content: "content"}
+	if err := DB.Create(&matching).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := UpdateModelRouteFields(route.Id, map[string]interface{}{"system_prompt_id": matching.Id}); err != nil {
+		t.Fatalf("bind matching preset: %v", err)
+	}
+	for _, id := range []int{other.Id, 99999} {
+		if err := UpdateModelRouteFields(route.Id, map[string]interface{}{"system_prompt_id": id}); err == nil {
+			t.Fatalf("expected preset %d to be rejected", id)
+		}
+	}
+}
+
+func TestRouteSystemPromptPatchClearAndOmission(t *testing.T) {
+	setupModelRouteTestDB(t)
+	prompt := SystemPrompt{Name: "preset", ModelName: "gpt-4", Content: "content"}
+	if err := DB.Create(&prompt).Error; err != nil {
+		t.Fatal(err)
+	}
+	route := ModelRoute{ModelName: "gpt-4", ProviderId: 1, ProviderTokenId: 1, Enabled: true, SystemPromptId: &prompt.Id}
+	if err := DB.Create(&route).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	var omitted ModelRoutePatch
+	if err := json.Unmarshal([]byte(`{"enabled":false}`), &omitted); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateModelRouteFields(route.Id, omitted.ToUpdates()); err != nil {
+		t.Fatal(err)
+	}
+	var stored ModelRoute
+	if err := DB.First(&stored, route.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.SystemPromptId == nil || *stored.SystemPromptId != prompt.Id {
+		t.Fatal("omitted binding changed")
+	}
+
+	var clear ModelRoutePatch
+	if err := json.Unmarshal([]byte(`{"system_prompt_id":null}`), &clear); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateModelRouteFields(route.Id, clear.ToUpdates()); err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.First(&stored, route.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.SystemPromptId != nil {
+		t.Fatalf("expected cleared binding, got %v", *stored.SystemPromptId)
+	}
+}
+
+func TestBatchRouteSystemPromptInvalidBindingRollsBackAllChanges(t *testing.T) {
+	setupModelRouteTestDB(t)
+	prompt := SystemPrompt{Name: "wrong", ModelName: "gpt-other", Content: "content"}
+	if err := DB.Create(&prompt).Error; err != nil {
+		t.Fatal(err)
+	}
+	route1 := ModelRoute{ModelName: "gpt-4", ProviderId: 1, ProviderTokenId: 1, Enabled: true}
+	route2 := ModelRoute{ModelName: "gpt-4", ProviderId: 1, ProviderTokenId: 2, Enabled: true}
+	if err := DB.Create(&route1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.Create(&route2).Error; err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	err := BatchUpdateModelRoutes([]ModelRoutePatch{
+		{Id: route1.Id, Enabled: &disabled},
+		{Id: route2.Id, SystemPromptId: NullableSystemPromptID{Set: true, Value: &prompt.Id}},
+	})
+	if err == nil {
+		t.Fatal("expected invalid binding")
+	}
+	var stored ModelRoute
+	if err := DB.First(&stored, route1.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !stored.Enabled {
+		t.Fatal("expected first update rolled back")
+	}
 }
 
 func insertRouteCandidate(t *testing.T, providerID int, tokenID int, priority int, weight int) {

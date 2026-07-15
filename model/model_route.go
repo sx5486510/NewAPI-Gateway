@@ -122,14 +122,35 @@ func (mr *ModelRoute) NormalizeClientRestrictions() {
 }
 
 type ModelRoutePatch struct {
-	Id             int   `json:"id"`
-	Priority       *int  `json:"priority,omitempty"`
-	Weight         *int  `json:"weight,omitempty"`
-	Enabled        *bool `json:"enabled,omitempty"`
-	AllowCodex     *bool `json:"allow_codex,omitempty"`
-	AllowCC        *bool `json:"allow_cc,omitempty"`
-	BlockClients   *bool `json:"block_clients,omitempty"`
-	SystemPromptId *int  `json:"system_prompt_id"`
+	Id             int                    `json:"id"`
+	Priority       *int                   `json:"priority,omitempty"`
+	Weight         *int                   `json:"weight,omitempty"`
+	Enabled        *bool                  `json:"enabled,omitempty"`
+	AllowCodex     *bool                  `json:"allow_codex,omitempty"`
+	AllowCC        *bool                  `json:"allow_cc,omitempty"`
+	BlockClients   *bool                  `json:"block_clients,omitempty"`
+	SystemPromptId NullableSystemPromptID `json:"system_prompt_id"`
+}
+
+// NullableSystemPromptID distinguishes an omitted field from an explicit JSON
+// null while retaining an integer value for a selected preset.
+type NullableSystemPromptID struct {
+	Set   bool
+	Value *int
+}
+
+func (id *NullableSystemPromptID) UnmarshalJSON(data []byte) error {
+	id.Set = true
+	if string(data) == "null" {
+		id.Value = nil
+		return nil
+	}
+	var value int
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	id.Value = &value
+	return nil
 }
 
 func (p *ModelRoutePatch) ToUpdates() map[string]interface{} {
@@ -152,8 +173,12 @@ func (p *ModelRoutePatch) ToUpdates() map[string]interface{} {
 	if p.BlockClients != nil {
 		updates["block_clients"] = *p.BlockClients
 	}
-	if p.SystemPromptId != nil {
-		updates["system_prompt_id"] = *p.SystemPromptId
+	if p.SystemPromptId.Set {
+		if p.SystemPromptId.Value == nil {
+			updates["system_prompt_id"] = nil
+		} else {
+			updates["system_prompt_id"] = *p.SystemPromptId.Value
+		}
 	}
 	return updates
 }
@@ -1108,6 +1133,35 @@ func updateModelRouteFieldsWithDB(db *gorm.DB, id int, updates map[string]interf
 	return nil
 }
 
+func validateModelRoutePromptBinding(db *gorm.DB, id int, updates map[string]interface{}) error {
+	var route ModelRoute
+	if err := db.Select("id", "model_name").First(&route, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("model route not found")
+		}
+		return err
+	}
+	value, selected := updates["system_prompt_id"]
+	if !selected || value == nil {
+		return nil
+	}
+	promptID, ok := value.(int)
+	if !ok || promptID <= 0 {
+		return errors.New("invalid system prompt binding")
+	}
+	var prompt SystemPrompt
+	if err := db.Select("id", "model_name").First(&prompt, promptID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("system prompt not found")
+		}
+		return err
+	}
+	if prompt.ModelName != route.ModelName {
+		return errors.New("system prompt model does not match route model")
+	}
+	return nil
+}
+
 func UpdateModelRouteFields(id int, updates map[string]interface{}) error {
 	if id <= 0 {
 		return errors.New("无效的路由 ID")
@@ -1116,30 +1170,42 @@ func UpdateModelRouteFields(id int, updates map[string]interface{}) error {
 		return errors.New("没有可更新的字段")
 	}
 	normalizeModelRouteClientRestrictionUpdates(updates)
-	return updateModelRouteFieldsWithDB(DB, id, updates)
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := validateModelRoutePromptBinding(tx, id, updates); err != nil {
+			return err
+		}
+		return updateModelRouteFieldsWithDB(tx, id, updates)
+	})
 }
 
 func BatchUpdateModelRoutes(patches []ModelRoutePatch) error {
 	if len(patches) == 0 {
 		return errors.New("更新列表为空")
 	}
-	tx := DB.Begin()
-	for _, patch := range patches {
-		if patch.Id <= 0 {
-			tx.Rollback()
-			return errors.New("存在无效的路由 ID")
+	return DB.Transaction(func(tx *gorm.DB) error {
+		normalized := make([]ModelRoutePatch, len(patches))
+		copy(normalized, patches)
+		for i := range normalized {
+			patch := &normalized[i]
+			if patch.Id <= 0 {
+				return errors.New("存在无效的路由 ID")
+			}
+			normalizeModelRoutePatch(patch)
+			if err := validateModelRoutePromptBinding(tx, patch.Id, patch.ToUpdates()); err != nil {
+				return err
+			}
 		}
-		normalizeModelRoutePatch(&patch)
-		updates := patch.ToUpdates()
-		if len(updates) == 0 {
-			continue
+		for _, patch := range normalized {
+			updates := patch.ToUpdates()
+			if len(updates) == 0 {
+				continue
+			}
+			if err := updateModelRouteFieldsWithDB(tx, patch.Id, updates); err != nil {
+				return err
+			}
 		}
-		if err := updateModelRouteFieldsWithDB(tx, patch.Id, updates); err != nil {
-			tx.Rollback()
-			return err
-		}
-	}
-	return tx.Commit().Error
+		return nil
+	})
 }
 
 func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) ([]*ModelRouteOverviewItem, error) {

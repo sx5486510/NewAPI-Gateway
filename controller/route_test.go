@@ -24,7 +24,7 @@ func setupRouteControllerTestDB(t *testing.T) {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	model.DB = db
-	if err := model.DB.AutoMigrate(&model.Provider{}, &model.ProviderToken{}, &model.ModelRoute{}, &model.ModelPricing{}, &model.UsageLog{}, &model.Option{}); err != nil {
+	if err := model.DB.AutoMigrate(&model.Provider{}, &model.ProviderToken{}, &model.ModelRoute{}, &model.ModelPricing{}, &model.UsageLog{}, &model.Option{}, &model.SystemPrompt{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 
@@ -39,6 +39,75 @@ func setupRouteControllerTestDB(t *testing.T) {
 	common.GlobalRouteCooldown = common.NewRouteCooldownManager(func() common.RouteCooldownConfig {
 		return common.RouteCooldownConfig{Enabled: false}
 	})
+}
+
+func TestRouteSystemPromptNumericSelectionAndNullClear(t *testing.T) {
+	setupRouteControllerTestDB(t)
+	prompt := model.SystemPrompt{Name: "preset", ModelName: "gpt-4", Content: "content"}
+	if err := model.DB.Create(&prompt).Error; err != nil {
+		t.Fatal(err)
+	}
+	route := model.ModelRoute{ModelName: "gpt-4", ProviderId: 1, ProviderTokenId: 1, Enabled: true}
+	if err := model.DB.Create(&route).Error; err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.POST("/api/route/:id", UpdateRoute)
+
+	for _, body := range []string{
+		`{"system_prompt_id":` + strconv.Itoa(prompt.Id) + `}`,
+		`{"system_prompt_id":null}`,
+	} {
+		recorder := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/route/"+strconv.Itoa(route.Id), bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(recorder, req)
+		var payload struct {
+			Success bool   `json:"success"`
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if !payload.Success {
+			t.Fatalf("body %s failed: %s", body, payload.Message)
+		}
+	}
+	var stored model.ModelRoute
+	if err := model.DB.First(&stored, route.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.SystemPromptId != nil {
+		t.Fatalf("expected cleared binding, got %v", *stored.SystemPromptId)
+	}
+}
+
+func TestRouteSystemPromptRejectsCrossModelSelection(t *testing.T) {
+	setupRouteControllerTestDB(t)
+	prompt := model.SystemPrompt{Name: "preset", ModelName: "gpt-other", Content: "content"}
+	if err := model.DB.Create(&prompt).Error; err != nil {
+		t.Fatal(err)
+	}
+	route := model.ModelRoute{ModelName: "gpt-4", ProviderId: 1, ProviderTokenId: 1, Enabled: true}
+	if err := model.DB.Create(&route).Error; err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.POST("/api/route/:id", UpdateRoute)
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/route/"+strconv.Itoa(route.Id), bytes.NewBufferString(`{"system_prompt_id":`+strconv.Itoa(prompt.Id)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, req)
+	var payload struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Success || payload.Message != "system prompt model does not match route model" {
+		t.Fatalf("expected stable mismatch error, got %#v", payload)
+	}
 }
 
 func TestBatchUpdateRoutesSavesDisabledRouteAndOverviewReturnsIt(t *testing.T) {
