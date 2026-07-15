@@ -253,8 +253,7 @@ describe('ModelRoutesTable', () => {
             ...route,
             id: 2,
             provider_id: 11,
-            provider_name: 'AccountBalance',
-            provider_balance: '$5041.04',
+            provider_name: 'HasQuotaDespiteUnlimited',
             provider_token_id: 21,
             token_unlimited_quota: true,
             token_remain_quota: 1500000,
@@ -264,22 +263,23 @@ describe('ModelRoutesTable', () => {
             ...route,
             id: 3,
             provider_id: 12,
-            provider_name: 'TrueUnlimited',
+            provider_name: 'UseAccountBalance',
+            provider_balance: '$5041.04',
             provider_token_id: 22,
             token_unlimited_quota: true,
-            token_remain_quota: null,
-            token_used_quota: null,
+            token_remain_quota: 0,
+            token_used_quota: 0,
           },
           {
             ...route,
             id: 4,
             provider_id: 13,
-            provider_name: 'UseProviderBalance',
-            provider_balance: '$123.45',
+            provider_name: 'TrueUnlimited',
+            provider_balance: '',
             provider_token_id: 23,
-            token_unlimited_quota: false,
-            token_remain_quota: -1,
-            token_used_quota: 0,
+            token_unlimited_quota: true,
+            token_remain_quota: null,
+            token_used_quota: null,
           },
           {
             ...route,
@@ -287,7 +287,7 @@ describe('ModelRoutesTable', () => {
             provider_id: 14,
             provider_name: 'Missing',
             provider_token_id: 24,
-            token_unlimited_quota: null,
+            token_unlimited_quota: false,
             token_remain_quota: null,
             token_used_quota: null,
           },
@@ -305,8 +305,8 @@ describe('ModelRoutesTable', () => {
       .map((node) => node.textContent.trim());
     expect(quotaValues).toContain('$0.50');
     expect(quotaValues).toContain('$3.00');
+    expect(quotaValues).toContain('$5041.04');
     expect(quotaValues).toContain('\u65e0\u9650');
-    expect(quotaValues).toContain('$123.45');
     expect(quotaValues.filter(v => v === '\u2014')).toHaveLength(1);
   });
 

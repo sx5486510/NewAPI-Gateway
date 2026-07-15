@@ -167,34 +167,37 @@ const formatPriceWithUnit = (value, unit) => {
 };
 
 const formatTokenQuota = (route) => {
-    // 优先检查 remain_quota：如果有有效值就显示（即使 unlimited_quota 为 true）
+    // 使用账户余额模式：unlimited_quota=true 且 remain_quota<=0
+    if (route.token_unlimited_quota === true) {
+        const rawQuota = route.token_remain_quota != null ? Number(route.token_remain_quota) : null;
+        if (rawQuota != null && Number.isFinite(rawQuota) && rawQuota > 0) {
+            // unlimited_quota=true 但有正数配额，说明令牌有独立配额限制
+            return { type: 'finite', label: `$${(rawQuota / 500000).toFixed(2)}` };
+        }
+        // unlimited_quota=true 且配额<=0或null，使用账户余额
+        const balance = String(route.provider_balance || '').trim();
+        if (balance) {
+            const match = balance.match(/[\d,.]+/);
+            if (match) {
+                const numStr = match[0].replace(/,/g, '');
+                const num = parseFloat(numStr);
+                if (Number.isFinite(num)) {
+                    return { type: 'finite', label: `$${num.toFixed(2)}` };
+                }
+            }
+        }
+        return { type: 'unlimited', label: '无限' };
+    }
+
+    // 常规模式：unlimited_quota=false，直接用 remain_quota
     if (route.token_remain_quota != null) {
         const rawQuota = Number(route.token_remain_quota);
-        if (Number.isFinite(rawQuota)) {
-            if (rawQuota < 0) {
-                // 负数表示使用账户余额，显示供应商余额
-                const balance = String(route.provider_balance || '').trim();
-                if (balance) {
-                    // 解析 provider_balance（可能是 "$5041.04" 或 "5041.04" 等格式）
-                    const match = balance.match(/[\d,.]+/);
-                    if (match) {
-                        const numStr = match[0].replace(/,/g, '');
-                        const num = parseFloat(numStr);
-                        if (Number.isFinite(num)) {
-                            return { type: 'finite', label: `$${num.toFixed(2)}` };
-                        }
-                    }
-                }
-                return { type: 'missing', label: '—' };
-            }
+        if (Number.isFinite(rawQuota) && rawQuota >= 0) {
             return { type: 'finite', label: `$${(rawQuota / 500000).toFixed(2)}` };
         }
     }
-    // remain_quota 无效时，检查 unlimited_quota
-    if (route.token_unlimited_quota === true) {
-        return { type: 'unlimited', label: '无限' };
-    }
-    // 两者都缺失
+
+    // 配额缺失
     return { type: 'missing', label: '—' };
 };
 
