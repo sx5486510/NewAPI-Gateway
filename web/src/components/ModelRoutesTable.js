@@ -17,6 +17,15 @@ const selectStyle = {
     minWidth: '140px'
 };
 
+const promptSelectStyle = {
+    ...selectStyle,
+    width: '100%',
+    minWidth: '132px',
+    maxWidth: '180px',
+    height: '34px',
+    padding: '0.35rem 0.45rem'
+};
+
 const cellTopStyle = {
     verticalAlign: 'top',
     lineHeight: 1.35
@@ -392,6 +401,7 @@ const ModelRoutesTable = () => {
     const [detailChangedOnly, setDetailChangedOnly] = useState(false);
     const [ultraCompact, setUltraCompact] = useState(true);
     const [detailSort, setDetailSort] = useState({ column: null, direction: 'asc' });
+    const [systemPrompts, setSystemPrompts] = useState([]);
 
     const handleDetailSort = useCallback((column) => {
         setDetailSort((prev) => {
@@ -439,6 +449,7 @@ const ModelRoutesTable = () => {
                 return;
             }
             setRoutes(Array.isArray(data) ? data : []);
+            setDrafts({});
         } catch (e) {
             showError('加载路由总览失败');
         } finally {
@@ -449,6 +460,34 @@ const ModelRoutesTable = () => {
     useEffect(() => {
         loadOverview();
     }, [loadOverview]);
+
+    useEffect(() => {
+        const loadSystemPrompts = async () => {
+            try {
+                const res = await API.get('/api/system-prompt/');
+                const { success, data, message } = res.data;
+                if (!success) {
+                    showError(message || '加载系统提示词失败');
+                    return;
+                }
+                setSystemPrompts(Array.isArray(data) ? data : []);
+            } catch (e) {
+                showError('加载系统提示词失败');
+            }
+        };
+        loadSystemPrompts();
+    }, []);
+
+    const systemPromptsByModel = useMemo(() => {
+        const grouped = new Map();
+        systemPrompts.forEach((prompt) => {
+            const modelName = String(prompt.model_name || '');
+            if (!grouped.has(modelName)) grouped.set(modelName, []);
+            grouped.get(modelName).push(prompt);
+        });
+        grouped.forEach((prompts) => prompts.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN')));
+        return grouped;
+    }, [systemPrompts]);
 
     const filteredRoutes = useMemo(() => {
         const keyword = searchKeyword.trim().toLowerCase();
@@ -591,10 +630,12 @@ const ModelRoutesTable = () => {
             const baseDraft = prev[routeId]
                 ? { ...prev[routeId] }
                 : {
-                    enabled: original.enabled
+                    enabled: original.enabled,
+                    system_prompt_id: original.system_prompt_id ?? null
                 };
             const nextDraft = { ...baseDraft, ...patch };
-            const unchanged = nextDraft.enabled === original.enabled;
+            const unchanged = nextDraft.enabled === original.enabled
+                && nextDraft.system_prompt_id === (original.system_prompt_id ?? null);
             if (unchanged) {
                 const next = { ...prev };
                 delete next[routeId];
@@ -615,10 +656,12 @@ const ModelRoutesTable = () => {
                 const current = next[route.id]
                     ? { ...next[route.id] }
                     : {
-                        enabled: original.enabled
+                        enabled: original.enabled,
+                        system_prompt_id: original.system_prompt_id ?? null
                     };
                 current.enabled = enabled;
-                const unchanged = current.enabled === original.enabled;
+                const unchanged = current.enabled === original.enabled
+                    && current.system_prompt_id === (original.system_prompt_id ?? null);
                 if (unchanged) {
                     delete next[route.id];
                 } else {
@@ -631,10 +674,15 @@ const ModelRoutesTable = () => {
     };
 
     const saveChanges = async () => {
-        const items = Object.entries(drafts).map(([id, value]) => ({
-            id: Number(id),
-            enabled: value.enabled
-        }));
+        const items = Object.entries(drafts).map(([id, value]) => {
+            const original = routeMap[id];
+            const item = { id: Number(id) };
+            if (value.enabled !== original.enabled) item.enabled = value.enabled;
+            if (value.system_prompt_id !== (original.system_prompt_id ?? null)) {
+                item.system_prompt_id = value.system_prompt_id;
+            }
+            return item;
+        });
         if (items.length === 0) {
             showError('当前没有待保存的修改');
             return;
@@ -644,10 +692,10 @@ const ModelRoutesTable = () => {
         const { success, message } = res.data;
         if (success) {
             showSuccess(`已保存 ${items.length} 条路由变更`);
-            const savedRouteEnabledById = new Map(items.map((item) => [item.id, item.enabled]));
+            const savedItemsById = new Map(items.map((item) => [item.id, item]));
             setRoutes((currentRoutes) => currentRoutes.map((route) => (
-                savedRouteEnabledById.has(route.id)
-                    ? { ...route, enabled: savedRouteEnabledById.get(route.id) }
+                savedItemsById.has(route.id)
+                    ? { ...route, ...savedItemsById.get(route.id) }
                     : route
             )));
             setDrafts((currentDrafts) => {
@@ -922,17 +970,18 @@ const ModelRoutesTable = () => {
                                 </div>
 
                                 <div className="routes-detail-scroller">
-                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '900px' : '1150px'}>
+                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '1040px' : '1300px'}>
                                     <colgroup>
-                                        <col style={{ width: '16%' }} />
-                                        <col style={{ width: '10%' }} />
-                                        <col style={{ width: '11%' }} />
-                                        <col style={{ width: '7%' }} />
-                                        <col style={{ width: '7%' }} />
                                         <col style={{ width: '14%' }} />
-                                        <col style={{ width: '13%' }} />
                                         <col style={{ width: '9%' }} />
-                                        <col style={{ width: '13%' }} />
+                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '7%' }} />
+                                        <col style={{ width: '7%' }} />
+                                        <col style={{ width: '11%' }} />
+                                        <col style={{ width: '11%' }} />
+                                        <col style={{ width: '9%' }} />
+                                        <col style={{ width: '12%' }} />
+                                        <col style={{ width: '10%' }} />
                                     </colgroup>
                                     <Thead>
                                         <Tr>
@@ -944,20 +993,21 @@ const ModelRoutesTable = () => {
                                             {renderSortableDetailHeader('health', '健康值')}
                                             <Th style={stickyHeaderCellStyle}>冷却状态</Th>
                                             {renderSortableDetailHeader('status', '状态')}
+                                            <Th style={stickyHeaderCellStyle}>系统提示词</Th>
                                             <Th style={stickyHeaderCellStyle}>客户端限制</Th>
                                         </Tr>
                                     </Thead>
                                     <Tbody>
                                         {selectedGroupedRoutes.length === 0 ? (
                                             <Tr>
-                                                <Td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
+                                                <Td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
                                                     当前模型没有符合条件的路由
                                                 </Td>
                                             </Tr>
                                         ) : selectedGroupedRoutes.map((group) => (
                                             <React.Fragment key={group.key}>
                                                 <Tr style={{ backgroundColor: 'var(--gray-50)' }}>
-                                                    <Td colSpan={9} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
+                                                    <Td colSpan={10} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                             <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>候选路由</div>
                                                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -986,6 +1036,10 @@ const ModelRoutesTable = () => {
                                                     const tokenBlockClients = route.block_clients || false;
                                                     const routePriceLines = buildRoutePriceLines(route);
                                                     const tokenQuota = formatTokenQuota(route);
+                                                    const promptOptions = systemPromptsByModel.get(String(route.model_name || '')) || [];
+                                                    const currentPromptId = route.system_prompt_id ?? null;
+                                                    const selectedPrompt = promptOptions.find((prompt) => Number(prompt.id) === currentPromptId);
+                                                    const promptBindingUnavailable = currentPromptId !== null && !selectedPrompt;
 
                                                     return (
                                                         <Tr key={route.id} style={isDirty ? { backgroundColor: 'rgba(245, 158, 11, 0.06)' } : undefined}>
@@ -1094,6 +1148,26 @@ const ModelRoutesTable = () => {
                                                                     <span>{route.enabled ? '启用' : '禁用'}</span>
                                                                     <span aria-hidden="true" style={statusToggleDotStyle} />
                                                                 </button>
+                                                            </Td>
+                                                            <Td style={cellMiddleStyle}>
+                                                                <select
+                                                                    className="routes-system-prompt-select"
+                                                                    aria-label={`${route.provider_name || '路由'}系统提示词`}
+                                                                    title={selectedPrompt ? selectedPrompt.name : (promptBindingUnavailable ? `当前绑定不可用 (#${currentPromptId})` : '无系统提示词')}
+                                                                    value={currentPromptId === null ? '' : String(currentPromptId)}
+                                                                    onChange={(e) => updateDraft(route.id, {
+                                                                        system_prompt_id: e.target.value === '' ? null : Number(e.target.value)
+                                                                    })}
+                                                                    style={promptSelectStyle}
+                                                                >
+                                                                    <option value="">无系统提示词</option>
+                                                                    {promptBindingUnavailable && (
+                                                                        <option value={String(currentPromptId)} disabled>当前绑定不可用 (#{currentPromptId})</option>
+                                                                    )}
+                                                                    {promptOptions.map((prompt) => (
+                                                                        <option key={prompt.id} value={String(prompt.id)} title={prompt.name}>{prompt.name}</option>
+                                                                    ))}
+                                                                </select>
                                                             </Td>
                                                             <Td style={cellTopStyle}>
                                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'flex-start' }}>

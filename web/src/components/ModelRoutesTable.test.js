@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import ModelRoutesTable from './ModelRoutesTable';
-import { API } from '../helpers';
+import { API, showError } from '../helpers';
 
 jest.mock('../helpers', () => ({
   API: {
@@ -57,6 +57,15 @@ const route = {
   cooldown_remaining_secs: 0,
   cooldown_half_open: false,
   cooldown_half_open_inflight: 0,
+  system_prompt_id: null,
+};
+
+const promptResponse = (data) => ({ data: { success: true, data } });
+
+const setApiLists = (routes, prompts) => {
+  API.get.mockImplementation((url) => Promise.resolve(
+    url === '/api/system-prompt/' ? promptResponse(prompts) : promptResponse(routes)
+  ));
 };
 
 const getDetailRouteProviderNames = () => (
@@ -373,5 +382,102 @@ describe('ModelRoutesTable', () => {
       sortableHeaders[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(getDetailRouteProviderNames()[0]).toContain('OpenAI');
+  });
+
+  it('lists only exact-model prompts and reflects the current binding', async () => {
+    setApiLists([
+      { ...route, system_prompt_id: 7 },
+      { ...route, id: 2, model_name: 'claude-3', display_model_name: 'claude-3', provider_id: 11 },
+    ], [
+      { id: 7, name: 'GPT preset', model_name: 'gpt-4o' },
+      { id: 8, name: 'Claude preset', model_name: 'claude-3' },
+      { id: 9, name: 'Near match', model_name: 'GPT-4O' },
+    ]);
+
+    await act(async () => root.render(<ModelRoutesTable />));
+
+    expect(API.get).toHaveBeenCalledWith('/api/system-prompt/');
+    const gptModel = [...document.querySelectorAll('.routes-model-item')]
+      .find((button) => button.textContent.includes('gpt-4o'));
+    await act(async () => gptModel.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    let selector = document.querySelector('.routes-system-prompt-select');
+    expect([...selector.options].map((option) => option.textContent)).toEqual(['无系统提示词', 'GPT preset']);
+    expect(selector.value).toBe('7');
+
+    const claudeModel = [...document.querySelectorAll('.routes-model-item')]
+      .find((button) => button.textContent.includes('claude-3'));
+    await act(async () => claudeModel.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    selector = document.querySelector('.routes-system-prompt-select');
+    expect([...selector.options].map((option) => option.textContent)).toEqual(['无系统提示词', 'Claude preset']);
+    expect(selector.value).toBe('');
+  });
+
+  it('sends numeric bindings, explicit null clears, and omits unchanged prompt fields', async () => {
+    setApiLists([
+      { ...route, system_prompt_id: null },
+      { ...route, id: 2, provider_id: 11, provider_name: 'Backup', system_prompt_id: 7 },
+      { ...route, id: 3, provider_id: 12, provider_name: 'Unchanged', system_prompt_id: null },
+    ], [
+      { id: 7, name: 'Existing', model_name: 'gpt-4o' },
+      { id: 8, name: 'Replacement', model_name: 'gpt-4o' },
+    ]);
+
+    await act(async () => root.render(<ModelRoutesTable />));
+    const rows = [...document.querySelectorAll('.routes-detail-scroller tbody tr')]
+      .filter((row) => row.querySelector('.routes-system-prompt-select'));
+    const selectorFor = (provider) => rows
+      .find((row) => row.firstElementChild.textContent.includes(provider))
+      .querySelector('.routes-system-prompt-select');
+    await act(async () => {
+      selectorFor('OpenAI').value = '8';
+      selectorFor('OpenAI').dispatchEvent(new Event('change', { bubbles: true }));
+      selectorFor('Backup').value = '';
+      selectorFor('Backup').dispatchEvent(new Event('change', { bubbles: true }));
+      rows.find((row) => row.firstElementChild.textContent.includes('Unchanged'))
+        .querySelector('.routes-status-toggle').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const saveButton = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('保存变更'));
+    await act(async () => saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(API.post).toHaveBeenCalledWith('/api/route/batch-update', {
+      items: expect.arrayContaining([
+        { id: 1, system_prompt_id: 8 },
+        { id: 2, system_prompt_id: null },
+        { id: 3, enabled: false },
+      ]),
+    });
+  });
+
+  it('shows an unavailable binding without exposing a cross-model prompt', async () => {
+    setApiLists([{ ...route, system_prompt_id: 8 }], [
+      { id: 8, name: 'Claude only', model_name: 'claude-3' },
+    ]);
+
+    await act(async () => root.render(<ModelRoutesTable />));
+
+    const selector = document.querySelector('.routes-system-prompt-select');
+    expect([...selector.options].map((option) => option.textContent)).toEqual([
+      '无系统提示词',
+      '当前绑定不可用 (#8)',
+    ]);
+    expect(selector.value).toBe('8');
+  });
+
+  it('reports prompt list failures without changing the route binding', async () => {
+    API.get.mockImplementation((url) => Promise.resolve(url === '/api/system-prompt/'
+      ? { data: { success: false, message: 'prompt service unavailable' } }
+      : promptResponse([{ ...route, system_prompt_id: 7 }])));
+
+    await act(async () => root.render(<ModelRoutesTable />));
+
+    expect(showError).toHaveBeenCalledWith('prompt service unavailable');
+    const selector = document.querySelector('.routes-system-prompt-select');
+    expect(selector.value).toBe('7');
+    expect([...selector.options].map((option) => option.textContent)).toEqual([
+      '无系统提示词',
+      '当前绑定不可用 (#7)',
+    ]);
   });
 });
