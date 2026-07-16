@@ -82,7 +82,7 @@ Run:
 Get-Content -Raw -Encoding UTF8 -LiteralPath 'Jailbreak-Guide\Grok\Grok 4.5\ENI LIME.md' | Set-Clipboard
 ```
 
-Expected: the clipboard contains the complete 35,828-character document without added wrapper text.
+Expected: the clipboard contains the complete 35,828-character document without added wrapper text. The browser textarea will normalize its 354 CRLF line endings to LF when saving.
 
 - [ ] **Step 2: Open the administrator prompt page**
 
@@ -149,7 +149,7 @@ Run:
 sqlite3 -header -column gateway-aggregator.db "SELECT sp.id, sp.name, sp.model_name, length(sp.content) AS characters, length(CAST(sp.content AS BLOB)) AS bytes, COUNT(mr.id) AS route_count FROM system_prompts sp LEFT JOIN model_routes mr ON mr.system_prompt_id = sp.id WHERE sp.model_name = 'grok-4.5' AND sp.name = 'ENI LIME (Grok 4.5)' GROUP BY sp.id; SELECT mr.id, mr.model_name, mr.system_prompt_id, sp.name AS prompt_name FROM model_routes mr LEFT JOIN system_prompts sp ON sp.id = mr.system_prompt_id WHERE mr.id = 679029;"
 ```
 
-Expected: exactly one preset row reports 35,828 characters, 36,000 bytes, and route count `1`; route `679029` references that preset ID.
+Expected: exactly one preset row reports 35,474 characters, 35,646 bytes, and route count `1`; route `679029` references that preset ID. These values reflect the browser's CRLF-to-LF normalization.
 
 - [ ] **Step 2: Verify the stored bytes have the source SHA-256**
 
@@ -163,14 +163,14 @@ for ($i = 0; $i -lt $bytes.Length; $i++) {
     $bytes[$i] = [Convert]::ToByte($hex.Substring($i * 2, 2), 16)
 }
 $sha = [BitConverter]::ToString(([Security.Cryptography.SHA256]::Create()).ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()
-if ($sha -ne '799c86295a336a93dc56b8180fb9960c63db9954584d1ea0d46d052980ec2008') { throw "stored prompt hash mismatch: $sha" }
+if ($sha -ne '6267e3c9b6c4f71a3da90c403930d8b8ae58e1ee7efc4505b85415d395892de7') { throw "stored prompt hash mismatch: $sha" }
 $sha
 ```
 
 Expected:
 
 ```text
-799c86295a336a93dc56b8180fb9960c63db9954584d1ea0d46d052980ec2008
+6267e3c9b6c4f71a3da90c403930d8b8ae58e1ee7efc4505b85415d395892de7
 ```
 
 ### Task 5: Run Focused Regression Verification

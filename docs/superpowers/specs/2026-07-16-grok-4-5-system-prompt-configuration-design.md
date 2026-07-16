@@ -20,9 +20,13 @@ selected route handles an exact `POST /v1/chat/completions` request.
 - Source file: `Jailbreak-Guide/Grok/Grok 4.5/ENI LIME.md`
 - Source size: 36,000 bytes, 35,828 UTF-8 characters
 - Source SHA-256: `799c86295a336a93dc56b8180fb9960c63db9954584d1ea0d46d052980ec2008`
+- Browser-normalized size: 35,646 bytes, 35,474 characters
+- Browser-normalized SHA-256: `6267e3c9b6c4f71a3da90c403930d8b8ae58e1ee7efc4505b85415d395892de7`
 
 The source content must not be summarized, sanitized, templated, or wrapped in
-additional instructions.
+additional instructions. HTML textareas normalize CRLF line endings to LF; the
+stored prompt is considered verbatim when it equals the source after only this
+line-ending normalization.
 
 ## Selected Approach
 
@@ -71,8 +75,8 @@ paths, methods, models, and unbound routes remain unchanged.
 
 1. Verify the source file SHA-256 immediately before configuration.
 2. Confirm the saved record has model name `grok-4.5` and the expected name.
-3. Confirm the saved UTF-8 content has the same byte length and SHA-256 as the
-   source file.
+3. Confirm the saved UTF-8 content has the documented browser-normalized byte
+   length and SHA-256, and equals the source after CRLF-to-LF normalization.
 4. Confirm route `679029` references the created preset ID.
 5. Run the existing focused Go tests for system prompt persistence, route
    binding, request transformation, and proxy integration.
