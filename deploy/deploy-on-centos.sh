@@ -228,7 +228,15 @@ echo ""
 # Permissions
 echo -e "${YELLOW}[6/9] Set permissions...${NC}"
 chmod +x "${TMP_BINARY}"
-chown -R root:root "${INSTALL_DIR}"
+# chown -R may race with SQLite's transient *-journal file (created/deleted
+# per-transaction). Ignore ENOENT only; surface any other real error.
+CHOWN_ERR=$(chown -R root:root "${INSTALL_DIR}" 2>&1 || true)
+REAL_ERR=$(echo "${CHOWN_ERR}" | grep -v "No such file or directory")
+if [ -n "${REAL_ERR}" ]; then
+    echo "${REAL_ERR}"
+    echo -e "${RED}Error: chown failed.${NC}"
+    exit 1
+fi
 echo -e "${GREEN}Permissions set.${NC}"
 echo ""
 
@@ -248,10 +256,27 @@ else
 fi
 echo ""
 
-# Stop old service if exists
-if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+# Stop old service if exists (covers both active and failed states)
+if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null || \
+   systemctl is-failed --quiet "${SERVICE_NAME}" 2>/dev/null; then
     echo -e "${YELLOW}Stopping existing service...${NC}"
-    systemctl stop "${SERVICE_NAME}"
+    systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
+    systemctl reset-failed "${SERVICE_NAME}" 2>/dev/null || true
+fi
+
+# Kill any stray process holding the port (outside systemd control)
+PORT_HOLDER=$(ss -lntp 2>/dev/null | grep ":${PORT} " | grep -oP 'pid=\K[0-9]+' | head -n1)
+if [ -n "${PORT_HOLDER}" ]; then
+    echo -e "${YELLOW}Port ${PORT} held by PID ${PORT_HOLDER}, killing...${NC}"
+    kill -9 "${PORT_HOLDER}" 2>/dev/null || true
+    sleep 1
+fi
+
+# Verify the port is free before proceeding
+if ss -lnt 2>/dev/null | grep -q ":${PORT} "; then
+    echo -e "${RED}Error: port ${PORT} is still in use after cleanup.${NC}"
+    echo "Investigate with: sudo ss -lntp | grep :${PORT}"
+    exit 1
 fi
 
 mv -f "${TMP_BINARY}" "${INSTALL_DIR}/bin/${BINARY_NAME}"
