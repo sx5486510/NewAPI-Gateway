@@ -31,6 +31,11 @@ func StartFromDB(onReady func(baseURL, apiKey string)) error {
 		return err
 	}
 
+	// Ensure auth directory exists before starting CPA (it scans this dir on launch).
+	if err := ensureAuthDir(cfg.AuthDir); err != nil {
+		return err
+	}
+
 	configPath, err := MaterializeCPAConfigFromDB()
 	if err != nil {
 		return err

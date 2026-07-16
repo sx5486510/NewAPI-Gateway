@@ -28,6 +28,43 @@ func optionGet(key string) string {
 	return common.OptionMap[key]
 }
 
+// expandHome expands a leading "~" in a path to the user's home directory,
+// mirroring how CPA resolves auth-dir internally. Returns the input unchanged
+// if it has no "~" prefix or the home dir cannot be determined.
+func expandHome(path string) string {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return p
+	}
+	if p == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home
+		}
+		return p
+	}
+	if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, p[2:])
+		}
+	}
+	return p
+}
+
+// ensureAuthDir creates the CPA auth directory (expanding "~") if it does not
+// exist. CPA scans this directory on launch and logs errors when it is missing;
+// creating it up front keeps first-run clean. An empty auth dir is valid — it
+// just means no OAuth credentials are loaded yet.
+func ensureAuthDir(authDir string) error {
+	resolved := expandHome(authDir)
+	if resolved == "" {
+		return fmt.Errorf("cpa: auth dir is empty")
+	}
+	if err := os.MkdirAll(resolved, 0o755); err != nil {
+		return fmt.Errorf("cpa: create auth dir %q: %w", resolved, err)
+	}
+	return nil
+}
+
 // CPAConfig mirrors the subset of CPA config.yaml fields we expose in the
 // gateway admin UI. Only base fields are included; upstream credentials
 // live in the auth directory (OAuth login, out of scope here).
