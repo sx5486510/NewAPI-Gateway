@@ -50,6 +50,22 @@ func GetProviderById(id int) (*Provider, error) {
 	return &provider, err
 }
 
+// GetProviderByName returns the provider with the given name, or (nil, nil) when
+// no such provider exists. Used for idempotent registration of well-known
+// providers such as the embedded CPA instance.
+func GetProviderByName(name string) (*Provider, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return nil, errors.New("name 为空")
+	}
+	var provider Provider
+	result := DB.Where("name = ?", trimmed).First(&provider)
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &provider, result.Error
+}
+
 func GetEnabledProviders() ([]*Provider, error) {
 	var providers []*Provider
 	err := DB.Where("status = ?", common.UserStatusEnabled).Find(&providers).Error

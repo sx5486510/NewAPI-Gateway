@@ -15,6 +15,7 @@ import (
 	"NewAPI-Gateway/model"
 	"NewAPI-Gateway/router"
 	"NewAPI-Gateway/service"
+	"NewAPI-Gateway/service/cpa"
 	"embed"
 	"log"
 	"strconv"
@@ -61,6 +62,16 @@ func main() {
 	// Start cron jobs (sync & checkin)
 	service.StartCronJobs()
 	defer service.StopCronJobs()
+
+	// Start the embedded CLIProxyAPI (CPA) proxy from DB-managed config.
+	// Config lives in the option table (managed via the admin UI); on startup we
+	// materialize it to a config.yaml and, when CPAEnabled=true, launch CPA on
+	// loopback and auto-register it as a key_only upstream provider.
+	// Failure only warns and never blocks the gateway.
+	if err := cpa.StartFromDB(service.CPAProviderRegistrationCallback()); err != nil {
+		common.SysLog("embedded CPA startup failed: " + err.Error())
+	}
+	defer cpa.Stop()
 
 	// Initialize HTTP server
 	server := gin.Default()

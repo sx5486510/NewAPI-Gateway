@@ -524,7 +524,7 @@ func ensureRequiredGroupTokens(client *UpstreamClient, provider *model.Provider,
 		errorParts = append(errorParts, fmt.Sprintf("auto create upstream token failed for groups: %s", strings.Join(failedGroups, ", ")))
 	}
 	if len(errorParts) > 0 {
-		return tokens, fmt.Errorf(strings.Join(errorParts, "; "))
+		return tokens, fmt.Errorf("%s", strings.Join(errorParts, "; "))
 	}
 	return tokens, nil
 }

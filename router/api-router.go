@@ -59,6 +59,15 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/test-proxy", controller.TestProxy)
 		}
 
+		// === Embedded CPA Config (Root only — contains api-keys) ===
+		cpaRoute := apiRouter.Group("/cpa")
+		cpaRoute.Use(middleware.RootAuth(), middleware.NoTokenAuth())
+		{
+			cpaRoute.GET("/config", controller.GetCPAConfig)
+			cpaRoute.PUT("/config", controller.UpdateCPAConfig)
+			cpaRoute.POST("/reload", controller.ReloadCPA)
+		}
+
 		// === Provider Management (Admin) ===
 		providerRoute := apiRouter.Group("/provider")
 		providerRoute.Use(middleware.AdminAuth(), middleware.NoTokenAuth())

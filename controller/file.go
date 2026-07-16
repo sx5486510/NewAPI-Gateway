@@ -95,7 +95,7 @@ func UploadFile(c *gin.Context) {
 		}
 		err = fileObj.Insert()
 		if err != nil {
-			_ = fmt.Errorf(err.Error())
+			_ = fmt.Errorf("%s", err.Error())
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{

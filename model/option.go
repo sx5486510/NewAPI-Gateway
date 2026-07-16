@@ -60,6 +60,12 @@ func InitOptionMap() {
 	common.OptionMap["RoutingHealthAdjustmentEnabled"] = "true"
 	common.OptionMap["RoutingPriceGuardEnabled"] = "true"
 	common.OptionMap["RoutingPriceGuardMaxUnitPrice"] = "75"
+	// Embedded CPA (CLIProxyAPI) settings. Only base fields are managed here;
+	// upstream credentials come from the CPA auth directory (OAuth login).
+	common.OptionMap["CPAEnabled"] = "false"
+	common.OptionMap["CPAAPIKeys"] = `["cpa-default-key"]`
+	common.OptionMap["CPAAuthDir"] = "~/.cli-proxy-api"
+	common.OptionMap["CPAPort"] = "18317"
 	common.OptionMapRWMutex.Unlock()
 	options, _ := AllOption()
 	for _, option := range options {

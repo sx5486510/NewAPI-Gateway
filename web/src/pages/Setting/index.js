@@ -3,6 +3,7 @@ import SystemSetting from '../../components/SystemSetting';
 import { isRoot } from '../../helpers';
 import OtherSetting from '../../components/OtherSetting';
 import PersonalSetting from '../../components/PersonalSetting';
+import CPASetting from '../../components/CPASetting';
 import Tabs from '../../components/ui/Tabs';
 
 const Setting = () => {
@@ -21,6 +22,10 @@ const Setting = () => {
     tabs.push({
       label: '其他设置',
       content: <OtherSetting />
+    });
+    tabs.push({
+      label: 'CPA 配置',
+      content: <CPASetting />
     });
   }
 
