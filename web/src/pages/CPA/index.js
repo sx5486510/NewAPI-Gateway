@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API, showError } from '../../helpers';
 import { Play, Square, RotateCw, Loader2, ExternalLink } from 'lucide-react';
+import CPAAuthFiles from '../../components/CPAAuthFiles';
 
 const PANEL_URL = '/api/cpa/panel';
 
@@ -8,6 +9,7 @@ const CPA = () => {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionInFlight, setActionInFlight] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
   const pollTimerRef = useRef(null);
   const mountedRef = useRef(true);
   const statusRequestSeqRef = useRef(0);
@@ -186,20 +188,47 @@ const CPA = () => {
       </div>
 
       {isRunning ? (
-        <div className='cpa-panel-launch'>
-          <p className='cpa-panel-launch-hint'>
-            CPA 正在运行，点击下方按钮进入管理中心（将在当前窗口打开）。
-          </p>
-          <button
-            onClick={openPanel}
-            disabled={actionInFlight}
-            className='cpa-btn cpa-btn-open-panel'
-            type='button'
-          >
-            <ExternalLink size={16} />
-            打开管理面板
-          </button>
-        </div>
+        <>
+          <div className='cpa-tabs'>
+            <button
+              onClick={() => setActiveTab('overview')}
+              disabled={actionInFlight}
+              className={`cpa-tab ${activeTab === 'overview' ? 'cpa-tab-active' : ''}`}
+              type='button'
+            >
+              概览
+            </button>
+            <button
+              onClick={() => setActiveTab('auth-files')}
+              disabled={actionInFlight}
+              className={`cpa-tab ${activeTab === 'auth-files' ? 'cpa-tab-active' : ''}`}
+              type='button'
+            >
+              认证文件
+            </button>
+          </div>
+
+          {activeTab === 'overview' ? (
+            <div className='cpa-panel-launch'>
+              <p className='cpa-panel-launch-hint'>
+                CPA 正在运行，点击下方按钮进入完整管理中心（将在当前窗口打开）。
+              </p>
+              <button
+                onClick={openPanel}
+                disabled={actionInFlight}
+                className='cpa-btn cpa-btn-open-panel'
+                type='button'
+              >
+                <ExternalLink size={16} />
+                打开管理面板
+              </button>
+            </div>
+          ) : (
+            <div className='cpa-tab-content'>
+              <CPAAuthFiles />
+            </div>
+          )}
+        </>
       ) : (
         <div className='cpa-placeholder'>
           <p>CPA 未运行。请先启动 CPA 以访问管理面板。</p>

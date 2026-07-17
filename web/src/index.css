@@ -1493,6 +1493,40 @@ details[open] .trace-collapse-arrow {
   padding: 0.6rem 1.5rem;
 }
 
+.cpa-tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 2px solid var(--border-color);
+  margin-bottom: 1.5rem;
+}
+
+.cpa-tab {
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+}
+
+.cpa-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.cpa-tab-active {
+  color: var(--primary, #3b82f6);
+  border-bottom-color: var(--primary, #3b82f6);
+}
+
+.cpa-tab-content {
+  padding: 1rem 0;
+}
+
 .cpa-placeholder {
   display: flex;
   align-items: center;
