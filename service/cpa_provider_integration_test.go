@@ -23,14 +23,22 @@ func TestEmbeddedCPARegistrationIntegration(t *testing.T) {
 	if err := os.MkdirAll(authDir, 0o755); err != nil {
 		t.Fatalf("mkdir auth: %v", err)
 	}
+	port := freeTCPPort(t)
 	cfgPath := filepath.Join(dir, "config.yaml")
-	cfg := fmt.Sprintf("host: \"\"\nport: 8317\ntls:\n  enable: false\nremote-management:\n  allow-remote: false\nauth-dir: %q\napi-keys:\n  - \"integration-key\"\ndebug: false\npprof:\n  enable: false\nplugins:\n  enabled: false\nlogging-to-file: false\nusage-statistics-enabled: false\nrequest-retry: 1\n", authDir)
-	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+	cfg := fmt.Sprintf("host: \"\"\nport: %d\ntls:\n  enable: false\nremote-management:\n  allow-remote: false\nauth-dir: %q\napi-keys:\n  - \"integration-key\"\ndebug: false\npprof:\n  enable: false\nplugins:\n  enabled: false\nlogging-to-file: false\nusage-statistics-enabled: false\nrequest-retry: 1\n", port, authDir)
+	invariants, err := cpa.NewRuntimeInvariants(nil)
+	if err != nil {
+		t.Fatalf("create runtime invariants: %v", err)
+	}
+	normalized, _, err := invariants.ApplyYAML([]byte(cfg))
+	if err != nil {
+		t.Fatalf("normalize config: %v", err)
+	}
+	if err := os.WriteFile(cfgPath, normalized, 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
-	port := freeTCPPort(t)
-	res, err := cpa.StartEmbedded(cfgPath, port)
+	res, err := cpa.StartEmbedded(cfgPath, "integration-runtime-secret")
 	if err != nil {
 		t.Fatalf("StartEmbedded: %v", err)
 	}

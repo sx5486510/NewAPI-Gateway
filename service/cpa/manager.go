@@ -7,6 +7,9 @@
 package cpa
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
 	"sync"
 	"time"
 
@@ -46,7 +49,14 @@ func StartFromDB(onReady func(baseURL, apiKey string)) error {
 		return nil
 	}
 
-	res, err := StartEmbedded(configPath, cfg.Port)
+	runtimeSecret := make([]byte, 32)
+	if _, err := rand.Read(runtimeSecret); err != nil {
+		return fmt.Errorf("cpa: generate temporary runtime management password: %w", err)
+	}
+	managementPassword := base64.RawURLEncoding.EncodeToString(runtimeSecret)
+	clear(runtimeSecret)
+	res, err := StartEmbedded(configPath, managementPassword)
+	managementPassword = ""
 	if err != nil {
 		return err
 	}

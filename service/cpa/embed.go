@@ -1,24 +1,19 @@
-// Package cpa embeds the CLIProxyAPI (CPA) proxy server into the gateway
-// process. It runs CPA in a background goroutine, bound to loopback only, so
-// the gateway exposes a single external port while CPA acts as an internal
-// upstream provider.
-//
-// This is a proof-of-concept: it wires the exported CLIProxyAPI SDK
-// (sdk/cliproxy.Builder + Service.Run) into the gateway's lifecycle. Automatic
-// provider registration and admin configuration are intentionally out of scope
-// here.
+// Package cpa embeds the CLIProxyAPI (CPA) proxy server into the gateway.
 package cpa
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"NewAPI-Gateway/common"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy"
 	cpaconfig "github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
+	"golang.org/x/crypto/bcrypt"
+	"gopkg.in/yaml.v3"
 )
 
 // loopbackHost is the only interface CPA is allowed to bind to when embedded.
@@ -33,6 +28,8 @@ type EmbedResult struct {
 	Cancel func()
 	// Done is closed once the service goroutine has exited.
 	Done <-chan struct{}
+	// Errors receives a non-cancellation runtime error before Done closes.
+	Errors <-chan error
 	// BaseURL is the loopback base URL other components use to reach CPA, e.g.
 	// "http://127.0.0.1:18317".
 	BaseURL string
@@ -47,13 +44,32 @@ type EmbedResult struct {
 // It returns an EmbedResult with shutdown handles and the loopback base URL /
 // API key. On configuration/build failure it returns an error and does not
 // start anything.
-func StartEmbedded(configPath string, port int) (*EmbedResult, error) {
+func StartEmbedded(configPath, managementPassword string) (*EmbedResult, error) {
 	trimmedPath := strings.TrimSpace(configPath)
 	if trimmedPath == "" {
 		return nil, fmt.Errorf("cpa: config path is empty")
 	}
-	if port <= 0 {
-		return nil, fmt.Errorf("cpa: invalid internal port %d", port)
+	if strings.TrimSpace(managementPassword) == "" {
+		return nil, fmt.Errorf("cpa: runtime management password is empty")
+	}
+	raw, err := os.ReadFile(trimmedPath)
+	if err != nil {
+		return nil, fmt.Errorf("cpa: read config %q failed: %w", trimmedPath, err)
+	}
+	_, root, err := parseYAMLDocument(raw)
+	if err != nil {
+		return nil, err
+	}
+	remoteManagement, ok := mappingValue(root, "remote-management")
+	if !ok || remoteManagement.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("cpa: management sentinel is empty")
+	}
+	secretKey, ok := mappingValue(remoteManagement, "secret-key")
+	if !ok || secretKey.Kind != yaml.ScalarNode || strings.TrimSpace(secretKey.Value) == "" {
+		return nil, fmt.Errorf("cpa: management sentinel is empty")
+	}
+	if _, err := bcrypt.Cost([]byte(strings.TrimSpace(secretKey.Value))); err != nil {
+		return nil, fmt.Errorf("cpa: management sentinel is not a valid bcrypt hash")
 	}
 
 	cfg, err := cpaconfig.LoadConfig(trimmedPath)
@@ -64,9 +80,23 @@ func StartEmbedded(configPath string, port int) (*EmbedResult, error) {
 		return nil, fmt.Errorf("cpa: config %q resolved to nil", trimmedPath)
 	}
 
-	// Force loopback binding so CPA is never externally reachable.
+	port := cfg.Port
+	if port <= 0 || port > 65535 {
+		return nil, fmt.Errorf("cpa: invalid internal port %d", port)
+	}
+	sentinel := strings.TrimSpace(cfg.RemoteManagement.SecretKey)
+	if sentinel == "" {
+		return nil, fmt.Errorf("cpa: management sentinel is empty")
+	}
+	if _, err := bcrypt.Cost([]byte(sentinel)); err != nil {
+		return nil, fmt.Errorf("cpa: management sentinel is not a valid bcrypt hash")
+	}
+
+	// Reassert Gateway-owned values after parsing, immediately before building.
 	cfg.Host = loopbackHost
-	cfg.Port = port
+	cfg.RemoteManagement.AllowRemote = false
+	cfg.RemoteManagement.DisableControlPanel = true
+	cfg.RemoteManagement.DisableAutoUpdatePanel = true
 
 	apiKey := ""
 	if len(cfg.APIKeys) > 0 {
@@ -76,6 +106,7 @@ func StartEmbedded(configPath string, port int) (*EmbedResult, error) {
 	service, err := cliproxy.NewBuilder().
 		WithConfig(cfg).
 		WithConfigPath(trimmedPath).
+		WithLocalManagementPassword(managementPassword).
 		Build()
 	if err != nil {
 		return nil, fmt.Errorf("cpa: build service failed: %w", err)
@@ -83,12 +114,15 @@ func StartEmbedded(configPath string, port int) (*EmbedResult, error) {
 
 	ctx, cancelFn := context.WithCancel(context.Background())
 	doneCh := make(chan struct{})
+	errorsCh := make(chan error, 1)
 
 	go func() {
 		defer close(doneCh)
+		defer close(errorsCh)
 		common.SysLog(fmt.Sprintf("embedded CPA starting on %s:%d", loopbackHost, port))
 		if runErr := service.Run(ctx); runErr != nil && !errors.Is(runErr, context.Canceled) {
-			common.SysLog("embedded CPA exited with error: " + runErr.Error())
+			errorsCh <- runErr
+			common.SysLog("embedded CPA exited with an error")
 			return
 		}
 		common.SysLog("embedded CPA stopped")
@@ -97,6 +131,7 @@ func StartEmbedded(configPath string, port int) (*EmbedResult, error) {
 	return &EmbedResult{
 		Cancel:  cancelFn,
 		Done:    doneCh,
+		Errors:  errorsCh,
 		BaseURL: fmt.Sprintf("http://%s:%d", loopbackHost, port),
 		APIKey:  apiKey,
 	}, nil
