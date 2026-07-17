@@ -57,10 +57,20 @@ func TestPanelHandlerHeaders(t *testing.T) {
 		t.Errorf("X-Content-Type-Options = %q, want %q", nosniff, "nosniff")
 	}
 
-	// CSP with frame-ancestors 'self'
 	csp := rec.Header().Get("Content-Security-Policy")
-	if !strings.Contains(csp, "frame-ancestors 'self'") {
-		t.Errorf("CSP missing frame-ancestors 'self': %q", csp)
+	expectedCSPParts := []string{
+		"default-src 'self'",
+		"script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+		"style-src 'self' 'unsafe-inline'",
+		"connect-src 'self'",
+		"img-src 'self' data: blob:",
+		"font-src 'self' data:",
+		"frame-ancestors 'self'",
+	}
+	for _, part := range expectedCSPParts {
+		if !strings.Contains(csp, part) {
+			t.Errorf("CSP missing %q: %q", part, csp)
+		}
 	}
 
 	// Body should be the embedded panel

@@ -152,6 +152,67 @@ func TestCPAStatusNeverExposesManagementPassword(t *testing.T) {
 	if strings.Contains(strings.ToLower(body), "secret") {
 		t.Fatalf("status response contains 'secret': %s", body)
 	}
+	if strings.Contains(body, "127.0.0.1") {
+		t.Fatalf("status response exposes loopback endpoint: %s", body)
+	}
+}
+
+func TestCPALifecycleResponsesNeverExposeLoopbackEndpoint(t *testing.T) {
+	tests := []struct {
+		name    string
+		method  string
+		path    string
+		body    string
+		handler gin.HandlerFunc
+		manager *mockManager
+	}{
+		{
+			name:    "start",
+			method:  http.MethodPost,
+			path:    "/api/cpa/start",
+			handler: StartCPA,
+			manager: &mockManager{state: cpa.StateStopped, ready: false, enabled: true},
+		},
+		{
+			name:    "restart",
+			method:  http.MethodPost,
+			path:    "/api/cpa/restart",
+			handler: RestartCPA,
+			manager: &mockManager{state: cpa.StateRunning, ready: true, enabled: true},
+		},
+		{
+			name:    "config_update",
+			method:  http.MethodPut,
+			path:    "/api/cpa/config",
+			body:    `{"enabled":true,"api_keys":["new-key"],"auth_dir":"/new-auth","port":30000}`,
+			handler: UpdateCPAConfig,
+			manager: &mockManager{state: cpa.StateRunning, ready: true, enabled: true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			setupTestRuntime(t, tt.manager, nil)
+
+			router := gin.New()
+			router.Handle(tt.method, tt.path, tt.handler)
+
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			if tt.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+			if strings.Contains(rec.Body.String(), "127.0.0.1") {
+				t.Fatalf("lifecycle response exposes loopback endpoint: %s", rec.Body.String())
+			}
+		})
+	}
 }
 
 func TestCPALifecycleStartReturns409OnConflict(t *testing.T) {

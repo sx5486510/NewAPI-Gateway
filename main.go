@@ -68,7 +68,7 @@ func main() {
 	coordinator := service.NewCPAProviderCoordinator(service.SyncProvider)
 	defer coordinator.Close()
 
-	cpaRuntime, err := cpa.NewRuntime("cpa", coordinator)
+	cpaRuntime, err := cpa.NewRuntime("", coordinator)
 	if err != nil {
 		common.FatalLog("failed to initialize CPA runtime: " + err.Error())
 	}

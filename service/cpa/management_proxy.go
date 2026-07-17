@@ -1,6 +1,7 @@
 package cpa
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -109,6 +110,7 @@ func (p *ManagementProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusServiceUnavailable, "cpa_unavailable", "CPA is not available")
 		return
 	}
+	defer lease.Release()
 
 	// Create per-request reverse proxy
 	proxy := &httputil.ReverseProxy{
@@ -143,56 +145,64 @@ func (p *ManagementProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			status, code, message := mapProxyError(err)
-			p.auditf("management proxy: user=%q method=%s path=%s status=%d duration=%v error=%v",
-				username, r.Method, normalizePath(r.URL.Path), status, time.Since(start), err)
 			writeJSONError(w, status, code, message)
 		},
 	}
 
-	// Wrap response writer to release lease after streaming
-	wrapped := &leaseReleaseWriter{
+	wrapped := &managementAuditWriter{
 		ResponseWriter: w,
-		lease:          lease,
-		onFirstWrite: func() {
-			p.auditf("management proxy: user=%q method=%s path=%s status=%d duration=%v",
-				username, r.Method, normalizePath(r.URL.Path), 0, time.Since(start))
-		},
 	}
 
 	proxy.ServeHTTP(wrapped, r)
+	p.auditf("management proxy: user=%q method=%s path=%s status=%d duration=%v",
+		username, r.Method, normalizePath(r.URL.Path), wrapped.status(), time.Since(start))
 }
 
-// leaseReleaseWriter wraps http.ResponseWriter to release the lease after response
-type leaseReleaseWriter struct {
+// managementAuditWriter records the final status while preserving common writer capabilities.
+type managementAuditWriter struct {
 	http.ResponseWriter
-	lease        *ManagementLease
-	onFirstWrite func()
-	wroteHeader  bool
+	wroteHeader bool
+	statusCode  int
 }
 
-func (w *leaseReleaseWriter) WriteHeader(status int) {
+func (w *managementAuditWriter) WriteHeader(status int) {
 	if !w.wroteHeader {
 		w.wroteHeader = true
-		if w.onFirstWrite != nil {
-			w.onFirstWrite()
-		}
+		w.statusCode = status
 	}
 	w.ResponseWriter.WriteHeader(status)
 }
 
-func (w *leaseReleaseWriter) Write(b []byte) (int, error) {
+func (w *managementAuditWriter) Write(b []byte) (int, error) {
 	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)
 	}
-	n, err := w.ResponseWriter.Write(b)
-	if err != nil || n == len(b) {
-		// Release lease after successful write or error
-		if w.lease != nil {
-			w.lease.Release()
-			w.lease = nil
-		}
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *managementAuditWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
 	}
-	return n, err
+}
+
+func (w *managementAuditWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	return hijacker.Hijack()
+}
+
+func (w *managementAuditWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+func (w *managementAuditWriter) status() int {
+	if w.statusCode != 0 {
+		return w.statusCode
+	}
+	return http.StatusOK
 }
 
 // sanitizeHeaders removes sensitive browser headers and hop-by-hop headers
@@ -237,12 +247,24 @@ func shouldSyncAfterAuthStatus(resp *http.Response) bool {
 		return false
 	}
 
-	// Buffer and restore body
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	const maxAuthStatusBody = 1 << 20
+	limited := io.LimitReader(resp.Body, maxAuthStatusBody+1)
+	body, err := io.ReadAll(limited)
 	if err != nil {
+		resp.Body = &prefixReadCloser{
+			Reader: io.MultiReader(bytes.NewReader(body), resp.Body),
+			Closer: resp.Body,
+		}
 		return false
 	}
-	resp.Body.Close()
+	if len(body) > maxAuthStatusBody {
+		resp.Body = &prefixReadCloser{
+			Reader: io.MultiReader(bytes.NewReader(body), resp.Body),
+			Closer: resp.Body,
+		}
+		return false
+	}
+	_ = resp.Body.Close()
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 
 	// Check for completed status
@@ -253,6 +275,11 @@ func shouldSyncAfterAuthStatus(resp *http.Response) bool {
 		return false
 	}
 	return status.Status == "completed"
+}
+
+type prefixReadCloser struct {
+	io.Reader
+	io.Closer
 }
 
 // mapProxyError maps transport errors to stable HTTP status and error codes

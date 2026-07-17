@@ -25,10 +25,9 @@ func GetCPAStatus(c *gin.Context) {
 		return
 	}
 
-	status := runtime.Manager.Status()
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    status,
+		"data":    browserSafeCPAStatus(runtime.Manager.Status()),
 	})
 }
 
@@ -62,7 +61,7 @@ func StartCPA(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "CPA started successfully",
-		"data":    runtime.Manager.Status(),
+		"data":    browserSafeCPAStatus(runtime.Manager.Status()),
 	})
 }
 
@@ -96,7 +95,7 @@ func StopCPA(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "CPA stopped successfully",
-		"data":    runtime.Manager.Status(),
+		"data":    browserSafeCPAStatus(runtime.Manager.Status()),
 	})
 }
 
@@ -130,7 +129,7 @@ func RestartCPA(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "CPA restarted successfully",
-		"data":    runtime.Manager.Status(),
+		"data":    browserSafeCPAStatus(runtime.Manager.Status()),
 	})
 }
 
@@ -152,7 +151,7 @@ func GetCPAConfig(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"code":    "config_load_failed",
-			"message": fmt.Sprintf("Failed to load config: %v", err),
+			"message": "Failed to load CPA config",
 		})
 		return
 	}
@@ -192,7 +191,7 @@ func UpdateCPAConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"code":    "invalid_request",
-			"message": fmt.Sprintf("Invalid request body: %v", err),
+			"message": "Invalid request body",
 		})
 		return
 	}
@@ -244,7 +243,7 @@ func UpdateCPAConfig(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"code":    "patch_failed",
-			"message": fmt.Sprintf("Failed to patch config: %v", err),
+			"message": "Failed to patch CPA config",
 		})
 		return
 	}
@@ -267,7 +266,7 @@ func UpdateCPAConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "CPA config updated and restarted successfully",
-		"data":    runtime.Manager.Status(),
+		"data":    browserSafeCPAStatus(runtime.Manager.Status()),
 	})
 }
 
@@ -306,7 +305,8 @@ func ProxyCPAManagement(c *gin.Context) {
 		return
 	}
 
-	runtime.Proxy.ServeHTTP(c.Writer, c.Request)
+	username := c.GetString("username")
+	runtime.Proxy.ServeHTTP(c.Writer, cpa.WithManagementAuditUser(c.Request, username))
 }
 
 // RelayCPAOAuthCallback relays OAuth provider callbacks to embedded CPA.
@@ -322,6 +322,11 @@ func RelayCPAOAuthCallback(c *gin.Context) {
 		return
 	}
 	runtime.OAuth.RelayCallback(c)
+}
+
+func browserSafeCPAStatus(status cpa.Status) cpa.Status {
+	status.Endpoint = "offline"
+	return status
 }
 
 // handleLifecycleError maps lifecycle errors to stable HTTP responses.

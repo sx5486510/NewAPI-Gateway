@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +33,7 @@ type fakeLeaseProvider struct {
 	password string
 	err      error
 	released atomic.Bool
+	releases atomic.Int32
 }
 
 func (f *fakeLeaseProvider) AcquireManagement() (*ManagementLease, error) {
@@ -42,7 +44,10 @@ func (f *fakeLeaseProvider) AcquireManagement() (*ManagementLease, error) {
 	return &ManagementLease{
 		Target:   f.target,
 		Password: f.password,
-		release:  func() { f.released.Store(true) },
+		release: func() {
+			f.releases.Add(1)
+			f.released.Store(true)
+		},
 	}, nil
 }
 
@@ -133,12 +138,12 @@ func TestManagementProxyPreservesBusinessErrorsAndDownloads(t *testing.T) {
 	}
 
 	headers := map[string]string{
-		"Content-Disposition":   `attachment; filename="auth.json"`,
-		"Content-Type":          "application/json",
-		"X-CPA-VERSION":         "v7.2.80",
-		"X-CPA-COMMIT":          "fixture",
-		"X-CPA-BUILD-DATE":      "2026-07-16",
-		"X-CPA-SUPPORT-PLUGIN":  "true",
+		"Content-Disposition":  `attachment; filename="auth.json"`,
+		"Content-Type":         "application/json",
+		"X-CPA-VERSION":        "v7.2.80",
+		"X-CPA-COMMIT":         "fixture",
+		"X-CPA-BUILD-DATE":     "2026-07-16",
+		"X-CPA-SUPPORT-PLUGIN": "true",
 	}
 	for name, want := range headers {
 		if got := rec.Header().Get(name); got != want {
@@ -385,6 +390,90 @@ func TestManagementProxyStreamsDownloadsWithoutBuffering(t *testing.T) {
 	}
 }
 
+func TestManagementProxyHoldsLeaseUntilStreamingCompletes(t *testing.T) {
+	firstChunkWritten := make(chan struct{})
+	releaseSecondChunk := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("upstream response writer is not flushable")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("first-"))
+		flusher.Flush()
+		close(firstChunkWritten)
+		<-releaseSecondChunk
+		_, _ = w.Write([]byte("second"))
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	provider := &fakeLeaseProvider{
+		target:   upstreamURL,
+		password: "runtime-secret",
+	}
+	proxy := NewManagementProxy(provider, nil, func() {})
+
+	done := make(chan struct{})
+	rec := httptest.NewRecorder()
+	go func() {
+		req := httptest.NewRequest(http.MethodGet, "/v0/management/auth-files/download?name=large.json", nil)
+		proxy.ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	<-firstChunkWritten
+	if provider.released.Load() {
+		t.Fatal("lease released before streamed response completed")
+	}
+	close(releaseSecondChunk)
+	<-done
+
+	if !provider.released.Load() {
+		t.Fatal("lease not released after streamed response completed")
+	}
+	if rec.Body.String() != "first-second" {
+		t.Fatalf("body = %q, want first-second", rec.Body.String())
+	}
+}
+
+func TestManagementProxyReleasesLeaseForHeaderOnlyResponse(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	provider := &fakeLeaseProvider{
+		target:   upstreamURL,
+		password: "runtime-secret",
+	}
+	proxy := NewManagementProxy(provider, nil, func() {})
+
+	req := httptest.NewRequest(http.MethodDelete, "/v0/management/auth-files?name=empty.json", nil)
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	if !provider.released.Load() {
+		t.Fatal("lease not released for header-only response")
+	}
+	if provider.releases.Load() != 1 {
+		t.Fatalf("release calls = %d, want 1", provider.releases.Load())
+	}
+}
+
+func TestManagementAuditWriterUnwrapsUnderlyingResponseWriter(t *testing.T) {
+	rec := httptest.NewRecorder()
+	wrapped := &managementAuditWriter{ResponseWriter: rec}
+
+	if wrapped.Unwrap() != rec {
+		t.Fatal("managementAuditWriter should expose the underlying ResponseWriter")
+	}
+}
+
 func TestManagementProxyOAuthAuthStatusPolling(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -442,8 +531,8 @@ func TestManagementProxyOAuthAuthStatusPolling(t *testing.T) {
 
 			// For large body test, just verify we got a valid response without full buffering
 			if tt.maxBodySize > 1024*1024 {
-				if rec.Body.Len() == 0 {
-					t.Fatal("expected non-empty body for large response")
+				if rec.Body.Len() <= tt.maxBodySize {
+					t.Fatalf("large response was truncated: got %d bytes, want more than %d", rec.Body.Len(), tt.maxBodySize)
 				}
 			} else {
 				// For small bodies, verify the status field
@@ -457,6 +546,53 @@ func TestManagementProxyOAuthAuthStatusPolling(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestManagementProxyAuditIncludesRootUserAndStatus(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"success":true}`)
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	provider := &fakeLeaseProvider{
+		target:   upstreamURL,
+		password: "runtime-secret",
+	}
+
+	var auditLogs []string
+	proxy := NewManagementProxy(provider, nil, func() {})
+	proxy.auditf = func(format string, args ...interface{}) {
+		auditLogs = append(auditLogs, formatWithArgs(format, args...))
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/api-keys?secret=query", strings.NewReader(`{"key":"body-secret"}`))
+	req = WithManagementAuditUser(req, "root-user")
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", rec.Code)
+	}
+	if len(auditLogs) != 1 {
+		t.Fatalf("audit log count = %d, want 1: %#v", len(auditLogs), auditLogs)
+	}
+	log := auditLogs[0]
+	for _, want := range []string{`user="root-user"`, "method=POST", "path=/v0/management/api-keys", "status=201"} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("audit log %q missing %q", log, want)
+		}
+	}
+	for _, forbidden := range []string{"secret=query", "body-secret", "runtime-secret"} {
+		if strings.Contains(log, forbidden) {
+			t.Fatalf("audit log leaked %q: %s", forbidden, log)
+		}
+	}
+}
+
+func formatWithArgs(format string, args ...interface{}) string {
+	return fmt.Sprintf(format, args...)
 }
 
 func TestManagementProxyAuditWithoutSecrets(t *testing.T) {

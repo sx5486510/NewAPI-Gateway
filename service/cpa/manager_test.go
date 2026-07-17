@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +15,25 @@ import (
 
 	cpaconfig "github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
 )
+
+func TestManagerHasNoPackageLevelLegacyLifecycleWrappers(t *testing.T) {
+	source, err := os.ReadFile("manager.go")
+	if err != nil {
+		t.Fatalf("read manager.go: %v", err)
+	}
+	text := string(source)
+	for _, forbidden := range []string{
+		"func StartFromDB(",
+		"func Stop()",
+		"func Reload(",
+		"func IsRunning()",
+		"legacyManager",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("manager.go still contains legacy package-level lifecycle symbol %q", forbidden)
+		}
+	}
+}
 
 func TestManagerLifecycleAndSecretLifetime(t *testing.T) {
 	m, fake := newFakeManager(t)

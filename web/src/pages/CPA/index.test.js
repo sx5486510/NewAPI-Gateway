@@ -91,7 +91,7 @@ describe('CPA', () => {
     });
 
     expect(container.textContent).toContain('运行中');
-    expect(container.textContent).toContain('http://127.0.0.1:29000');
+    expect(container.textContent).not.toContain('http://127.0.0.1:29000');
     expect(container.textContent).toContain('v7.2.80');
     expect(container.querySelector('iframe[title="CPA Management Panel"]')).not.toBeNull();
   });
@@ -284,12 +284,132 @@ describe('CPA', () => {
     });
 
     expect(removeItemSpy).toHaveBeenCalledWith('cli-proxy-auth');
+    expect(removeItemSpy).toHaveBeenCalledWith('apiUrl');
     expect(setItemSpy).toHaveBeenCalledWith('managementKey', 'gateway-managed');
     expect(setItemSpy).toHaveBeenCalledWith('isLoggedIn', 'true');
-    expect(setItemSpy).toHaveBeenCalledWith('apiEndpoint', expect.any(String));
+    expect(setItemSpy).toHaveBeenCalledWith('apiBase', expect.any(String));
+    expect(setItemSpy).not.toHaveBeenCalledWith('apiEndpoint', expect.any(String));
 
     removeItemSpy.mockRestore();
     setItemSpy.mockRestore();
+  });
+
+  it('bootstraps panel session before iframe is mounted', async () => {
+    const originalSetItem = Storage.prototype.setItem;
+    let iframeWasMountedBeforeBootstrap = false;
+    const setItemSpy = jest
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(function setItem(key, value) {
+        if (key === 'apiBase') {
+          iframeWasMountedBeforeBootstrap = container.querySelector('iframe[title="CPA Management Panel"]') !== null;
+        }
+        return originalSetItem.call(this, key, value);
+      });
+
+    API.get.mockResolvedValue({
+      data: {
+        success: true,
+        data: { state: 'running', ready: true, enabled: true },
+      },
+    });
+
+    await act(async () => {
+      root.render(<CPA />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(setItemSpy).toHaveBeenCalledWith('apiBase', expect.any(String));
+    expect(iframeWasMountedBeforeBootstrap).toBe(false);
+    expect(container.querySelector('iframe[title="CPA Management Panel"]')).not.toBeNull();
+
+    setItemSpy.mockRestore();
+  });
+
+  it('does not start another poll while a status request is in flight', async () => {
+    let resolveStatus;
+    API.get.mockReturnValue(new Promise(resolve => { resolveStatus = resolve; }));
+
+    await act(async () => {
+      root.render(<CPA />);
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(6000);
+      await Promise.resolve();
+    });
+
+    expect(API.get).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveStatus({
+        data: {
+          success: true,
+          data: { state: 'running', ready: true, enabled: true },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('iframe[title="CPA Management Panel"]')).not.toBeNull();
+  });
+
+  it('ignores stale status responses', async () => {
+    let resolvePoll;
+    API.get
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: { state: 'running', ready: true, enabled: true },
+        },
+      })
+      .mockReturnValueOnce(new Promise(resolve => { resolvePoll = resolve; }))
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: { state: 'running', ready: true, enabled: true },
+        },
+      });
+
+    await act(async () => {
+      root.render(<CPA />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(2000);
+      await Promise.resolve();
+    });
+
+    API.post.mockResolvedValueOnce({ data: { success: true } });
+    const restartBtn = container.querySelector('.cpa-btn-restart');
+    await act(async () => {
+      restartBtn.click();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('运行中');
+
+    await act(async () => {
+      resolvePoll({
+        data: {
+          success: true,
+          data: { state: 'stopped', ready: false, enabled: false },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('运行中');
+    expect(container.querySelector('iframe[title="CPA Management Panel"]')).not.toBeNull();
   });
 
   it('disables all actions during in-flight operation', async () => {

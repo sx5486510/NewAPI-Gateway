@@ -1,6 +1,7 @@
 package cpa
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -101,21 +102,21 @@ func TestOAuthRelayValidatesStateAndProvider(t *testing.T) {
 			path:       "/anthropic/callback",
 			state:      "",
 			wantStatus: http.StatusBadRequest,
-			wantBody:   "missing state",
+			wantBody:   "invalid OAuth state",
 		},
 		{
 			name:       "session_not_found",
 			path:       "/anthropic/callback",
 			state:      "unknown-state",
 			wantStatus: http.StatusBadRequest,
-			wantBody:   "state not found",
+			wantBody:   "invalid OAuth state",
 		},
 		{
 			name:       "provider_mismatch",
 			path:       "/codex/callback",
 			state:      "valid-state-anthropic",
 			wantStatus: http.StatusBadRequest,
-			wantBody:   "provider mismatch",
+			wantBody:   "invalid OAuth state",
 		},
 	}
 
@@ -138,6 +139,20 @@ func TestOAuthRelayValidatesStateAndProvider(t *testing.T) {
 			}
 			if !strings.Contains(rec.Body.String(), tt.wantBody) {
 				t.Errorf("body = %q, want to contain %q", rec.Body.String(), tt.wantBody)
+			}
+			for _, leaked := range []string{"missing state", "state not found", "provider mismatch"} {
+				if strings.Contains(rec.Body.String(), leaked) {
+					t.Fatalf("body leaks invalid-state detail %q: %s", leaked, rec.Body.String())
+				}
+			}
+			var payload struct {
+				Code string `json:"code"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("invalid JSON response: %v", err)
+			}
+			if payload.Code != "invalid_oauth_state" {
+				t.Fatalf("code = %q, want invalid_oauth_state", payload.Code)
 			}
 		})
 	}
@@ -198,7 +213,7 @@ func TestOAuthRelayStripsSensitiveHeaders(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	manager := &mockOAuthManager{target: upstream.URL, password: "test"}
+	manager := &mockOAuthManager{target: upstream.URL, password: "runtime-secret"}
 	relay := NewOAuthRelay(manager)
 	defer relay.Close()
 
@@ -221,12 +236,12 @@ func TestOAuthRelayStripsSensitiveHeaders(t *testing.T) {
 		t.Fatalf("request failed: %d", rec.Code)
 	}
 
-	// Sensitive headers should be removed
+	// Browser credentials and gateway management headers should not be forwarded.
 	if receivedHeaders.Get("Cookie") != "" {
 		t.Error("Cookie header should be stripped")
 	}
-	if receivedHeaders.Get("Authorization") != "" {
-		t.Error("Authorization header should be stripped")
+	if got := receivedHeaders.Get("Authorization"); got != "Bearer runtime-secret" {
+		t.Errorf("Authorization = %q, want runtime lease bearer token", got)
 	}
 	if receivedHeaders.Get("X-Management-Key") != "" {
 		t.Error("X-Management-Key header should be stripped")

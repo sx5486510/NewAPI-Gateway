@@ -68,47 +68,32 @@ func (r *OAuthRelay) RelayCallback(c *gin.Context) {
 	// Extract state parameter
 	state := c.Query("state")
 	if state == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "missing state parameter",
-		})
+		writeOAuthStateError(c)
 		return
 	}
 
 	// Validate state format
 	if err := api.ValidateOAuthState(state); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "invalid state format",
-		})
+		writeOAuthStateError(c)
 		return
 	}
 
 	// Get OAuth session
 	sessionProvider, status, ok := api.GetOAuthSession(state)
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "state not found",
-		})
+		writeOAuthStateError(c)
 		return
 	}
 
 	// Verify provider matches
 	if sessionProvider != expectedProvider {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "provider mismatch",
-		})
+		writeOAuthStateError(c)
 		return
 	}
 
 	// Check error status
 	if status != "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "OAuth session has error status",
-		})
+		writeOAuthStateError(c)
 		return
 	}
 
@@ -116,6 +101,7 @@ func (r *OAuthRelay) RelayCallback(c *gin.Context) {
 	if !r.claimState(state) {
 		c.JSON(http.StatusConflict, gin.H{
 			"success": false,
+			"code":    "invalid_oauth_state",
 			"message": "state already used",
 		})
 		return
@@ -161,6 +147,7 @@ func (r *OAuthRelay) RelayCallback(c *gin.Context) {
 			}
 		}
 	}
+	upstreamReq.Header.Set("Authorization", "Bearer "+lease.Password)
 
 	// Forward to CPA
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -185,6 +172,14 @@ func (r *OAuthRelay) RelayCallback(c *gin.Context) {
 	// Copy status and body
 	c.Status(resp.StatusCode)
 	io.Copy(c.Writer, resp.Body)
+}
+
+func writeOAuthStateError(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, gin.H{
+		"success": false,
+		"code":    "invalid_oauth_state",
+		"message": "invalid OAuth state",
+	})
 }
 
 // claimState atomically claims a state token, returning true if successful

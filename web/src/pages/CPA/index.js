@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API, showError } from '../../helpers';
 import { Play, Square, RotateCw, Loader2 } from 'lucide-react';
 
@@ -6,24 +6,39 @@ const CPA = () => {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionInFlight, setActionInFlight] = useState(false);
+  const [panelSessionReady, setPanelSessionReady] = useState(false);
   const pollTimerRef = useRef(null);
   const mountedRef = useRef(true);
   const iframeMountedRef = useRef(false);
+  const statusRequestSeqRef = useRef(0);
+  const statusPollInFlightRef = useRef(false);
 
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async ({ force = false } = {}) => {
+    if (!force && statusPollInFlightRef.current) {
+      return;
+    }
+    if (!force) {
+      statusPollInFlightRef.current = true;
+    }
+    const requestSeq = statusRequestSeqRef.current + 1;
+    statusRequestSeqRef.current = requestSeq;
     try {
       const res = await API.get('/api/cpa/status');
-      if (mountedRef.current && res.data.success) {
+      if (mountedRef.current && requestSeq === statusRequestSeqRef.current && res.data.success) {
         setStatus(res.data.data);
         setLoading(false);
       }
     } catch (error) {
-      if (mountedRef.current) {
+      if (mountedRef.current && requestSeq === statusRequestSeqRef.current) {
         showError('无法获取 CPA 状态');
         setLoading(false);
       }
+    } finally {
+      if (!force) {
+        statusPollInFlightRef.current = false;
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -41,14 +56,14 @@ const CPA = () => {
         clearInterval(pollTimerRef.current);
       }
     };
-  }, []);
+  }, [fetchStatus]);
 
   const handleAction = async (action) => {
     setActionInFlight(true);
     try {
       const res = await API.post(`/api/cpa/${action}`);
       if (res.data.success) {
-        await fetchStatus();
+        await fetchStatus({ force: true });
       } else {
         showError(res.data.message || `${action} 操作失败`);
       }
@@ -61,29 +76,20 @@ const CPA = () => {
     }
   };
 
-  const bootstrapPanelSession = () => {
+  const bootstrapPanelSession = useCallback(() => {
     try {
       localStorage.removeItem('cli-proxy-auth');
+      localStorage.removeItem('apiUrl');
+      localStorage.removeItem('apiEndpoint');
       localStorage.setItem('managementKey', 'gateway-managed');
       localStorage.setItem('isLoggedIn', 'true');
 
       const currentOrigin = window.location.origin;
-      localStorage.setItem('apiEndpoint', currentOrigin);
+      localStorage.setItem('apiBase', currentOrigin);
     } catch (error) {
       console.error('Failed to bootstrap panel session:', error);
     }
-  };
-
-  if (loading) {
-    return (
-      <div className='cpa-page'>
-        <div className='cpa-loading'>
-          <Loader2 className='cpa-spinner' size={32} />
-          <p>加载中...</p>
-        </div>
-      </div>
-    );
-  }
+  }, []);
 
   const state = status?.state || 'unknown';
   const ready = status?.ready || false;
@@ -100,12 +106,26 @@ const CPA = () => {
 
   const shouldMountIframe = isRunning;
 
-  // Bootstrap session only once when iframe mounts
-  if (shouldMountIframe && !iframeMountedRef.current) {
-    bootstrapPanelSession();
-    iframeMountedRef.current = true;
-  } else if (!shouldMountIframe) {
-    iframeMountedRef.current = false;
+  useEffect(() => {
+    if (shouldMountIframe && !iframeMountedRef.current) {
+      bootstrapPanelSession();
+      iframeMountedRef.current = true;
+      setPanelSessionReady(true);
+    } else if (!shouldMountIframe) {
+      iframeMountedRef.current = false;
+      setPanelSessionReady(false);
+    }
+  }, [bootstrapPanelSession, shouldMountIframe]);
+
+  if (loading) {
+    return (
+      <div className='cpa-page'>
+        <div className='cpa-loading'>
+          <Loader2 className='cpa-spinner' size={32} />
+          <p>加载中...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -125,12 +145,6 @@ const CPA = () => {
               {!['stopped', 'running', 'starting', 'stopping', 'error'].includes(state) && state}
             </span>
           </div>
-          {status?.endpoint && (
-            <div className='cpa-status-row'>
-              <span className='cpa-status-label'>端点：</span>
-              <span className='cpa-status-value'>{status.endpoint}</span>
-            </div>
-          )}
           {status?.version && (
             <div className='cpa-status-row'>
               <span className='cpa-status-label'>版本：</span>
@@ -176,7 +190,7 @@ const CPA = () => {
         )}
       </div>
 
-      {shouldMountIframe ? (
+      {shouldMountIframe && panelSessionReady ? (
         <div className='cpa-panel-container'>
           <iframe
             src='/api/cpa/panel'
