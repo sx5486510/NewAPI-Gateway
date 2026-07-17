@@ -172,6 +172,43 @@ const CPAAuthFiles = () => {
     }
   };
 
+  // 按类型分组
+  const groupFilesByType = (files) => {
+    const groups = {
+      claude: [],
+      codex: [],
+      grok: [],
+      other: []
+    };
+
+    files.forEach(file => {
+      const type = [
+        file.type,
+        file.provider,
+        file.account_type,
+        file.name,
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (type.includes('claude')) {
+        groups.claude.push(file);
+      } else if (type.includes('codex')) {
+        groups.codex.push(file);
+      } else if (type.includes('grok') || type.includes('xai')) {
+        groups.grok.push(file);
+      } else {
+        groups.other.push(file);
+      }
+    });
+
+    return groups;
+  };
+
+  const typeLabels = {
+    claude: { name: 'Claude', color: '#C4612F' },
+    codex: { name: 'Codex', color: '#10B981' },
+    grok: { name: 'Grok', color: '#3B82F6' },
+    other: { name: '其他', color: '#6B7280' }
+  };
+
   if (loading) {
     return (
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem', textAlign: 'center' }}>
@@ -180,15 +217,17 @@ const CPAAuthFiles = () => {
     );
   }
 
+  const groupedFiles = groupFilesByType(authFiles);
+
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {/* 认证文件列表区 */}
       <Card padding="1.5rem">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <div>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.25rem' }}>认证文件</h3>
             <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-              管理 CLI 认证凭证文件(Claude/Codex/Gemini 等)
+              管理 CLI 认证凭证文件(Claude/Codex/Grok 等)
             </p>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -220,119 +259,196 @@ const CPAAuthFiles = () => {
             </p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
-            {authFiles.map((file) => (
-              <div
-                key={file.name}
-                style={{
-                  padding: '1rem',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: file.disabled ? 'var(--bg-secondary)' : 'var(--bg-primary)',
-                  opacity: file.disabled ? 0.6 : 1,
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: '600', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {file.name}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {Object.entries(groupedFiles).map(([groupKey, files]) => {
+              if (files.length === 0) return null;
+              const groupInfo = typeLabels[groupKey];
+
+              return (
+                <div key={groupKey}>
+                  {/* 分组标题 */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    marginBottom: '0.75rem',
+                    paddingBottom: '0.5rem',
+                    borderBottom: `2px solid ${groupInfo.color}`
+                  }}>
+                    <div style={{
+                      fontSize: '0.95rem',
+                      fontWeight: '600',
+                      color: groupInfo.color
+                    }}>
+                      {groupInfo.name}
                     </div>
-                    {file.type && (
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                        类型: {file.type}
-                      </div>
-                    )}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '0.7rem',
+                    <div style={{
+                      fontSize: '0.75rem',
                       padding: '0.15rem 0.5rem',
                       borderRadius: '999px',
-                      backgroundColor: file.disabled ? 'var(--border-color)' : 'rgba(16, 185, 129, 0.15)',
-                      color: file.disabled ? 'var(--text-secondary)' : 'rgb(16, 185, 129)',
-                      fontWeight: '500',
-                      flexShrink: 0,
-                      marginLeft: '0.5rem',
-                    }}
-                  >
-                    {file.disabled ? '已禁用' : '启用中'}
+                      backgroundColor: `${groupInfo.color}20`,
+                      color: groupInfo.color
+                    }}>
+                      {files.length} 个
+                    </div>
+                  </div>
+
+                  {/* 该组文件列表 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {files.map((file) => (
+                      <div
+                        key={file.name}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '0.75rem 1rem',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 'var(--radius-md)',
+                          backgroundColor: file.disabled ? 'var(--bg-secondary)' : 'var(--bg-primary)',
+                          opacity: file.disabled ? 0.6 : 1,
+                          transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!file.disabled) {
+                            e.currentTarget.style.borderColor = groupInfo.color;
+                            e.currentTarget.style.backgroundColor = `${groupInfo.color}05`;
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--border-color)';
+                          e.currentTarget.style.backgroundColor = file.disabled ? 'var(--bg-secondary)' : 'var(--bg-primary)';
+                        }}
+                      >
+                        {/* 左侧：文件信息 */}
+                        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                          <div style={{ flex: '0 0 auto', minWidth: '200px', maxWidth: '300px' }}>
+                            <div style={{
+                              fontWeight: '500',
+                              fontSize: '0.875rem',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              color: 'var(--text-primary)'
+                            }}>
+                              {file.name}
+                            </div>
+                          </div>
+
+                          {file.email && (
+                            <div style={{
+                              flex: '0 0 auto',
+                              fontSize: '0.8rem',
+                              color: 'var(--text-secondary)',
+                              minWidth: '150px'
+                            }}>
+                              {file.email}
+                            </div>
+                          )}
+
+                          {file.note && (
+                            <div style={{
+                              flex: '1 1 auto',
+                              fontSize: '0.8rem',
+                              color: 'var(--text-secondary)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {file.note}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 右侧：状态和操作按钮 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+                          <div
+                            style={{
+                              fontSize: '0.7rem',
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: '999px',
+                              backgroundColor: file.disabled ? 'var(--border-color)' : 'rgba(16, 185, 129, 0.15)',
+                              color: file.disabled ? 'var(--text-secondary)' : 'rgb(16, 185, 129)',
+                              fontWeight: '500',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {file.disabled ? '已禁用' : '启用中'}
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '0.35rem' }}>
+                            <button
+                              onClick={() => handleToggleStatus(file)}
+                              style={{
+                                fontSize: '0.75rem',
+                                padding: '0.35rem 0.6rem',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: 'transparent',
+                                cursor: 'pointer',
+                                color: 'var(--text-primary)',
+                                whiteSpace: 'nowrap'
+                              }}
+                              type="button"
+                              title={file.disabled ? '启用' : '禁用'}
+                            >
+                              {file.disabled ? '启用' : '禁用'}
+                            </button>
+                            <button
+                              onClick={() => handleOpenEdit(file)}
+                              style={{
+                                fontSize: '0.75rem',
+                                padding: '0.35rem 0.6rem',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: 'transparent',
+                                cursor: 'pointer',
+                                color: 'var(--text-primary)',
+                              }}
+                              type="button"
+                              title="编辑"
+                            >
+                              <Edit size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDownload(file.name)}
+                              style={{
+                                fontSize: '0.75rem',
+                                padding: '0.35rem 0.6rem',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: 'transparent',
+                                cursor: 'pointer',
+                                color: 'var(--text-primary)',
+                              }}
+                              type="button"
+                              title="下载"
+                            >
+                              <Download size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(file.name)}
+                              style={{
+                                fontSize: '0.75rem',
+                                padding: '0.35rem 0.6rem',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: 'transparent',
+                                cursor: 'pointer',
+                                color: 'rgb(239, 68, 68)',
+                              }}
+                              type="button"
+                              title="删除"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-
-                {(file.email || file.note) && (
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-                    {file.email && <div>账号: {file.email}</div>}
-                    {file.note && <div>备注: {file.note}</div>}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <button
-                    onClick={() => handleToggleStatus(file)}
-                    style={{
-                      fontSize: '0.75rem',
-                      padding: '0.35rem 0.6rem',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-sm)',
-                      backgroundColor: 'transparent',
-                      cursor: 'pointer',
-                      color: 'var(--text-primary)',
-                    }}
-                    type="button"
-                  >
-                    {file.disabled ? '启用' : '禁用'}
-                  </button>
-                  <button
-                    onClick={() => handleOpenEdit(file)}
-                    style={{
-                      fontSize: '0.75rem',
-                      padding: '0.35rem 0.6rem',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-sm)',
-                      backgroundColor: 'transparent',
-                      cursor: 'pointer',
-                      color: 'var(--text-primary)',
-                    }}
-                    type="button"
-                  >
-                    <Edit size={12} style={{ verticalAlign: 'middle', marginRight: '0.25rem' }} />
-                    编辑
-                  </button>
-                  <button
-                    onClick={() => handleDownload(file.name)}
-                    style={{
-                      fontSize: '0.75rem',
-                      padding: '0.35rem 0.6rem',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-sm)',
-                      backgroundColor: 'transparent',
-                      cursor: 'pointer',
-                      color: 'var(--text-primary)',
-                    }}
-                    type="button"
-                  >
-                    <Download size={12} style={{ verticalAlign: 'middle', marginRight: '0.25rem' }} />
-                    下载
-                  </button>
-                  <button
-                    onClick={() => handleDelete(file.name)}
-                    style={{
-                      fontSize: '0.75rem',
-                      padding: '0.35rem 0.6rem',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-sm)',
-                      backgroundColor: 'transparent',
-                      cursor: 'pointer',
-                      color: 'rgb(239, 68, 68)',
-                    }}
-                    type="button"
-                  >
-                    <Trash2 size={12} style={{ verticalAlign: 'middle', marginRight: '0.25rem' }} />
-                    删除
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
@@ -342,7 +458,7 @@ const CPAAuthFiles = () => {
         <h4 style={{ fontSize: '0.95rem', fontWeight: 'bold', marginBottom: '0.75rem' }}>使用提示</h4>
         <ul style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.6, paddingLeft: '1.25rem' }}>
           <li>认证文件存储在 CPA 的 auth-dir 目录中</li>
-          <li>支持 Claude CLI、Codex、Gemini 等多种认证类型</li>
+          <li>支持 Claude CLI、Codex、Grok 等多种认证类型，按类型自动分组展示</li>
           <li>禁用文件后不会删除,仅暂停使用该凭证</li>
           <li>优先级(priority)用于控制多个同类型凭证的使用顺序,数值越高优先级越高</li>
         </ul>
