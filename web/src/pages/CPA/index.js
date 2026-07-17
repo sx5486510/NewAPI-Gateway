@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API, showError } from '../../helpers';
-import { Play, Square, RotateCw, Loader2 } from 'lucide-react';
+import { Play, Square, RotateCw, Loader2, ExternalLink } from 'lucide-react';
+
+const PANEL_URL = '/api/cpa/panel';
 
 const CPA = () => {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionInFlight, setActionInFlight] = useState(false);
-  const [panelSessionReady, setPanelSessionReady] = useState(false);
   const pollTimerRef = useRef(null);
   const mountedRef = useRef(true);
-  const iframeMountedRef = useRef(false);
   const statusRequestSeqRef = useRef(0);
   const statusPollInFlightRef = useRef(false);
 
@@ -91,6 +91,14 @@ const CPA = () => {
     }
   }, []);
 
+  const openPanel = useCallback(() => {
+    // The management panel is a self-contained SPA served same-origin. It reads
+    // its session from localStorage, so we seed it before navigating the whole
+    // window there (no iframe nesting).
+    bootstrapPanelSession();
+    window.location.assign(PANEL_URL);
+  }, [bootstrapPanelSession]);
+
   const state = status?.state || 'unknown';
   const ready = status?.ready || false;
   const lastError = status?.last_error || '';
@@ -103,19 +111,6 @@ const CPA = () => {
   const canStart = isStopped && !actionInFlight;
   const canStop = (isRunning || isError) && !actionInFlight;
   const canRestart = isRunning && !actionInFlight;
-
-  const shouldMountIframe = isRunning;
-
-  useEffect(() => {
-    if (shouldMountIframe && !iframeMountedRef.current) {
-      bootstrapPanelSession();
-      iframeMountedRef.current = true;
-      setPanelSessionReady(true);
-    } else if (!shouldMountIframe) {
-      iframeMountedRef.current = false;
-      setPanelSessionReady(false);
-    }
-  }, [bootstrapPanelSession, shouldMountIframe]);
 
   if (loading) {
     return (
@@ -190,13 +185,20 @@ const CPA = () => {
         )}
       </div>
 
-      {shouldMountIframe && panelSessionReady ? (
-        <div className='cpa-panel-container'>
-          <iframe
-            src='/api/cpa/panel'
-            className='cpa-panel-iframe'
-            title='CPA Management Panel'
-          />
+      {isRunning ? (
+        <div className='cpa-panel-launch'>
+          <p className='cpa-panel-launch-hint'>
+            CPA 正在运行，点击下方按钮进入管理中心（将在当前窗口打开）。
+          </p>
+          <button
+            onClick={openPanel}
+            disabled={actionInFlight}
+            className='cpa-btn cpa-btn-open-panel'
+            type='button'
+          >
+            <ExternalLink size={16} />
+            打开管理面板
+          </button>
         </div>
       ) : (
         <div className='cpa-placeholder'>

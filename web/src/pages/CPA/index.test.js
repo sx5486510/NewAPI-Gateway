@@ -68,7 +68,7 @@ describe('CPA', () => {
     expect(startBtn.disabled).toBe(false);
   });
 
-  it('displays running state with iframe', async () => {
+  it('displays running state with a launch button', async () => {
     API.get.mockResolvedValue({
       data: {
         success: true,
@@ -93,7 +93,11 @@ describe('CPA', () => {
     expect(container.textContent).toContain('运行中');
     expect(container.textContent).not.toContain('http://127.0.0.1:29000');
     expect(container.textContent).toContain('v7.2.80');
-    expect(container.querySelector('iframe[title="CPA Management Panel"]')).not.toBeNull();
+    expect(container.querySelector('iframe')).toBeNull();
+
+    const openBtn = container.querySelector('.cpa-btn-open-panel');
+    expect(openBtn).not.toBeNull();
+    expect(openBtn.textContent).toContain('打开管理面板');
   });
 
   it('displays starting state with spinner', async () => {
@@ -264,9 +268,13 @@ describe('CPA', () => {
     expect(API.get).toHaveBeenCalledTimes(callCountBeforeUnmount);
   });
 
-  it('bootstraps panel session when iframe mounts', async () => {
+  it('bootstraps panel session and navigates when opening the panel', async () => {
     const removeItemSpy = jest.spyOn(Storage.prototype, 'removeItem');
     const setItemSpy = jest.spyOn(Storage.prototype, 'setItem');
+    const assignSpy = jest.fn();
+    const originalLocation = window.location;
+    delete window.location;
+    window.location = { origin: 'http://localhost', assign: assignSpy };
 
     API.get.mockResolvedValue({
       data: {
@@ -281,6 +289,14 @@ describe('CPA', () => {
 
     await act(async () => {
       await Promise.resolve();
+    });
+
+    // Nothing should be seeded until the user clicks.
+    expect(setItemSpy).not.toHaveBeenCalledWith('managementKey', 'gateway-managed');
+
+    const openBtn = container.querySelector('.cpa-btn-open-panel');
+    await act(async () => {
+      openBtn.click();
     });
 
     expect(removeItemSpy).toHaveBeenCalledWith('cli-proxy-auth');
@@ -289,22 +305,23 @@ describe('CPA', () => {
     expect(setItemSpy).toHaveBeenCalledWith('isLoggedIn', 'true');
     expect(setItemSpy).toHaveBeenCalledWith('apiBase', expect.any(String));
     expect(setItemSpy).not.toHaveBeenCalledWith('apiEndpoint', expect.any(String));
+    expect(assignSpy).toHaveBeenCalledWith('/api/cpa/panel');
 
     removeItemSpy.mockRestore();
     setItemSpy.mockRestore();
+    window.location = originalLocation;
   });
 
-  it('bootstraps panel session before iframe is mounted', async () => {
+  it('seeds the session before navigating away', async () => {
     const originalSetItem = Storage.prototype.setItem;
-    let iframeWasMountedBeforeBootstrap = false;
-    const setItemSpy = jest
-      .spyOn(Storage.prototype, 'setItem')
-      .mockImplementation(function setItem(key, value) {
-        if (key === 'apiBase') {
-          iframeWasMountedBeforeBootstrap = container.querySelector('iframe[title="CPA Management Panel"]') !== null;
-        }
-        return originalSetItem.call(this, key, value);
-      });
+    const originalLocation = window.location;
+    let sessionSeededBeforeNavigation = false;
+    const assignSpy = jest.fn(() => {
+      sessionSeededBeforeNavigation =
+        window.localStorage.getItem('managementKey') === 'gateway-managed';
+    });
+    delete window.location;
+    window.location = { origin: 'http://localhost', assign: assignSpy };
 
     API.get.mockResolvedValue({
       data: {
@@ -321,11 +338,16 @@ describe('CPA', () => {
       await Promise.resolve();
     });
 
-    expect(setItemSpy).toHaveBeenCalledWith('apiBase', expect.any(String));
-    expect(iframeWasMountedBeforeBootstrap).toBe(false);
-    expect(container.querySelector('iframe[title="CPA Management Panel"]')).not.toBeNull();
+    const openBtn = container.querySelector('.cpa-btn-open-panel');
+    await act(async () => {
+      openBtn.click();
+    });
 
-    setItemSpy.mockRestore();
+    expect(assignSpy).toHaveBeenCalledWith('/api/cpa/panel');
+    expect(sessionSeededBeforeNavigation).toBe(true);
+
+    Storage.prototype.setItem = originalSetItem;
+    window.location = originalLocation;
   });
 
   it('does not start another poll while a status request is in flight', async () => {
@@ -353,7 +375,7 @@ describe('CPA', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector('iframe[title="CPA Management Panel"]')).not.toBeNull();
+    expect(container.querySelector('.cpa-btn-open-panel')).not.toBeNull();
   });
 
   it('ignores stale status responses', async () => {
@@ -409,7 +431,7 @@ describe('CPA', () => {
     });
 
     expect(container.textContent).toContain('运行中');
-    expect(container.querySelector('iframe[title="CPA Management Panel"]')).not.toBeNull();
+    expect(container.querySelector('.cpa-btn-open-panel')).not.toBeNull();
   });
 
   it('disables all actions during in-flight operation', async () => {
