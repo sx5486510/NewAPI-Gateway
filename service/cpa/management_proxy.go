@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -112,6 +114,12 @@ func (p *ManagementProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer lease.Release()
 
+	if handled := p.rejectDuplicateAuthFileUpload(w, r, lease); handled {
+		p.auditf("management proxy: user=%q method=%s path=%s status=%d duration=%v",
+			username, r.Method, normalizePath(r.URL.Path), http.StatusConflict, time.Since(start))
+		return
+	}
+
 	// Create per-request reverse proxy
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
@@ -156,6 +164,25 @@ func (p *ManagementProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(wrapped, r)
 	p.auditf("management proxy: user=%q method=%s path=%s status=%d duration=%v",
 		username, r.Method, normalizePath(r.URL.Path), wrapped.status(), time.Since(start))
+}
+
+func (p *ManagementProxy) rejectDuplicateAuthFileUpload(w http.ResponseWriter, r *http.Request, lease *ManagementLease) bool {
+	if !isAuthFileUpload(r) {
+		return false
+	}
+
+	fileName, ok, err := uploadedAuthFileName(r)
+	if err != nil || !ok || fileName == "" {
+		return false
+	}
+
+	exists, err := p.authFileExists(r.Context(), lease, fileName)
+	if err != nil || !exists {
+		return false
+	}
+
+	writeJSONError(w, http.StatusConflict, "auth_file_exists", fmt.Sprintf("认证文件已存在: %s", fileName))
+	return true
 }
 
 // managementAuditWriter records the final status while preserving common writer capabilities.
@@ -203,6 +230,82 @@ func (w *managementAuditWriter) status() int {
 		return w.statusCode
 	}
 	return http.StatusOK
+}
+
+func isAuthFileUpload(r *http.Request) bool {
+	return r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/auth-files")
+}
+
+func uploadedAuthFileName(r *http.Request) (string, bool, error) {
+	mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || !strings.HasPrefix(mediaType, "multipart/") {
+		return "", false, err
+	}
+	boundary := params["boundary"]
+	if boundary == "" {
+		return "", false, nil
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return "", false, err
+	}
+	_ = r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
+
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			return "", false, nil
+		}
+		if err != nil {
+			return "", false, err
+		}
+		if part.FormName() == "file" && part.FileName() != "" {
+			_ = part.Close()
+			return part.FileName(), true, nil
+		}
+		_ = part.Close()
+	}
+}
+
+func (p *ManagementProxy) authFileExists(ctx context.Context, lease *ManagementLease, name string) (bool, error) {
+	target := *lease.Target
+	target.Path = "/v0/management/auth-files"
+	target.RawQuery = ""
+	target.Fragment = ""
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+lease.Password)
+
+	resp, err := p.transport.RoundTrip(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if !isSuccess(resp.StatusCode) {
+		return false, fmt.Errorf("auth files list returned %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		Files []struct {
+			Name string `json:"name"`
+		} `json:"files"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+		return false, err
+	}
+	for _, file := range payload.Files {
+		if file.Name == name {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // sanitizeHeaders removes sensitive browser headers and hop-by-hop headers

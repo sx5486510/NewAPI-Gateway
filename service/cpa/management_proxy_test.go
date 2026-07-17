@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -103,6 +104,95 @@ func TestManagementProxySanitizesAndForwards(t *testing.T) {
 	}
 	if !provider.released.Load() {
 		t.Fatal("lease not released after response")
+	}
+}
+
+func TestManagementProxyRejectsDuplicateAuthFileUpload(t *testing.T) {
+	var postCalls atomic.Int32
+	var listCalls atomic.Int32
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v0/management/auth-files":
+			listCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"files":[{"name":"duplicate.json"}]}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v0/management/auth-files":
+			postCalls.Add(1)
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"success":true}`)
+		default:
+			t.Fatalf("unexpected upstream request %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	provider := &fakeLeaseProvider{
+		target:   upstreamURL,
+		password: "runtime-secret",
+	}
+	persistCalls := &atomic.Int32{}
+	syncCalls := &atomic.Int32{}
+	proxy := NewManagementProxy(provider, &mockSnapshotStore{
+		persistFunc: func() error {
+			persistCalls.Add(1)
+			return nil
+		},
+	}, func() {
+		syncCalls.Add(1)
+	})
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "duplicate.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte(`{"type":"codex"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/auth-files", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body=%s", rec.Code, rec.Body.String())
+	}
+	if listCalls.Load() != 1 {
+		t.Fatalf("list calls = %d, want 1", listCalls.Load())
+	}
+	if postCalls.Load() != 0 {
+		t.Fatalf("post calls = %d, want 0", postCalls.Load())
+	}
+	if persistCalls.Load() != 0 {
+		t.Fatalf("persist calls = %d, want 0", persistCalls.Load())
+	}
+	if syncCalls.Load() != 0 {
+		t.Fatalf("sync calls = %d, want 0", syncCalls.Load())
+	}
+
+	var payload struct {
+		Success bool   `json:"success"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Success {
+		t.Fatal("success should be false")
+	}
+	if payload.Code != "auth_file_exists" {
+		t.Fatalf("code = %q, want auth_file_exists", payload.Code)
+	}
+	if !strings.Contains(payload.Message, "duplicate.json") {
+		t.Fatalf("message %q should include file name", payload.Message)
 	}
 }
 
