@@ -108,6 +108,62 @@ func TestManagementProxySanitizesAndForwards(t *testing.T) {
 	}
 }
 
+func TestManagementProxyAPICallForwardsWithoutPersisting(t *testing.T) {
+	var capturedBody string
+	var capturedAuthorization string
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v0/management/api-call" {
+			t.Fatalf("unexpected upstream request %s %s", r.Method, r.URL.String())
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		capturedBody = string(body)
+		capturedAuthorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.Header().Set("X-CPA-Request", "quota")
+		w.WriteHeader(http.StatusMultiStatus)
+		_, _ = io.WriteString(w, `{"status_code":403,"body":{"error":"denied"}}`)
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	provider := &fakeLeaseProvider{target: upstreamURL, password: "runtime-secret"}
+	persistCalls := &atomic.Int32{}
+	syncCalls := &atomic.Int32{}
+	proxy := NewManagementProxy(provider, &mockSnapshotStore{persistFunc: func() error {
+		persistCalls.Add(1)
+		return nil
+	}}, func() { syncCalls.Add(1) })
+
+	payload := `{"authIndex":"7","method":"GET","url":"https://example.test/usage"}`
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/api-call", strings.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer browser-placeholder")
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if capturedBody != payload {
+		t.Fatalf("body = %q, want %q", capturedBody, payload)
+	}
+	if capturedAuthorization != "Bearer runtime-secret" {
+		t.Fatalf("authorization = %q", capturedAuthorization)
+	}
+	if rec.Code != http.StatusMultiStatus {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMultiStatus)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/problem+json" {
+		t.Fatalf("content type = %q", got)
+	}
+	if rec.Header().Get("X-CPA-Request") != "quota" {
+		t.Fatal("missing upstream response header")
+	}
+	if persistCalls.Load() != 0 || syncCalls.Load() != 0 {
+		t.Fatalf("persist=%d sync=%d, want zero", persistCalls.Load(), syncCalls.Load())
+	}
+}
+
 func TestManagementProxyRejectsDuplicateAuthFileUpload(t *testing.T) {
 	var postCalls atomic.Int32
 	var listCalls atomic.Int32
