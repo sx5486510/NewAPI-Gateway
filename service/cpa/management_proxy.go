@@ -1,6 +1,7 @@
 package cpa
 
 import (
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"context"
@@ -13,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"path"
 	"strings"
 	"time"
 
@@ -114,9 +116,13 @@ func (p *ManagementProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer lease.Release()
 
-	if handled := p.rejectDuplicateAuthFileUpload(w, r, lease); handled {
+	wrapped := &managementAuditWriter{
+		ResponseWriter: w,
+	}
+
+	if handled := p.handleAuthFileUpload(wrapped, r, lease); handled {
 		p.auditf("management proxy: user=%q method=%s path=%s status=%d duration=%v",
-			username, r.Method, normalizePath(r.URL.Path), http.StatusConflict, time.Since(start))
+			username, r.Method, normalizePath(r.URL.Path), wrapped.status(), time.Since(start))
 		return
 	}
 
@@ -157,32 +163,85 @@ func (p *ManagementProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	wrapped := &managementAuditWriter{
-		ResponseWriter: w,
-	}
-
 	proxy.ServeHTTP(wrapped, r)
 	p.auditf("management proxy: user=%q method=%s path=%s status=%d duration=%v",
 		username, r.Method, normalizePath(r.URL.Path), wrapped.status(), time.Since(start))
 }
 
-func (p *ManagementProxy) rejectDuplicateAuthFileUpload(w http.ResponseWriter, r *http.Request, lease *ManagementLease) bool {
+func (p *ManagementProxy) handleAuthFileUpload(w http.ResponseWriter, r *http.Request, lease *ManagementLease) bool {
 	if !isAuthFileUpload(r) {
 		return false
 	}
 
-	fileName, ok, err := uploadedAuthFileName(r)
-	if err != nil || !ok || fileName == "" {
+	files, ok, err := uploadedAuthFiles(r)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_auth_file_upload", err.Error())
+		return true
+	}
+	if !ok || len(files) == 0 {
 		return false
 	}
 
-	exists, err := p.authFileExists(r.Context(), lease, fileName)
-	if err != nil || !exists {
-		return false
+	existing, err := p.authFileNames(r.Context(), lease)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, "auth_file_list_failed", "failed to check existing auth files")
+		return true
 	}
 
-	writeJSONError(w, http.StatusConflict, "auth_file_exists", fmt.Sprintf("认证文件已存在: %s", fileName))
+	seen := make(map[string]bool, len(existing)+len(files))
+	for name := range existing {
+		seen[name] = true
+	}
+
+	var duplicates []string
+	var uploadQueue []authUploadFile
+	for _, file := range files {
+		if file.Name == "" {
+			continue
+		}
+		if seen[file.Name] {
+			duplicates = append(duplicates, file.Name)
+			continue
+		}
+		seen[file.Name] = true
+		uploadQueue = append(uploadQueue, file)
+	}
+
+	if len(uploadQueue) == 0 {
+		if len(files) == 1 && len(duplicates) == 1 {
+			writeJSONError(w, http.StatusConflict, "auth_file_exists", fmt.Sprintf("认证文件已存在: %s", duplicates[0]))
+			return true
+		}
+		writeAuthUploadSummary(w, http.StatusOK, false, nil, duplicates)
+		return true
+	}
+
+	uploaded := make([]string, 0, len(uploadQueue))
+	for _, file := range uploadQueue {
+		if err := p.uploadAuthFile(r.Context(), lease, file); err != nil {
+			writeJSONError(w, http.StatusBadGateway, "auth_file_upload_failed", err.Error())
+			return true
+		}
+		uploaded = append(uploaded, file.Name)
+	}
+
+	if p.store != nil {
+		if err := p.store.PersistRuntime(); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "persistence_failed", "CPA applied the change but durable snapshot persistence failed")
+			return true
+		}
+	}
+	if p.scheduleSync != nil {
+		p.scheduleSync()
+	}
+
+	writeAuthUploadSummary(w, http.StatusOK, true, uploaded, duplicates)
 	return true
+}
+
+type authUploadFile struct {
+	Name string
+	Body []byte
 }
 
 // managementAuditWriter records the final status while preserving common writer capabilities.
@@ -271,6 +330,58 @@ func uploadedAuthFileName(r *http.Request) (string, bool, error) {
 	}
 }
 
+func uploadedAuthFiles(r *http.Request) ([]authUploadFile, bool, error) {
+	mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || !strings.HasPrefix(mediaType, "multipart/") {
+		return nil, false, nil
+	}
+	boundary := params["boundary"]
+	if boundary == "" {
+		return nil, false, nil
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, false, err
+	}
+	_ = r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
+
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	var files []authUploadFile
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			return files, len(files) > 0, nil
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		if part.FormName() != "file" || part.FileName() == "" {
+			_ = part.Close()
+			continue
+		}
+
+		partBody, err := io.ReadAll(part)
+		_ = part.Close()
+		if err != nil {
+			return nil, false, err
+		}
+
+		if isZipUpload(part.FileName()) {
+			zipFiles, err := authFilesFromZip(part.FileName(), partBody)
+			if err != nil {
+				return nil, false, err
+			}
+			files = append(files, zipFiles...)
+			continue
+		}
+
+		files = append(files, authUploadFile{Name: part.FileName(), Body: partBody})
+	}
+}
+
 func (p *ManagementProxy) authFileExists(ctx context.Context, lease *ManagementLease, name string) (bool, error) {
 	target := *lease.Target
 	target.Path = "/v0/management/auth-files"
@@ -306,6 +417,136 @@ func (p *ManagementProxy) authFileExists(ctx context.Context, lease *ManagementL
 		}
 	}
 	return false, nil
+}
+
+func (p *ManagementProxy) authFileNames(ctx context.Context, lease *ManagementLease) (map[string]struct{}, error) {
+	target := *lease.Target
+	target.Path = "/v0/management/auth-files"
+	target.RawQuery = ""
+	target.Fragment = ""
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+lease.Password)
+
+	resp, err := p.transport.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if !isSuccess(resp.StatusCode) {
+		return nil, fmt.Errorf("auth files list returned %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		Files []struct {
+			Name string `json:"name"`
+		} `json:"files"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+		return nil, err
+	}
+
+	names := make(map[string]struct{}, len(payload.Files))
+	for _, file := range payload.Files {
+		if file.Name != "" {
+			names[file.Name] = struct{}{}
+		}
+	}
+	return names, nil
+}
+
+func authFilesFromZip(filename string, body []byte) ([]authUploadFile, error) {
+	reader, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return nil, fmt.Errorf("invalid zip %s: %w", filename, err)
+	}
+
+	var files []authUploadFile
+	for _, entry := range reader.File {
+		if entry.FileInfo().IsDir() {
+			continue
+		}
+		name := path.Base(entry.Name)
+		if name == "." || name == "/" || name == "" || !strings.EqualFold(path.Ext(name), ".json") {
+			continue
+		}
+
+		rc, err := entry.Open()
+		if err != nil {
+			return nil, fmt.Errorf("read zip entry %s: %w", entry.Name, err)
+		}
+		entryBody, readErr := io.ReadAll(rc)
+		closeErr := rc.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("read zip entry %s: %w", entry.Name, readErr)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("close zip entry %s: %w", entry.Name, closeErr)
+		}
+
+		files = append(files, authUploadFile{Name: name, Body: entryBody})
+	}
+	return files, nil
+}
+
+func isZipUpload(filename string) bool {
+	return strings.EqualFold(path.Ext(filename), ".zip")
+}
+
+func (p *ManagementProxy) uploadAuthFile(ctx context.Context, lease *ManagementLease, file authUploadFile) error {
+	target := *lease.Target
+	target.Path = "/v0/management/auth-files"
+	target.RawQuery = ""
+	target.Fragment = ""
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", file.Name)
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(file.Body); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), &body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+lease.Password)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := p.transport.RoundTrip(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if !isSuccess(resp.StatusCode) {
+		responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if len(responseBody) > 0 {
+			return fmt.Errorf("upload %s returned %d: %s", file.Name, resp.StatusCode, strings.TrimSpace(string(responseBody)))
+		}
+		return fmt.Errorf("upload %s returned %d", file.Name, resp.StatusCode)
+	}
+	return nil
+}
+
+func writeAuthUploadSummary(w http.ResponseWriter, status int, success bool, uploaded, duplicates []string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":         success,
+		"uploaded":        uploaded,
+		"duplicates":      duplicates,
+		"uploaded_count":  len(uploaded),
+		"duplicate_count": len(duplicates),
+	})
 }
 
 // sanitizeHeaders removes sensitive browser headers and hop-by-hop headers

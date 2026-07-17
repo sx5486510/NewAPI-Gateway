@@ -1,6 +1,7 @@
 package cpa
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -194,6 +195,210 @@ func TestManagementProxyRejectsDuplicateAuthFileUpload(t *testing.T) {
 	if !strings.Contains(payload.Message, "duplicate.json") {
 		t.Fatalf("message %q should include file name", payload.Message)
 	}
+}
+
+func TestManagementProxyAuthFileMultiUploadSkipsDuplicatesAndContinues(t *testing.T) {
+	var forwardedNames []string
+	var listCalls atomic.Int32
+	var postCalls atomic.Int32
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v0/management/auth-files":
+			listCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"files":[{"name":"duplicate.json"}]}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v0/management/auth-files":
+			postCalls.Add(1)
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Fatalf("parse forwarded multipart: %v", err)
+			}
+			for _, header := range r.MultipartForm.File["file"] {
+				forwardedNames = append(forwardedNames, header.Filename)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"success":true}`)
+		default:
+			t.Fatalf("unexpected upstream request %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	provider := &fakeLeaseProvider{
+		target:   upstreamURL,
+		password: "runtime-secret",
+	}
+	persistCalls := &atomic.Int32{}
+	syncCalls := &atomic.Int32{}
+	proxy := NewManagementProxy(provider, &mockSnapshotStore{
+		persistFunc: func() error {
+			persistCalls.Add(1)
+			return nil
+		},
+	}, func() {
+		syncCalls.Add(1)
+	})
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for _, file := range []struct {
+		name string
+		body string
+	}{
+		{"new-a.json", `{"type":"codex","email":"a@example.com"}`},
+		{"duplicate.json", `{"type":"codex","email":"dup@example.com"}`},
+		{"new-b.json", `{"type":"claude","email":"b@example.com"}`},
+	} {
+		part, err := writer.CreateFormFile("file", file.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write([]byte(file.body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/auth-files", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if listCalls.Load() != 1 {
+		t.Fatalf("list calls = %d, want 1", listCalls.Load())
+	}
+	if postCalls.Load() != 2 {
+		t.Fatalf("post calls = %d, want 2", postCalls.Load())
+	}
+	if got, want := strings.Join(forwardedNames, ","), "new-a.json,new-b.json"; got != want {
+		t.Fatalf("forwarded names = %s, want %s", got, want)
+	}
+	if persistCalls.Load() != 1 {
+		t.Fatalf("persist calls = %d, want 1", persistCalls.Load())
+	}
+	if syncCalls.Load() != 1 {
+		t.Fatalf("sync calls = %d, want 1", syncCalls.Load())
+	}
+
+	var payload struct {
+		Success    bool     `json:"success"`
+		Uploaded   []string `json:"uploaded"`
+		Duplicates []string `json:"duplicates"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Success {
+		t.Fatal("success should be true")
+	}
+	if got, want := strings.Join(payload.Uploaded, ","), "new-a.json,new-b.json"; got != want {
+		t.Fatalf("uploaded = %s, want %s", got, want)
+	}
+	if got, want := strings.Join(payload.Duplicates, ","), "duplicate.json"; got != want {
+		t.Fatalf("duplicates = %s, want %s", got, want)
+	}
+}
+
+func TestManagementProxyAuthFileZipUploadExpandsArchiveAndSkipsDuplicates(t *testing.T) {
+	var forwardedNames []string
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v0/management/auth-files":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"files":[{"name":"duplicate.json"}]}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v0/management/auth-files":
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Fatalf("parse forwarded multipart: %v", err)
+			}
+			for _, header := range r.MultipartForm.File["file"] {
+				forwardedNames = append(forwardedNames, header.Filename)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"success":true}`)
+		default:
+			t.Fatalf("unexpected upstream request %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	provider := &fakeLeaseProvider{
+		target:   upstreamURL,
+		password: "runtime-secret",
+	}
+	proxy := NewManagementProxy(provider, &mockSnapshotStore{}, func() {})
+
+	zipBytes := buildAuthFilesZip(t, map[string]string{
+		"nested/new-from-zip.json": `{"type":"codex","email":"zip@example.com"}`,
+		"duplicate.json":           `{"type":"codex","email":"dup@example.com"}`,
+		"notes.txt":                "ignore me",
+	})
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "bundle.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(zipBytes); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/auth-files", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if got, want := strings.Join(forwardedNames, ","), "new-from-zip.json"; got != want {
+		t.Fatalf("forwarded names = %s, want %s", got, want)
+	}
+
+	var payload struct {
+		Uploaded   []string `json:"uploaded"`
+		Duplicates []string `json:"duplicates"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(payload.Uploaded, ","), "new-from-zip.json"; got != want {
+		t.Fatalf("uploaded = %s, want %s", got, want)
+	}
+	if got, want := strings.Join(payload.Duplicates, ","), "duplicate.json"; got != want {
+		t.Fatalf("duplicates = %s, want %s", got, want)
+	}
+}
+
+func buildAuthFilesZip(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	zipWriter := zip.NewWriter(&buf)
+	for name, body := range files {
+		entry, err := zipWriter.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zipWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }
 
 func TestManagementProxyPreservesBusinessErrorsAndDownloads(t *testing.T) {

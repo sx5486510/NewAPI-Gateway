@@ -12,7 +12,7 @@ const CPAAuthFiles = () => {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
-  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadFiles, setUploadFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [editNote, setEditNote] = useState('');
   const [editPriority, setEditPriority] = useState('');
@@ -50,18 +50,24 @@ const CPAAuthFiles = () => {
       return;
     }
 
-    if (!uploadFile) {
+    if (uploadFiles.length === 0) {
       showError('请选择文件');
       return;
     }
 
-    if (authFiles.some((file) => file.name === uploadFile.name)) {
-      showError(`认证文件已存在: ${uploadFile.name}`);
+    const existingNames = new Set(authFiles.map((file) => file.name));
+    const duplicateFiles = uploadFiles.filter((file) => existingNames.has(file.name));
+    if (duplicateFiles.length > 0) {
+      showError(`认证文件已存在: ${duplicateFiles.map((file) => file.name).join(', ')}`);
+    }
+
+    const filesToUpload = uploadFiles.filter((file) => !existingNames.has(file.name));
+    if (filesToUpload.length === 0) {
       return;
     }
 
     const formData = new FormData();
-    formData.append('file', uploadFile);
+    filesToUpload.forEach((file) => formData.append('file', file));
 
     uploadInFlightRef.current = true;
     setUploading(true);
@@ -73,9 +79,13 @@ const CPAAuthFiles = () => {
         showError('上传失败: ' + (res.data.message || '请求失败'));
         return;
       }
-      showSuccess('认证文件上传成功');
+      if (Array.isArray(res.data?.duplicates) && res.data.duplicates.length > 0) {
+        showError(`认证文件已存在: ${res.data.duplicates.join(', ')}`);
+      }
+      const uploadedCount = Array.isArray(res.data?.uploaded) ? res.data.uploaded.length : filesToUpload.length;
+      showSuccess(uploadedCount > 1 ? `认证文件上传成功: ${uploadedCount}` : '认证文件上传成功');
       setUploadModalOpen(false);
-      setUploadFile(null);
+      setUploadFiles([]);
       await fetchAuthFiles(false);
     } catch (error) {
       showError('上传失败: ' + (error.response?.data?.message || error.message));
@@ -343,7 +353,7 @@ const CPAAuthFiles = () => {
         isOpen={uploadModalOpen}
         onClose={() => {
           setUploadModalOpen(false);
-          setUploadFile(null);
+          setUploadFiles([]);
         }}
         title="上传认证文件"
       >
@@ -361,8 +371,9 @@ const CPAAuthFiles = () => {
           </label>
           <input
             type="file"
-            accept=".json"
-            onChange={(e) => setUploadFile(e.target.files[0])}
+            accept=".json,.zip,application/json,application/zip"
+            multiple
+            onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
             disabled={uploading}
             style={{
               padding: '0.5rem',
@@ -381,14 +392,14 @@ const CPAAuthFiles = () => {
             onClick={() => {
               if (uploading) return;
               setUploadModalOpen(false);
-              setUploadFile(null);
+              setUploadFiles([]);
             }}
             variant="outline"
             disabled={uploading}
           >
             取消
           </Button>
-          <Button onClick={handleUpload} variant="primary" disabled={!uploadFile || uploading} loading={uploading}>
+          <Button onClick={handleUpload} variant="primary" disabled={uploadFiles.length === 0 || uploading} loading={uploading}>
             上传
           </Button>
         </div>

@@ -205,7 +205,54 @@ describe('CPAAuthFiles', () => {
     });
 
     expect(helpers.API.post).not.toHaveBeenCalled();
-    expect(helpers.showError).toHaveBeenCalledWith('认证文件已存在: claude@example.com.json');
+    expect(helpers.showError.mock.calls[0][0]).toContain('claude@example.com.json');
+  });
+
+  test('uploads non-duplicate files and warns about duplicate selections', async () => {
+    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    helpers.API.post.mockResolvedValueOnce({
+      data: {
+        success: true,
+        uploaded: ['new-auth.json'],
+        duplicates: ['claude@example.com.json'],
+      },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    const openUploadButton = container.querySelectorAll('button')[1];
+
+    await act(async () => {
+      openUploadButton.click();
+    });
+
+    const fileInput = container.querySelector('input[type="file"]');
+    const duplicateFile = new File(['{"type":"claude"}'], 'claude@example.com.json', { type: 'application/json' });
+    const newFile = new File(['{"type":"codex"}'], 'new-auth.json', { type: 'application/json' });
+
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        value: [duplicateFile, newFile],
+        configurable: true,
+      });
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    const submitUploadButton = Array.from(container.querySelectorAll('button')).pop();
+
+    await act(async () => {
+      submitUploadButton.click();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    expect(helpers.showError.mock.calls[0][0]).toContain('claude@example.com.json');
+    expect(helpers.API.post).toHaveBeenCalledTimes(1);
+
+    const formData = helpers.API.post.mock.calls[0][1];
+    expect(formData.getAll('file').map((file) => file.name)).toEqual(['new-auth.json']);
   });
 
   test('toggles file status', async () => {
