@@ -4,6 +4,7 @@ import Loading from './components/Loading';
 import User from './pages/User';
 import { PrivateRoute } from './components/PrivateRoute';
 import { AdminRoute } from './components/AdminRoute';
+import { RootRoute } from './components/RootRoute';
 import RegisterForm from './components/RegisterForm';
 import LoginForm from './components/LoginForm';
 import NotFound from './pages/NotFound';
@@ -28,6 +29,7 @@ const LLMTrace = lazy(() => import('./pages/LLMTrace'));
 const RawErrorView = lazy(() => import('./pages/Log/RawErrorView'));
 const About = lazy(() => import('./pages/About'));
 const SystemPrompt = lazy(() => import('./pages/SystemPrompt'));
+const CPA = lazy(() => import('./pages/CPA'));
 
 // Layout wrapper for authenticated routes
 const AppLayout = () => {
@@ -125,6 +127,7 @@ function App() {
         <Route path='/log' element={<Log />} />
         <Route path='/llm-trace' element={<LLMTrace />} />
         <Route path='/system-prompts' element={<AdminRoute><SystemPrompt /></AdminRoute>} />
+        <Route path='/cpa' element={<RootRoute><CPA /></RootRoute>} />
         <Route path='/user' element={<User />} />
         <Route path='/user/edit/:id' element={<EditUser />} />
         <Route path='/user/edit' element={<EditUser />} />

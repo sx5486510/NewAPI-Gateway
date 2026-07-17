@@ -18,6 +18,7 @@
 | 接入调用 API | [ARCHITECTURE.md](./ARCHITECTURE.md) -> [API_REFERENCE.md](./API_REFERENCE.md) -> [FAQ.md](./FAQ.md) |
 | 日常运维值守 | [OPERATIONS.md](./OPERATIONS.md) -> [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) -> [FAQ.md](./FAQ.md) |
 | 二次开发 | [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) -> [DEVELOPMENT.md](./DEVELOPMENT.md) -> [API_REFERENCE.md](./API_REFERENCE.md) |
+| 继续内置 CPA 完整管理开发 | [CPA_EMBEDDED_DEVELOPMENT_HANDBOOK.md](./CPA_EMBEDDED_DEVELOPMENT_HANDBOOK.md) -> [设计](./superpowers/specs/2026-07-16-embedded-cpa-full-management-design.md) -> [计划](./superpowers/plans/2026-07-16-embedded-cpa-full-management.md) |
 
 ## 完整文档清单
 
@@ -35,6 +36,7 @@
 | 研发 | [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) | 目录结构与职责边界 |
 | 研发 | [DEVELOPMENT.md](./DEVELOPMENT.md) | 本地开发、调试、贡献流程 |
 | 研发 | [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) | 核心表结构与数据流 |
+| 研发 | [CPA_EMBEDDED_DEVELOPMENT_HANDBOOK.md](./CPA_EMBEDDED_DEVELOPMENT_HANDBOOK.md) | 内置 CPA 完整管理的进度、固定契约、剩余任务和 Opus 交接提示 |
 | 专题 | [model-alias-manual-mapping.md](./model-alias-manual-mapping.md) | 供应商模型别名手动映射 |
 | 专题 | [FAQ.md](./FAQ.md) | 高频问题与排障捷径 |
 | 合规 | [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) | 第三方许可声明 |
@@ -49,6 +51,7 @@
 | 数据表/字段语义变更 | [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md), [ARCHITECTURE.md](./ARCHITECTURE.md) |
 | 新增模块或目录调整 | [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md), [DEVELOPMENT.md](./DEVELOPMENT.md) |
 | 供应商模型映射策略变更 | [model-alias-manual-mapping.md](./model-alias-manual-mapping.md), [ARCHITECTURE.md](./ARCHITECTURE.md) |
+| 内置 CPA 管理实现进度、固定契约或验证方式变更 | [CPA_EMBEDDED_DEVELOPMENT_HANDBOOK.md](./CPA_EMBEDDED_DEVELOPMENT_HANDBOOK.md), [设计](./superpowers/specs/2026-07-16-embedded-cpa-full-management-design.md), [计划](./superpowers/plans/2026-07-16-embedded-cpa-full-management.md) |
 
 ## 文档维护约定
 

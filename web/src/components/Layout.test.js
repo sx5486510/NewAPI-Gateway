@@ -48,4 +48,22 @@ describe('Layout admin navigation', () => {
 
     expect(container.querySelector('a[href="/system-prompts"]')).not.toBeNull();
   });
+
+  it('hides CPA from admin users', async () => {
+    await renderLayout(root, 10);
+
+    expect(container.querySelector('a[href="/cpa"]')).toBeNull();
+  });
+
+  it('shows CPA only to root users', async () => {
+    await renderLayout(root, 100);
+
+    expect(container.querySelector('a[href="/cpa"]')).not.toBeNull();
+  });
+
+  it('hides CPA from ordinary users', async () => {
+    await renderLayout(root, 1);
+
+    expect(container.querySelector('a[href="/cpa"]')).toBeNull();
+  });
 });

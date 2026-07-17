@@ -17,7 +17,8 @@ import {
     Menu,
     X,
     Sun,
-    Moon
+    Moon,
+    Cpu
 } from 'lucide-react';
 
 const Layout = ({ children }) => {
@@ -28,6 +29,7 @@ const Layout = ({ children }) => {
     const roleName = getRoleName(userState.user?.role);
 
     const isAdmin = userState.user && userState.user.role >= 10;
+    const isRoot = userState.user && userState.user.role === 100;
 
     const navItems = [
         { name: '仪表盘', path: '/', icon: LayoutDashboard, admin: true },
@@ -38,6 +40,7 @@ const Layout = ({ children }) => {
         { name: '日志', path: '/log', icon: FileText, admin: true },
         { name: '审计', path: '/llm-trace', icon: ClipboardList, admin: true },
         { name: '用户', path: '/user', icon: Users, admin: true },
+        { name: 'CPA', path: '/cpa', icon: Cpu, root: true },
         { name: '设置', path: '/setting', icon: Settings },
     ];
 
@@ -51,7 +54,11 @@ const Layout = ({ children }) => {
         themeDispatch({ type: 'toggle' });
     };
 
-    const visibleNavItems = navItems.filter((item) => !(item.admin && !isAdmin));
+    const visibleNavItems = navItems.filter((item) => {
+        if (item.root) return isRoot;
+        if (item.admin) return isAdmin;
+        return true;
+    });
 
     const isPathActive = (path) => {
         if (path === '/') {

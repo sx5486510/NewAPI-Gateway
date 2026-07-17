@@ -7,12 +7,25 @@ import (
 	"testing"
 
 	"NewAPI-Gateway/common"
+	"NewAPI-Gateway/model"
 
+	"github.com/glebarez/sqlite"
 	cpaconfig "github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
+	"gorm.io/gorm"
 )
 
 // seedOptionMap sets up the in-memory OptionMap with CPA defaults for tests.
 func seedOptionMap(enabled bool, apiKeysJSON, authDir, port string) {
+	if model.DB == nil {
+		db, err := gorm.Open(sqlite.Open("file:cpa-options?mode=memory&cache=shared"), &gorm.Config{})
+		if err != nil {
+			panic(err)
+		}
+		if err := db.AutoMigrate(&model.Option{}); err != nil {
+			panic(err)
+		}
+		model.DB = db
+	}
 	common.OptionMapRWMutex.Lock()
 	if common.OptionMap == nil {
 		common.OptionMap = make(map[string]string)
@@ -21,10 +34,26 @@ func seedOptionMap(enabled bool, apiKeysJSON, authDir, port string) {
 	common.OptionMap["CPAAPIKeys"] = apiKeysJSON
 	common.OptionMap["CPAAuthDir"] = authDir
 	common.OptionMap["CPAPort"] = port
+	common.OptionMap["CPAConfigYAML"] = ""
 	common.OptionMapRWMutex.Unlock()
 }
 
+func useTempWorkingDir(t *testing.T) string {
+	t.Helper()
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := t.TempDir()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+	return tmp
+}
+
 func TestLoadCPAConfigFromDB(t *testing.T) {
+	useTempWorkingDir(t)
 	seedOptionMap(true, `["key-a","key-b"]`, "/tmp/auth", "29001")
 
 	cfg, err := LoadCPAConfigFromDB()
@@ -46,6 +75,7 @@ func TestLoadCPAConfigFromDB(t *testing.T) {
 }
 
 func TestLoadCPAConfigDefaults(t *testing.T) {
+	useTempWorkingDir(t)
 	// Empty/invalid values should fall back to sensible defaults.
 	seedOptionMap(false, "", "", "not-a-number")
 
@@ -69,12 +99,7 @@ func TestLoadCPAConfigDefaults(t *testing.T) {
 
 func TestMaterializeCPAConfigFromDB(t *testing.T) {
 	// Run in a temp working dir so the .smoke output doesn't pollute the repo.
-	origWd, _ := os.Getwd()
-	tmp := t.TempDir()
-	if err := os.Chdir(tmp); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origWd) })
+	tmp := useTempWorkingDir(t)
 
 	seedOptionMap(true, `["mat-key"]`, filepath.Join(tmp, "auth"), "29002")
 
