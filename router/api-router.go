@@ -59,13 +59,18 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/test-proxy", controller.TestProxy)
 		}
 
-		// === Embedded CPA Config (Root only — contains api-keys) ===
+		// === Embedded CPA Management (Root only) ===
 		cpaRoute := apiRouter.Group("/cpa")
 		cpaRoute.Use(middleware.RootAuth(), middleware.NoTokenAuth())
 		{
+			cpaRoute.GET("/status", controller.GetCPAStatus)
+			cpaRoute.POST("/start", middleware.SameOrigin(), controller.StartCPA)
+			cpaRoute.POST("/stop", middleware.SameOrigin(), controller.StopCPA)
+			cpaRoute.POST("/restart", middleware.SameOrigin(), controller.RestartCPA)
+			cpaRoute.GET("/panel", controller.ServeCPAPanel)
 			cpaRoute.GET("/config", controller.GetCPAConfig)
-			cpaRoute.PUT("/config", controller.UpdateCPAConfig)
-			cpaRoute.POST("/reload", controller.ReloadCPA)
+			cpaRoute.PUT("/config", middleware.SameOrigin(), controller.UpdateCPAConfig)
+			cpaRoute.POST("/reload", middleware.SameOrigin(), controller.ReloadCPA)
 		}
 
 		// === Provider Management (Admin) ===
@@ -146,4 +151,17 @@ func SetApiRouter(router *gin.Engine) {
 		// === Dashboard (Admin) ===
 		apiRouter.GET("/dashboard", middleware.AdminAuth(), controller.GetDashboard)
 	}
+
+	// === CPA Management API (Root only, outside /api prefix) ===
+	management := router.Group("/v0/management")
+	management.Use(middleware.RootAuth(), middleware.NoTokenAuth(), middleware.SameOrigin())
+	{
+		management.Any("", controller.ProxyCPAManagement)
+		management.Any("/*path", controller.ProxyCPAManagement)
+	}
+
+	// === OAuth Callbacks (public, no auth) ===
+	router.GET("/anthropic/callback", controller.RelayCPAOAuthCallback)
+	router.GET("/codex/callback", controller.RelayCPAOAuthCallback)
+	router.GET("/antigravity/callback", controller.RelayCPAOAuthCallback)
 }

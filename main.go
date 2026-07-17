@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -63,15 +64,21 @@ func main() {
 	service.StartCronJobs()
 	defer service.StopCronJobs()
 
-	// Start the embedded CLIProxyAPI (CPA) proxy from DB-managed config.
-	// Config lives in the option table (managed via the admin UI); on startup we
-	// materialize it to a config.yaml and, when CPAEnabled=true, launch CPA on
-	// loopback and auto-register it as a key_only upstream provider.
-	// Failure only warns and never blocks the gateway.
-	if err := cpa.StartFromDB(service.CPAProviderRegistrationCallback()); err != nil {
+	// Initialize CPA coordinator and runtime
+	coordinator := service.NewCPAProviderCoordinator(service.SyncProvider)
+	defer coordinator.Close()
+
+	cpaRuntime, err := cpa.NewRuntime("cpa", coordinator)
+	if err != nil {
+		common.FatalLog("failed to initialize CPA runtime: " + err.Error())
+	}
+	cpa.SetDefaultRuntime(cpaRuntime)
+
+	// Start CPA from DB if enabled
+	if err := cpaRuntime.Manager.StartFromDB(context.Background()); err != nil {
 		common.SysLog("embedded CPA startup failed: " + err.Error())
 	}
-	defer cpa.Stop()
+	defer cpaRuntime.Manager.Shutdown(context.Background())
 
 	// Initialize HTTP server
 	server := gin.Default()
