@@ -71,7 +71,7 @@ func NewRuntime(runtimeDir string, coordinator coordinatorHooks) (*Runtime, erro
 		Manager: manager,
 		Proxy:   proxy,
 		OAuth:   oauth,
-		Panel:   http.NotFoundHandler(), // Task 8 will replace with verified panel
+		Panel:   NewPanelHandler(),
 	}, nil
 }
 
