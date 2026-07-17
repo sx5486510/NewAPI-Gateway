@@ -42,7 +42,70 @@ const CPAAuthFiles = () => {
     setRefreshing(true);
     await fetchAuthFiles(false);
     setRefreshing(false);
-    showSuccess('刷新成功');
+    showSuccess('列表已刷新');
+  };
+
+  const handleRefreshQuota = async (file) => {
+    // 根据不同的供应商调用不同的配额 API
+    const provider = file.provider?.toLowerCase() || '';
+    const type = file.type?.toLowerCase() || '';
+
+    let apiConfig = null;
+
+    if (provider.includes('claude') || type.includes('claude')) {
+      apiConfig = {
+        method: 'GET',
+        url: 'https://api.anthropic.com/v1/organization/usage',
+        header: {
+          'x-api-key': '$TOKEN$',
+          'anthropic-version': '2023-06-01'
+        }
+      };
+    } else if (provider.includes('codex') || type.includes('codex')) {
+      // Codex 实际请求
+      apiConfig = {
+        method: 'GET',
+        url: 'https://chatgpt.com/backend-api/wham/usage',
+        header: {
+          'Authorization': 'Bearer $TOKEN$',
+          'Content-Type': 'application/json',
+          'User-Agent': 'codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal'
+        }
+      };
+    } else if (provider.includes('grok') || provider.includes('xai') || type.includes('grok') || type.includes('xai')) {
+      // Grok 实际请求
+      apiConfig = {
+        method: 'GET',
+        url: 'https://cli-chat-proxy.grok.com/v1/billing',
+        header: {
+          'Authorization': 'Bearer $TOKEN$',
+          'x-xai-token-auth': 'xai-grok-cli',
+          'x-grok-client-version': '0.2.91',
+          'accept': '*/*',
+          'user-agent': 'grok-pager/0.2.91 grok-shell/0.2.91 (macos; aarch64)'
+        }
+      };
+    } else {
+      showError('不支持的供应商类型');
+      return;
+    }
+
+    try {
+      const res = await API.post('/v0/management/api-call', {
+        authIndex: file.auth_index,
+        ...apiConfig
+      });
+
+      if (res.data?.status_code === 200) {
+        showSuccess('配额刷新成功');
+        // 刷新列表以获取最新配额信息
+        await fetchAuthFiles(false);
+      } else {
+        showError(`配额刷新失败: HTTP ${res.data?.status_code}`);
+      }
+    } catch (error) {
+      showError('配额刷新失败: ' + (error.response?.data?.message || error.message));
+    }
   };
 
   const handleUpload = async () => {
@@ -202,6 +265,76 @@ const CPAAuthFiles = () => {
     return groups;
   };
 
+  // 渲染配额信息
+  const renderQuotaInfo = (file) => {
+    // 从 CPA 返回的数据中提取配额信息
+    const quota = file.quota || {};
+
+    if (quota.exceeded) {
+      const reason = quota.reason || '配额已超限';
+      const nextRecover = quota.next_recover_at ? new Date(quota.next_recover_at) : null;
+      const recoverText = nextRecover && !isNaN(nextRecover.getTime())
+        ? `恢复时间: ${nextRecover.toLocaleString('zh-CN')}`
+        : '';
+
+      return (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          padding: '0.5rem 0.75rem',
+          backgroundColor: '#FEF2F2',
+          borderRadius: '0.375rem',
+          fontSize: '0.875rem'
+        }}>
+          <AlertCircle size={16} style={{ color: '#DC2626', flexShrink: 0 }} />
+          <div style={{ color: '#991B1B' }}>
+            <div style={{ fontWeight: 500 }}>{reason}</div>
+            {recoverText && (
+              <div style={{ fontSize: '0.75rem', marginTop: '0.125rem', opacity: 0.8 }}>
+                {recoverText}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // 显示账号类型特定的限额信息（如果有）
+    const accountType = file.account_type?.toLowerCase();
+    if (accountType === 'codex' && file.id_token) {
+      const limits = file.id_token.limits || {};
+      const hasLimits = limits.monthly_limit || limits.daily_limit || limits.hourly_limit;
+
+      if (hasLimits) {
+        return (
+          <div style={{
+            fontSize: '0.875rem',
+            color: 'var(--text-secondary)',
+            padding: '0.5rem 0.75rem',
+            backgroundColor: 'var(--bg-secondary)',
+            borderRadius: '0.375rem'
+          }}>
+            {limits.monthly_limit && <div>月限额: {limits.monthly_limit}</div>}
+            {limits.daily_limit && <div>日限额: {limits.daily_limit}</div>}
+            {limits.hourly_limit && <div>时限额: {limits.hourly_limit}</div>}
+          </div>
+        );
+      }
+    }
+
+    // 其他类型暂无配额信息显示
+    return (
+      <div style={{
+        fontSize: '0.875rem',
+        color: 'var(--text-tertiary)',
+        fontStyle: 'italic'
+      }}>
+        正常
+      </div>
+    );
+  };
+
   const typeLabels = {
     claude: { name: 'Claude', color: '#C4612F' },
     codex: { name: 'Codex', color: '#10B981' },
@@ -231,216 +364,167 @@ const CPAAuthFiles = () => {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <Button onClick={handleRefresh} size="sm" variant="outline" disabled={refreshing}>
-              <RefreshCw size={14} style={{ marginRight: '0.25rem' }} />
-              刷新
+            <Button
+              variant="outline"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              <RefreshCw size={16} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
+              刷新列表
             </Button>
-            <Button onClick={() => setUploadModalOpen(true)} size="sm" variant="primary">
-              <Upload size={14} style={{ marginRight: '0.25rem' }} />
-              上传
+            <Button onClick={() => setUploadModalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Upload size={16} />
+              上传认证文件
             </Button>
           </div>
         </div>
 
         {authFiles.length === 0 ? (
-          <div
-            style={{
-              padding: '3rem 1rem',
-              textAlign: 'center',
-              color: 'var(--text-secondary)',
-              border: '1px dashed var(--border-color)',
-              borderRadius: 'var(--radius-md)',
-            }}
-          >
-            <AlertCircle size={32} style={{ margin: '0 auto 0.75rem', opacity: 0.5 }} />
+          <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-secondary)' }}>
             <p>暂无认证文件</p>
-            <p style={{ fontSize: '0.875rem', marginTop: '0.5rem' }}>
-              点击上方"上传"按钮导入认证凭证
-            </p>
+            <Button onClick={() => setUploadModalOpen(true)} style={{ marginTop: '1rem' }}>
+              上传认证文件
+            </Button>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {Object.entries(groupedFiles).map(([groupKey, files]) => {
+            {Object.entries(typeLabels).map(([key, { name, color }]) => {
+              const files = groupedFiles[key];
               if (files.length === 0) return null;
-              const groupInfo = typeLabels[groupKey];
 
               return (
-                <div key={groupKey}>
-                  {/* 分组标题 */}
+                <div key={key}>
+                  {/* 类型标题栏 */}
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.5rem',
+                    gap: '0.75rem',
                     marginBottom: '0.75rem',
                     paddingBottom: '0.5rem',
-                    borderBottom: `2px solid ${groupInfo.color}`
+                    borderBottom: `2px solid ${color}`
                   }}>
-                    <div style={{
-                      fontSize: '0.95rem',
-                      fontWeight: '600',
-                      color: groupInfo.color
-                    }}>
-                      {groupInfo.name}
-                    </div>
-                    <div style={{
+                    <h4 style={{ fontSize: '1rem', fontWeight: 'bold', color, margin: 0 }}>
+                      {name}
+                    </h4>
+                    <span style={{
                       fontSize: '0.75rem',
-                      padding: '0.15rem 0.5rem',
-                      borderRadius: '999px',
-                      backgroundColor: `${groupInfo.color}20`,
-                      color: groupInfo.color
+                      fontWeight: 'bold',
+                      color: 'white',
+                      backgroundColor: color,
+                      padding: '0.125rem 0.5rem',
+                      borderRadius: '999px'
                     }}>
-                      {files.length} 个
-                    </div>
+                      {files.length}
+                    </span>
                   </div>
 
-                  {/* 该组文件列表 */}
+                  {/* 文件列表 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     {files.map((file) => (
                       <div
                         key={file.name}
                         style={{
                           display: 'flex',
+                          justifyContent: 'space-between',
                           alignItems: 'center',
-                          padding: '0.75rem 1rem',
+                          padding: '1rem',
                           border: '1px solid var(--border-color)',
-                          borderRadius: 'var(--radius-md)',
-                          backgroundColor: file.disabled ? 'var(--bg-secondary)' : 'var(--bg-primary)',
-                          opacity: file.disabled ? 0.6 : 1,
+                          borderRadius: '0.5rem',
                           transition: 'all 0.2s',
+                          cursor: 'default'
                         }}
                         onMouseEnter={(e) => {
-                          if (!file.disabled) {
-                            e.currentTarget.style.borderColor = groupInfo.color;
-                            e.currentTarget.style.backgroundColor = `${groupInfo.color}05`;
-                          }
+                          e.currentTarget.style.borderColor = color;
+                          e.currentTarget.style.backgroundColor = `${color}08`;
                         }}
                         onMouseLeave={(e) => {
                           e.currentTarget.style.borderColor = 'var(--border-color)';
-                          e.currentTarget.style.backgroundColor = file.disabled ? 'var(--bg-secondary)' : 'var(--bg-primary)';
+                          e.currentTarget.style.backgroundColor = 'transparent';
                         }}
                       >
                         {/* 左侧：文件信息 */}
-                        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                          <div style={{ flex: '0 0 auto', minWidth: '200px', maxWidth: '300px' }}>
-                            <div style={{
-                              fontWeight: '500',
-                              fontSize: '0.875rem',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              color: 'var(--text-primary)'
-                            }}>
-                              {file.name}
-                            </div>
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{file.name}</span>
+                            {file.email && (
+                              <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                                {file.email}
+                              </span>
+                            )}
+                            {file.note && (
+                              <span style={{
+                                fontSize: '0.875rem',
+                                color: 'var(--text-secondary)',
+                                fontStyle: 'italic'
+                              }}>
+                                {file.note}
+                              </span>
+                            )}
                           </div>
 
-                          {file.email && (
-                            <div style={{
-                              flex: '0 0 auto',
-                              fontSize: '0.8rem',
-                              color: 'var(--text-secondary)',
-                              minWidth: '150px'
-                            }}>
-                              {file.email}
-                            </div>
-                          )}
-
-                          {file.note && (
-                            <div style={{
-                              flex: '1 1 auto',
-                              fontSize: '0.8rem',
-                              color: 'var(--text-secondary)',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
-                            }}>
-                              {file.note}
-                            </div>
-                          )}
+                          {/* 配额信息 */}
+                          {renderQuotaInfo(file)}
                         </div>
 
                         {/* 右侧：状态和操作按钮 */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
-                          <div
-                            style={{
-                              fontSize: '0.7rem',
-                              padding: '0.2rem 0.6rem',
-                              borderRadius: '999px',
-                              backgroundColor: file.disabled ? 'var(--border-color)' : 'rgba(16, 185, 129, 0.15)',
-                              color: file.disabled ? 'var(--text-secondary)' : 'rgb(16, 185, 129)',
-                              fontWeight: '500',
-                              whiteSpace: 'nowrap'
-                            }}
-                          >
-                            {file.disabled ? '已禁用' : '启用中'}
-                          </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: '1rem' }}>
+                          {/* 状态徽章 */}
+                          <span style={{
+                            padding: '0.25rem 0.75rem',
+                            borderRadius: '999px',
+                            fontSize: '0.75rem',
+                            fontWeight: 500,
+                            backgroundColor: file.disabled ? '#FEE2E2' : '#DCFCE7',
+                            color: file.disabled ? '#991B1B' : '#166534',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {file.disabled ? '已禁用' : '已启用'}
+                          </span>
 
-                          <div style={{ display: 'flex', gap: '0.35rem' }}>
-                            <button
+                          {/* 操作按钮 */}
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRefreshQuota(file)}
+                              title="刷新配额"
+                            >
+                              <RefreshCw size={16} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => handleToggleStatus(file)}
-                              style={{
-                                fontSize: '0.75rem',
-                                padding: '0.35rem 0.6rem',
-                                border: '1px solid var(--border-color)',
-                                borderRadius: 'var(--radius-sm)',
-                                backgroundColor: 'transparent',
-                                cursor: 'pointer',
-                                color: 'var(--text-primary)',
-                                whiteSpace: 'nowrap'
-                              }}
-                              type="button"
                               title={file.disabled ? '启用' : '禁用'}
                             >
                               {file.disabled ? '启用' : '禁用'}
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => handleOpenEdit(file)}
-                              style={{
-                                fontSize: '0.75rem',
-                                padding: '0.35rem 0.6rem',
-                                border: '1px solid var(--border-color)',
-                                borderRadius: 'var(--radius-sm)',
-                                backgroundColor: 'transparent',
-                                cursor: 'pointer',
-                                color: 'var(--text-primary)',
-                              }}
-                              type="button"
                               title="编辑"
                             >
-                              <Edit size={14} />
-                            </button>
-                            <button
+                              <Edit size={16} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => handleDownload(file.name)}
-                              style={{
-                                fontSize: '0.75rem',
-                                padding: '0.35rem 0.6rem',
-                                border: '1px solid var(--border-color)',
-                                borderRadius: 'var(--radius-sm)',
-                                backgroundColor: 'transparent',
-                                cursor: 'pointer',
-                                color: 'var(--text-primary)',
-                              }}
-                              type="button"
                               title="下载"
                             >
-                              <Download size={14} />
-                            </button>
-                            <button
+                              <Download size={16} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => handleDelete(file.name)}
-                              style={{
-                                fontSize: '0.75rem',
-                                padding: '0.35rem 0.6rem',
-                                border: '1px solid var(--border-color)',
-                                borderRadius: 'var(--radius-sm)',
-                                backgroundColor: 'transparent',
-                                cursor: 'pointer',
-                                color: 'rgb(239, 68, 68)',
-                              }}
-                              type="button"
                               title="删除"
+                              style={{ color: '#DC2626' }}
                             >
-                              <Trash2 size={14} />
-                            </button>
+                              <Trash2 size={16} />
+                            </Button>
                           </div>
                         </div>
                       </div>
@@ -453,18 +537,7 @@ const CPAAuthFiles = () => {
         )}
       </Card>
 
-      {/* 使用提示区 */}
-      <Card padding="1.5rem" style={{ backgroundColor: 'var(--bg-secondary)' }}>
-        <h4 style={{ fontSize: '0.95rem', fontWeight: 'bold', marginBottom: '0.75rem' }}>使用提示</h4>
-        <ul style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.6, paddingLeft: '1.25rem' }}>
-          <li>认证文件存储在 CPA 的 auth-dir 目录中</li>
-          <li>支持 Claude CLI、Codex、Grok 等多种认证类型，按类型自动分组展示</li>
-          <li>禁用文件后不会删除,仅暂停使用该凭证</li>
-          <li>优先级(priority)用于控制多个同类型凭证的使用顺序,数值越高优先级越高</li>
-        </ul>
-      </Card>
-
-      {/* 上传弹窗 */}
+      {/* 上传认证文件 Modal */}
       <Modal
         isOpen={uploadModalOpen}
         onClose={() => {
@@ -473,55 +546,56 @@ const CPAAuthFiles = () => {
         }}
         title="上传认证文件"
       >
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '0.875rem',
-              color: 'var(--text-secondary)',
-              marginBottom: '0.5rem',
-              fontWeight: '500',
-            }}
-          >
-            选择文件
-          </label>
-          <input
-            type="file"
-            accept=".json,.zip,application/json,application/zip"
-            multiple
-            onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
-            disabled={uploading}
-            style={{
-              padding: '0.5rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-color)',
-              width: '100%',
-              fontSize: '0.875rem',
-            }}
-          />
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-            支持 .json 格式的认证文件
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-          <Button
-            onClick={() => {
-              if (uploading) return;
-              setUploadModalOpen(false);
-              setUploadFiles([]);
-            }}
-            variant="outline"
-            disabled={uploading}
-          >
-            取消
-          </Button>
-          <Button onClick={handleUpload} variant="primary" disabled={uploadFiles.length === 0 || uploading} loading={uploading}>
-            上传
-          </Button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div>
+            <input
+              type="file"
+              multiple
+              accept=".json"
+              onChange={(e) => setUploadFiles(Array.from(e.target.files))}
+              style={{ width: '100%' }}
+            />
+            <p style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+              支持同时上传多个 JSON 文件
+            </p>
+          </div>
+
+          {uploadFiles.length > 0 && (
+            <div style={{
+              padding: '0.75rem',
+              backgroundColor: 'var(--bg-secondary)',
+              borderRadius: '0.375rem',
+              fontSize: '0.875rem'
+            }}>
+              <p style={{ fontWeight: 500, marginBottom: '0.5rem' }}>
+                已选择 {uploadFiles.length} 个文件:
+              </p>
+              <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+                {uploadFiles.map((file, idx) => (
+                  <li key={idx}>{file.name}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setUploadModalOpen(false);
+                setUploadFiles([]);
+              }}
+            >
+              取消
+            </Button>
+            <Button onClick={handleUpload} disabled={uploading || uploadFiles.length === 0}>
+              {uploading ? '上传中...' : '确认上传'}
+            </Button>
+          </div>
         </div>
       </Modal>
 
-      {/* 编辑弹窗 */}
+      {/* 编辑认证文件 Modal */}
       <Modal
         isOpen={editModalOpen}
         onClose={() => {
@@ -530,99 +604,86 @@ const CPAAuthFiles = () => {
         }}
         title="编辑认证文件"
       >
-        <div style={{ marginBottom: '1rem' }}>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '0.875rem',
-              color: 'var(--text-secondary)',
-              marginBottom: '0.5rem',
-              fontWeight: '500',
-            }}
-          >
-            文件名
-          </label>
-          <input
-            type="text"
-            value={selectedFile?.name || ''}
-            disabled
-            style={{
-              padding: '0.5rem 0.75rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-color)',
-              width: '100%',
-              fontSize: '0.875rem',
-              backgroundColor: 'var(--bg-secondary)',
-            }}
-          />
-        </div>
-        <div style={{ marginBottom: '1rem' }}>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '0.875rem',
-              color: 'var(--text-secondary)',
-              marginBottom: '0.5rem',
-              fontWeight: '500',
-            }}
-          >
-            备注 (可选)
-          </label>
-          <input
-            type="text"
-            value={editNote}
-            onChange={(e) => setEditNote(e.target.value)}
-            placeholder="添加备注信息"
-            style={{
-              padding: '0.5rem 0.75rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-color)',
-              width: '100%',
-              fontSize: '0.875rem',
-            }}
-          />
-        </div>
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '0.875rem',
-              color: 'var(--text-secondary)',
-              marginBottom: '0.5rem',
-              fontWeight: '500',
-            }}
-          >
-            优先级 (可选)
-          </label>
-          <input
-            type="number"
-            value={editPriority}
-            onChange={(e) => setEditPriority(e.target.value)}
-            placeholder="数值越高优先级越高"
-            style={{
-              padding: '0.5rem 0.75rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-color)',
-              width: '100%',
-              fontSize: '0.875rem',
-            }}
-          />
-        </div>
-        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-          <Button
-            onClick={() => {
-              setEditModalOpen(false);
-              setSelectedFile(null);
-            }}
-            variant="outline"
-          >
-            取消
-          </Button>
-          <Button onClick={handleSaveEdit} variant="primary">
-            保存
-          </Button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
+              文件名
+            </label>
+            <input
+              type="text"
+              value={selectedFile?.name || ''}
+              disabled
+              style={{
+                width: '100%',
+                padding: '0.5rem',
+                border: '1px solid var(--border-color)',
+                borderRadius: '0.375rem',
+                backgroundColor: 'var(--bg-secondary)',
+                cursor: 'not-allowed'
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
+              备注
+            </label>
+            <textarea
+              value={editNote}
+              onChange={(e) => setEditNote(e.target.value)}
+              placeholder="可选"
+              rows={3}
+              style={{
+                width: '100%',
+                padding: '0.5rem',
+                border: '1px solid var(--border-color)',
+                borderRadius: '0.375rem',
+                resize: 'vertical'
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
+              优先级
+            </label>
+            <input
+              type="number"
+              value={editPriority}
+              onChange={(e) => setEditPriority(e.target.value)}
+              placeholder="可选，数字越大优先级越高"
+              style={{
+                width: '100%',
+                padding: '0.5rem',
+                border: '1px solid var(--border-color)',
+                borderRadius: '0.375rem'
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditModalOpen(false);
+                setSelectedFile(null);
+              }}
+            >
+              取消
+            </Button>
+            <Button onClick={handleSaveEdit}>
+              保存
+            </Button>
+          </div>
         </div>
       </Modal>
+
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };

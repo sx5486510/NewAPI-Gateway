@@ -126,6 +126,13 @@ func (p *ManagementProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle auth file quota refresh
+	if handled := p.handleAuthFileQuota(wrapped, r, lease); handled {
+		p.auditf("management proxy: user=%q method=%s path=%s status=%d duration=%v",
+			username, r.Method, normalizePath(r.URL.Path), wrapped.status(), time.Since(start))
+		return
+	}
+
 	// Create per-request reverse proxy
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
@@ -237,6 +244,105 @@ func (p *ManagementProxy) handleAuthFileUpload(w http.ResponseWriter, r *http.Re
 
 	writeAuthUploadSummary(w, http.StatusOK, true, uploaded, duplicates)
 	return true
+}
+
+// handleAuthFileQuota handles POST /v0/management/api-call proxy
+// This is a transparent proxy to CPA's generic API call endpoint
+func (p *ManagementProxy) handleAuthFileQuota(w http.ResponseWriter, r *http.Request, lease *ManagementLease) bool {
+	// Only handle POST /v0/management/api-call
+	if r.Method != http.MethodPost {
+		return false
+	}
+
+	path := normalizePath(r.URL.Path)
+	if path != "/v0/management/api-call" {
+		return false
+	}
+
+	// Read request body
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // 1MB limit
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "body_read_failed", "Failed to read request body")
+		return true
+	}
+	defer r.Body.Close()
+
+	// Forward to CPA's /v0/management/api-call endpoint
+	target := *lease.Target
+	target.Path = "/v0/management/api-call"
+	target.RawQuery = ""
+	target.Fragment = ""
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target.String(), bytes.NewReader(bodyBytes))
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "request_creation_failed", err.Error())
+		return true
+	}
+
+	// Copy headers and inject auth
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+lease.Password)
+
+	resp, err := p.transport.RoundTrip(req)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, "upstream_request_failed", err.Error())
+		return true
+	}
+	defer resp.Body.Close()
+
+	// Copy response status and headers
+	w.Header().Set("Content-Type", "application/json")
+	for key, values := range resp.Header {
+		if key == "Content-Length" || key == "Transfer-Encoding" {
+			continue
+		}
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+
+	// Stream response body
+	io.Copy(w, resp.Body)
+	return true
+}
+
+// authFileNameOnly is the type returned by listAuthFiles
+type authFileNameOnly struct {
+	Name string `json:"name"`
+}
+
+// listAuthFiles returns all auth files from CPA
+func (p *ManagementProxy) listAuthFiles(ctx context.Context, lease *ManagementLease) ([]authFileNameOnly, error) {
+	target := *lease.Target
+	target.Path = "/v0/management/auth-files"
+	target.RawQuery = ""
+	target.Fragment = ""
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+lease.Password)
+
+	resp, err := p.transport.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if !isSuccess(resp.StatusCode) {
+		return nil, fmt.Errorf("auth files list returned %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		Files []authFileNameOnly `json:"files"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+		return nil, err
+	}
+
+	return payload.Files, nil
 }
 
 type authUploadFile struct {
