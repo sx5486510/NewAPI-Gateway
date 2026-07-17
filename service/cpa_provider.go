@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,9 +17,9 @@ import (
 const EmbeddedCPAProviderName = "__embedded_cpa__"
 
 // CPAProviderRegistrationCallback returns an onReady callback (baseURL, apiKey)
-// suitable for cpa.StartFromDB / cpa.Reload. It runs RegisterEmbeddedCPAProvider
-// and logs any error. This adapter lets the cpa package trigger provider
-// registration without importing the service package (avoiding an import cycle).
+// suitable for cpa.StartFromDB / cpa.Reload. This is a legacy compatibility
+// adapter for the old synchronous registration path. New code should use
+// CPAProviderCoordinator directly.
 func CPAProviderRegistrationCallback() func(baseURL, apiKey string) {
 	return func(baseURL, apiKey string) {
 		if err := RegisterEmbeddedCPAProvider(baseURL, apiKey); err != nil {
@@ -27,12 +28,9 @@ func CPAProviderRegistrationCallback() func(baseURL, apiKey string) {
 	}
 }
 
-// RegisterEmbeddedCPAProvider ensures a key_only provider pointing at the
-// embedded CPA loopback endpoint exists, then waits for CPA to become ready and
-// syncs its model list so routes are built.
-//
-// It is safe to call on every startup. baseURL is e.g. "http://127.0.0.1:18317"
-// and apiKey is the CPA client key used to authenticate to that instance.
+// RegisterEmbeddedCPAProvider is a legacy synchronous registration function
+// that upserts the provider, waits for CPA readiness, and syncs. New code
+// should use CPAProviderCoordinator for lifecycle-aware, debounced sync.
 func RegisterEmbeddedCPAProvider(baseURL string, apiKey string) error {
 	baseURL = strings.TrimSpace(baseURL)
 	apiKey = strings.TrimSpace(apiKey)
@@ -48,8 +46,10 @@ func RegisterEmbeddedCPAProvider(baseURL string, apiKey string) error {
 		return err
 	}
 
-	// CPA starts asynchronously; wait until its HTTP API answers before syncing,
-	// otherwise fetching /v1/models fails.
+	// Mark runtime available for legacy path
+	common.SetProviderRuntimeAvailable(provider.Id, true)
+
+	// Legacy: wait for CPA ready before sync
 	if !waitForCPAReady(baseURL, 30*time.Second) {
 		return fmt.Errorf("cpa: embedded instance at %s not ready within timeout", baseURL)
 	}
@@ -61,8 +61,114 @@ func RegisterEmbeddedCPAProvider(baseURL string, apiKey string) error {
 	return nil
 }
 
+// CPAProviderCoordinator manages the lifecycle-aware synchronization of the
+// embedded CPA provider. It debounces sync requests within 750ms and ensures
+// the provider's runtime availability matches CPA's actual running state.
+type CPAProviderCoordinator struct {
+	mu           sync.Mutex
+	providerID   int
+	timer        *time.Timer
+	debounce     time.Duration
+	syncProvider func(*model.Provider) error
+	closed       bool
+}
+
+// NewCPAProviderCoordinator creates a coordinator with the given sync function.
+// The sync function should call SyncProvider or equivalent.
+func NewCPAProviderCoordinator(syncFn func(*model.Provider) error) *CPAProviderCoordinator {
+	return &CPAProviderCoordinator{
+		debounce:     750 * time.Millisecond,
+		syncProvider: syncFn,
+	}
+}
+
+// OnCPAReady is called when CPA becomes running and ready. It upserts the
+// provider connection details, marks it runtime-available, and performs one
+// immediate sync.
+func (c *CPAProviderCoordinator) OnCPAReady(baseURL, apiKey string) {
+	provider, err := upsertEmbeddedCPAProvider(baseURL, apiKey)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("embedded CPA provider upsert failed: %v", err))
+		return
+	}
+
+	c.mu.Lock()
+	c.providerID = provider.Id
+	c.mu.Unlock()
+
+	// Mark runtime available before sync
+	common.SetProviderRuntimeAvailable(provider.Id, true)
+
+	// Immediate sync on ready
+	if err := c.syncProvider(provider); err != nil {
+		common.SysLog(fmt.Sprintf("embedded CPA provider sync failed: %v", err))
+	} else {
+		common.SysLog(fmt.Sprintf("embedded CPA provider %q ready and synced (id=%d)", EmbeddedCPAProviderName, provider.Id))
+	}
+}
+
+// OnCPAUnavailable is called when CPA stops. It marks the provider runtime-
+// unavailable and cancels any pending sync timer.
+func (c *CPAProviderCoordinator) OnCPAUnavailable() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.timer != nil {
+		c.timer.Stop()
+		c.timer = nil
+	}
+
+	// Mark runtime unavailable
+	if c.providerID != 0 {
+		common.SetProviderRuntimeAvailable(c.providerID, false)
+	} else {
+		// Look up by name if we don't have the ID
+		if provider, err := model.GetProviderByName(EmbeddedCPAProviderName); err == nil && provider != nil {
+			common.SetProviderRuntimeAvailable(provider.Id, false)
+		}
+	}
+}
+
+// ScheduleCPASync requests a provider sync. Multiple calls within 750ms are
+// collapsed into one sync operation.
+func (c *CPAProviderCoordinator) ScheduleCPASync() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return
+	}
+
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+
+	c.timer = time.AfterFunc(c.debounce, func() {
+		provider, err := model.GetProviderByName(EmbeddedCPAProviderName)
+		if err != nil || provider == nil {
+			return
+		}
+		if err := c.syncProvider(provider); err != nil {
+			common.SysLog(fmt.Sprintf("debounced CPA sync failed: %v", err))
+		}
+	})
+}
+
+// Close stops the coordinator and cancels any pending timer.
+func (c *CPAProviderCoordinator) Close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.closed = true
+	if c.timer != nil {
+		c.timer.Stop()
+		c.timer = nil
+	}
+}
+
 // upsertEmbeddedCPAProvider creates or updates the well-known embedded CPA
-// provider and returns the persisted record.
+// provider and returns the persisted record. It preserves operator-tuned
+// fields like Status, Priority, and Weight.
 func upsertEmbeddedCPAProvider(baseURL string, apiKey string) (*model.Provider, error) {
 	existing, err := model.GetProviderByName(EmbeddedCPAProviderName)
 	if err != nil {
@@ -99,7 +205,7 @@ func upsertEmbeddedCPAProvider(baseURL string, apiKey string) (*model.Provider, 
 }
 
 // waitForCPAReady polls the CPA root endpoint until it responds or the timeout
-// elapses.
+// elapses. Only used by legacy integration paths.
 func waitForCPAReady(baseURL string, timeout time.Duration) bool {
 	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(timeout)

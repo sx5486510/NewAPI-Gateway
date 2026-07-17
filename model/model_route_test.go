@@ -90,6 +90,60 @@ func TestRouteSystemPromptBindingRequiresMatchingExistingPreset(t *testing.T) {
 	}
 }
 
+func TestBuildRouteAttemptsSkipsRuntimeUnavailableProvider(t *testing.T) {
+	setupModelRouteTestDB(t)
+	provider := &Provider{
+		Name:         "embedded-test",
+		BaseURL:      "http://127.0.0.1:29001",
+		ApiKey:       "test-key",
+		ProviderType: ProviderTypeKeyOnly,
+		Status:       common.UserStatusEnabled,
+		Priority:     0,
+		Weight:       10,
+	}
+	if err := DB.Create(provider).Error; err != nil {
+		t.Fatal(err)
+	}
+	token := &ProviderToken{
+		ProviderId: provider.Id,
+		SkKey:      "test-token",
+		Status:     common.UserStatusEnabled,
+	}
+	if err := DB.Create(token).Error; err != nil {
+		t.Fatal(err)
+	}
+	route := &ModelRoute{
+		ModelName:       "fixture-model",
+		ProviderTokenId: token.Id,
+		ProviderId:      provider.Id,
+		Enabled:         true,
+		Priority:        0,
+		Weight:          10,
+	}
+	if err := DB.Create(route).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	common.SetProviderRuntimeAvailable(provider.Id, false)
+	t.Cleanup(func() { common.ClearProviderRuntimeAvailability(provider.Id) })
+
+	if _, err := BuildRouteAttemptsByPriority("fixture-model", ""); err == nil {
+		t.Fatal("expected no route when provider runtime unavailable")
+	}
+
+	common.SetProviderRuntimeAvailable(provider.Id, true)
+	attempts, err := BuildRouteAttemptsByPriority("fixture-model", "")
+	if err != nil {
+		t.Fatalf("build route attempts: %v", err)
+	}
+	if len(attempts) == 0 || len(attempts[0]) == 0 {
+		t.Fatal("expected route attempts after marking available")
+	}
+	if attempts[0][0].Token.Id != token.Id {
+		t.Fatalf("expected token %d, got %d", token.Id, attempts[0][0].Token.Id)
+	}
+}
+
 func TestRouteSystemPromptPatchClearAndOmission(t *testing.T) {
 	setupModelRouteTestDB(t)
 	prompt := SystemPrompt{Name: "preset", ModelName: "gpt-4", Content: "content"}

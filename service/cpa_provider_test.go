@@ -1,8 +1,11 @@
 package service
 
 import (
+	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/model"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -71,5 +74,102 @@ func TestUpsertEmbeddedCPAProviderIdempotent(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected exactly 1 embedded CPA provider, got %d", count)
+	}
+}
+
+func TestCPACoordinatorPreservesDesiredProviderStatusAndDebounces(t *testing.T) {
+	setupCPAProviderTestDB(t)
+
+	// Create a provider with disabled status (operator's desired state)
+	provider := &model.Provider{
+		Name:         EmbeddedCPAProviderName,
+		BaseURL:      "http://127.0.0.1:29005",
+		ApiKey:       "old-key",
+		ProviderType: model.ProviderTypeKeyOnly,
+		Status:       common.UserStatusDisabled,
+		Priority:     0,
+		Weight:       10,
+	}
+	if err := model.DB.Create(provider).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	syncCalls := &atomic.Int32{}
+	coord := NewCPAProviderCoordinator(func(p *model.Provider) error {
+		syncCalls.Add(1)
+		return nil
+	})
+	t.Cleanup(func() { coord.Close() })
+
+	// OnCPAReady should upsert connection details without changing Status
+	coord.OnCPAReady("http://127.0.0.1:29005", "api-key")
+
+	// Refresh provider from DB
+	if err := model.DB.First(provider, provider.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if provider.Status != common.UserStatusDisabled {
+		t.Fatalf("operator status overwritten: got %d", provider.Status)
+	}
+	if !common.IsProviderRuntimeAvailable(provider.Id) {
+		t.Fatal("running CPA not available")
+	}
+
+	// Three rapid sync schedules should debounce to one
+	coord.ScheduleCPASync()
+	coord.ScheduleCPASync()
+	coord.ScheduleCPASync()
+
+	// Wait for debounced sync
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if syncCalls.Load() == 1 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if syncCalls.Load() != 1 {
+		t.Fatalf("expected 1 debounced sync call, got %d", syncCalls.Load())
+	}
+
+	// OnCPAUnavailable should mark runtime unavailable
+	coord.OnCPAUnavailable()
+	if common.IsProviderRuntimeAvailable(provider.Id) {
+		t.Fatal("stopped CPA remained selectable")
+	}
+}
+
+func TestCPACoordinatorCloseStopsTimer(t *testing.T) {
+	setupCPAProviderTestDB(t)
+
+	provider := &model.Provider{
+		Name:         EmbeddedCPAProviderName,
+		BaseURL:      "http://127.0.0.1:29006",
+		ApiKey:       "key",
+		ProviderType: model.ProviderTypeKeyOnly,
+		Status:       common.UserStatusEnabled,
+	}
+	if err := model.DB.Create(provider).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	syncCalls := &atomic.Int32{}
+	coord := NewCPAProviderCoordinator(func(p *model.Provider) error {
+		syncCalls.Add(1)
+		return nil
+	})
+
+	coord.OnCPAReady("http://127.0.0.1:29006", "key")
+	coord.ScheduleCPASync()
+
+	// Close immediately should cancel timer
+	coord.Close()
+
+	// Wait to ensure timer doesn't fire
+	time.Sleep(1 * time.Second)
+
+	// Should have at most 1 sync (the immediate one from OnCPAReady)
+	if syncCalls.Load() > 1 {
+		t.Fatalf("timer fired after Close, got %d sync calls", syncCalls.Load())
 	}
 }
