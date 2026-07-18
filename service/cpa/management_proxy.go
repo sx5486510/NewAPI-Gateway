@@ -291,7 +291,6 @@ func (p *ManagementProxy) handleAuthFileQuota(w http.ResponseWriter, r *http.Req
 	defer resp.Body.Close()
 
 	// Copy response status and headers
-	w.Header().Set("Content-Type", "application/json")
 	for key, values := range resp.Header {
 		if key == "Content-Length" || key == "Transfer-Encoding" {
 			continue
@@ -300,49 +299,14 @@ func (p *ManagementProxy) handleAuthFileQuota(w http.ResponseWriter, r *http.Req
 			w.Header().Add(key, value)
 		}
 	}
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
 	w.WriteHeader(resp.StatusCode)
 
 	// Stream response body
-	io.Copy(w, resp.Body)
+	_, _ = io.Copy(w, resp.Body)
 	return true
-}
-
-// authFileNameOnly is the type returned by listAuthFiles
-type authFileNameOnly struct {
-	Name string `json:"name"`
-}
-
-// listAuthFiles returns all auth files from CPA
-func (p *ManagementProxy) listAuthFiles(ctx context.Context, lease *ManagementLease) ([]authFileNameOnly, error) {
-	target := *lease.Target
-	target.Path = "/v0/management/auth-files"
-	target.RawQuery = ""
-	target.Fragment = ""
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+lease.Password)
-
-	resp, err := p.transport.RoundTrip(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if !isSuccess(resp.StatusCode) {
-		return nil, fmt.Errorf("auth files list returned %d", resp.StatusCode)
-	}
-
-	var payload struct {
-		Files []authFileNameOnly `json:"files"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
-		return nil, err
-	}
-
-	return payload.Files, nil
 }
 
 type authUploadFile struct {
