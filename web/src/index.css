@@ -1486,6 +1486,85 @@ details[open] .trace-collapse-arrow {
   margin: 0;
 }
 
+.cpa-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.cpa-proxy-settings {
+  padding: 1.25rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.cpa-proxy-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.cpa-proxy-header h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.cpa-proxy-header p {
+  margin: 0.35rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.cpa-proxy-spinner {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  animation: spin 1s linear infinite;
+}
+
+.cpa-proxy-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cpa-proxy-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.cpa-proxy-form input {
+  flex: 1 1 320px;
+  min-width: 0;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.875rem;
+}
+
+.cpa-proxy-form input:focus {
+  outline: 2px solid color-mix(in srgb, var(--primary, #3b82f6) 35%, transparent);
+  outline-offset: 1px;
+}
+
+.cpa-proxy-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
 .cpa-btn-open-panel {
   background: var(--primary, #3b82f6);
   color: #fff;
@@ -1570,6 +1649,24 @@ details[open] .trace-collapse-arrow {
   .cpa-panel-launch {
     padding: 2rem 1rem;
     min-height: 200px;
+  }
+
+  .cpa-proxy-form {
+    align-items: stretch;
+  }
+
+  .cpa-proxy-form label,
+  .cpa-proxy-form input {
+    width: 100%;
+  }
+
+  .cpa-proxy-actions {
+    width: 100%;
+  }
+
+  .cpa-proxy-actions .cpa-btn {
+    flex: 1;
+    justify-content: center;
   }
 
   .cpa-placeholder {

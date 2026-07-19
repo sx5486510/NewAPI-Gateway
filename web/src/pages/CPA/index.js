@@ -1,9 +1,133 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { API, showError } from '../../helpers';
+import { API, showError, showSuccess, requireCPASuccess } from '../../helpers';
 import { Play, Square, RotateCw, Loader2, ExternalLink } from 'lucide-react';
 import CPAAuthFiles from '../../components/CPAAuthFiles';
 
 const PANEL_URL = '/api/cpa/panel';
+const CPA_PROXY_URL = '/v0/management/proxy-url';
+
+const validateProxyURL = (value) => {
+  if (!value) {
+    throw new Error('代理地址不能为空；如需移除代理请使用“清除代理”');
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch (error) {
+    throw new Error('代理地址格式无效');
+  }
+
+  if (!['http:', 'https:', 'socks5:', 'socks5h:'].includes(parsed.protocol) || !parsed.hostname) {
+    throw new Error('代理地址必须使用 http、https、socks5 或 socks5h 协议');
+  }
+
+  return value;
+};
+
+const CPAProxySettings = ({ disabled = false }) => {
+  const [proxyURL, setProxyURL] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const fetchProxyURL = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = requireCPASuccess(await API.get(CPA_PROXY_URL));
+      setProxyURL(response?.data?.['proxy-url'] || '');
+    } catch (error) {
+      showError(error.message || '无法读取 CPA 出站代理');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchProxyURL();
+  }, [fetchProxyURL]);
+
+  const handleSave = async () => {
+    let value;
+    try {
+      value = validateProxyURL(proxyURL.trim());
+    } catch (error) {
+      showError(error.message);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      requireCPASuccess(await API.put(CPA_PROXY_URL, { value }));
+      const verifyResponse = requireCPASuccess(await API.get(CPA_PROXY_URL));
+      const activeProxyURL = (verifyResponse?.data?.['proxy-url'] || '').trim();
+      setProxyURL(activeProxyURL);
+      if (activeProxyURL !== value) {
+        throw new Error('CPA 出站代理保存后未生效，请检查运行配置');
+      }
+      showSuccess('CPA 出站代理已保存');
+    } catch (error) {
+      showError(error.message || '保存 CPA 出站代理失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClear = async () => {
+    setSaving(true);
+    try {
+      requireCPASuccess(await API.delete(CPA_PROXY_URL));
+      setProxyURL('');
+      showSuccess('CPA 出站代理已清除');
+    } catch (error) {
+      showError(error.message || '清除 CPA 出站代理失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className='cpa-proxy-settings' aria-labelledby='cpa-proxy-title'>
+      <div className='cpa-proxy-header'>
+        <div>
+          <h2 id='cpa-proxy-title'>CPA 出站代理</h2>
+          <p>配置 CPA 访问上游服务时使用的全局代理。</p>
+        </div>
+        {loading && <Loader2 className='cpa-proxy-spinner' size={18} aria-label='加载中' />}
+      </div>
+      <div className='cpa-proxy-form'>
+        <label htmlFor='cpa-proxy-url'>代理地址</label>
+        <input
+          id='cpa-proxy-url'
+          name='cpa-proxy-url'
+          type='text'
+          value={proxyURL}
+          onChange={event => setProxyURL(event.target.value)}
+          placeholder='http://127.0.0.1:7890'
+          disabled={disabled || loading || saving}
+          autoComplete='off'
+        />
+        <div className='cpa-proxy-actions'>
+          <button
+            type='button'
+            className='cpa-btn cpa-btn-save-proxy'
+            onClick={handleSave}
+            disabled={disabled || loading || saving}
+          >
+            保存代理
+          </button>
+          <button
+            type='button'
+            className='cpa-btn cpa-btn-clear-proxy'
+            onClick={handleClear}
+            disabled={disabled || loading || saving}
+          >
+            清除代理
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+};
 
 const CPA = () => {
   const [status, setStatus] = useState(null);
@@ -209,7 +333,8 @@ const CPA = () => {
           </div>
 
           {activeTab === 'overview' ? (
-            <div className='cpa-panel-launch'>
+            <div className='cpa-overview'>
+              <div className='cpa-panel-launch'>
               <p className='cpa-panel-launch-hint'>
                 CPA 正在运行，点击下方按钮进入完整管理中心（将在当前窗口打开）。
               </p>
@@ -222,6 +347,8 @@ const CPA = () => {
                 <ExternalLink size={16} />
                 打开管理面板
               </button>
+              </div>
+              <CPAProxySettings disabled={actionInFlight} />
             </div>
           ) : (
             <div className='cpa-tab-content'>

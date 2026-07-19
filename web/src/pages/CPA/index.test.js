@@ -1,14 +1,23 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import CPA from './index';
-import { API } from '../../helpers';
+import { API, showError, showSuccess } from '../../helpers';
 
 jest.mock('../../helpers', () => ({
   API: {
     get: jest.fn(),
     post: jest.fn(),
+    put: jest.fn(),
+    delete: jest.fn(),
   },
   showError: jest.fn(),
+  showSuccess: jest.fn(),
+  requireCPASuccess: response => {
+    if (response?.data?.success === false) {
+      throw new Error(response.data.message || 'CPA management request failed');
+    }
+    return response;
+  },
 }));
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
@@ -224,12 +233,6 @@ describe('CPA', () => {
       await Promise.resolve();
     });
 
-    expect(API.get).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      jest.advanceTimersByTime(2000);
-    });
-
     expect(API.get).toHaveBeenCalledTimes(2);
 
     await act(async () => {
@@ -237,6 +240,12 @@ describe('CPA', () => {
     });
 
     expect(API.get).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      jest.advanceTimersByTime(2000);
+    });
+
+    expect(API.get).toHaveBeenCalledTimes(4);
   });
 
   it('cleans up poll timer on unmount', async () => {
@@ -468,5 +477,238 @@ describe('CPA', () => {
     allButtons.forEach(btn => {
       expect(btn.disabled).toBe(true);
     });
+  });
+
+  it('loads the CPA global proxy through the official management endpoint', async () => {
+    API.get.mockImplementation(path => {
+      if (path === '/api/cpa/status') {
+        return Promise.resolve({
+          data: {
+            success: true,
+            data: { state: 'running', ready: true, enabled: true },
+          },
+        });
+      }
+      if (path === '/v0/management/proxy-url') {
+        return Promise.resolve({ data: { 'proxy-url': 'http://127.0.0.1:7890' } });
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+
+    await act(async () => {
+      root.render(<CPA />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(API.get).toHaveBeenCalledWith('/v0/management/proxy-url');
+    expect(container.querySelector('input[name="cpa-proxy-url"]').value).toBe('http://127.0.0.1:7890');
+  });
+
+  it('saves the CPA global proxy using the official value payload', async () => {
+    let proxyReadCount = 0;
+    API.get.mockImplementation(path => {
+      if (path === '/api/cpa/status') {
+        return Promise.resolve({
+          data: {
+            success: true,
+            data: { state: 'running', ready: true, enabled: true },
+          },
+        });
+      }
+      proxyReadCount += 1;
+      return Promise.resolve({
+        data: {
+          'proxy-url': proxyReadCount === 1 ? '' : 'http://127.0.0.1:7890',
+        },
+      });
+    });
+    API.put.mockResolvedValue({ data: { success: true } });
+
+    await act(async () => {
+      root.render(<CPA />);
+      await Promise.resolve();
+    });
+
+    const input = container.querySelector('input[name="cpa-proxy-url"]');
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setValue.call(input, '  http://127.0.0.1:7890  ');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    await act(async () => {
+      container.querySelector('.cpa-btn-save-proxy').click();
+      await Promise.resolve();
+    });
+
+    expect(API.put).toHaveBeenCalledWith('/v0/management/proxy-url', {
+      value: 'http://127.0.0.1:7890',
+    });
+    expect(showSuccess).toHaveBeenCalled();
+  });
+
+  it('does not save an empty proxy value through PUT', async () => {
+    API.get.mockImplementation(path => {
+      if (path === '/api/cpa/status') {
+        return Promise.resolve({
+          data: {
+            success: true,
+            data: { state: 'running', ready: true, enabled: true },
+          },
+        });
+      }
+      return Promise.resolve({ data: { 'proxy-url': '' } });
+    });
+
+    await act(async () => {
+      root.render(<CPA />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      container.querySelector('.cpa-btn-save-proxy').click();
+      await Promise.resolve();
+    });
+
+    expect(API.put).not.toHaveBeenCalled();
+    expect(showError).toHaveBeenCalledWith(expect.stringContaining('不能为空'));
+  });
+
+  it('reports an error when the saved proxy cannot be read back', async () => {
+    API.get.mockImplementation(path => {
+      if (path === '/api/cpa/status') {
+        return Promise.resolve({
+          data: {
+            success: true,
+            data: { state: 'running', ready: true, enabled: true },
+          },
+        });
+      }
+      return Promise.resolve({ data: { 'proxy-url': '' } });
+    });
+    API.put.mockResolvedValue({ data: { status: 'ok' } });
+
+    await act(async () => {
+      root.render(<CPA />);
+      await Promise.resolve();
+    });
+
+    const input = container.querySelector('input[name="cpa-proxy-url"]');
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setValue.call(input, 'http://127.0.0.1:7890');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    await act(async () => {
+      container.querySelector('.cpa-btn-save-proxy').click();
+      await Promise.resolve();
+    });
+
+    expect(API.put).toHaveBeenCalledWith('/v0/management/proxy-url', {
+      value: 'http://127.0.0.1:7890',
+    });
+    expect(showSuccess).not.toHaveBeenCalled();
+    expect(showError).toHaveBeenCalledWith(expect.stringContaining('未生效'));
+  });
+
+  it('clears the CPA global proxy through the official delete endpoint', async () => {
+    API.get.mockImplementation(path => {
+      if (path === '/api/cpa/status') {
+        return Promise.resolve({
+          data: {
+            success: true,
+            data: { state: 'running', ready: true, enabled: true },
+          },
+        });
+      }
+      return Promise.resolve({ data: { 'proxy-url': 'http://127.0.0.1:7890' } });
+    });
+    API.delete.mockResolvedValue({ data: { success: true } });
+
+    await act(async () => {
+      root.render(<CPA />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      container.querySelector('.cpa-btn-clear-proxy').click();
+      await Promise.resolve();
+    });
+
+    expect(API.delete).toHaveBeenCalledWith('/v0/management/proxy-url');
+    expect(showSuccess).toHaveBeenCalled();
+  });
+
+  it('surfaces CPA proxy management failures', async () => {
+    API.get.mockImplementation(path => {
+      if (path === '/api/cpa/status') {
+        return Promise.resolve({
+          data: {
+            success: true,
+            data: { state: 'running', ready: true, enabled: true },
+          },
+        });
+      }
+      return Promise.resolve({ data: { 'proxy-url': '' } });
+    });
+    API.put.mockResolvedValue({ data: { success: false, message: 'proxy rejected' } });
+
+    await act(async () => {
+      root.render(<CPA />);
+      await Promise.resolve();
+    });
+
+    const input = container.querySelector('input[name="cpa-proxy-url"]');
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setValue.call(input, 'http://127.0.0.1:7890');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => {
+      container.querySelector('.cpa-btn-save-proxy').click();
+      await Promise.resolve();
+    });
+
+    expect(showError).toHaveBeenCalledWith('proxy rejected');
+  });
+
+  it('rejects unsupported proxy URLs before sending them to CPA', async () => {
+    API.get.mockImplementation(path => {
+      if (path === '/api/cpa/status') {
+        return Promise.resolve({
+          data: {
+            success: true,
+            data: { state: 'running', ready: true, enabled: true },
+          },
+        });
+      }
+      return Promise.resolve({ data: { 'proxy-url': '' } });
+    });
+
+    await act(async () => {
+      root.render(<CPA />);
+      await Promise.resolve();
+    });
+
+    const input = container.querySelector('input[name="cpa-proxy-url"]');
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setValue.call(input, 'ftp://127.0.0.1:7890');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      container.querySelector('.cpa-btn-save-proxy').click();
+      await Promise.resolve();
+    });
+
+    expect(API.put).not.toHaveBeenCalled();
+    expect(showError).toHaveBeenCalledWith(expect.stringContaining('必须使用'));
   });
 });

@@ -27,6 +27,10 @@ API.interceptors.response.use(
       errorMessage = '请求次数过多，请稍后再试';
     } else if (error.response && error.response.data && error.response.data.message) {
       errorMessage = error.response.data.message;
+    } else if (typeof error?.response?.data?.error === 'string') {
+      errorMessage = error.response.data.error;
+    } else if (typeof error?.response?.data?.error?.message === 'string') {
+      errorMessage = error.response.data.error.message;
     } else if (error.message) {
       errorMessage = error.message;
     }
