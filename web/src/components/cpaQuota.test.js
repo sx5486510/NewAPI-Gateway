@@ -106,6 +106,26 @@ describe('CPA quota shared contract', () => {
     expect(quota.groups[0].items[0].remainingPercent).toBe(60);
   });
 
+  test('rejects a successful provider response with no quota items', async () => {
+    const post = jest.fn(() => ok({}));
+
+    await expect(
+      fetchCPAQuota({ type: 'claude', auth_index: 3 }, { post })
+    ).rejects.toThrow('Claude 额度响应为空');
+  });
+
+  test('rejects an empty quota response even when profile returns a plan', async () => {
+    const post = jest.fn((path, request) =>
+      request.url.endsWith('/usage')
+        ? ok({})
+        : ok({ account: { has_claude_max: true } })
+    );
+
+    await expect(
+      fetchCPAQuota({ type: 'claude', auth_index: 3 }, { post })
+    ).rejects.toThrow('Claude 额度响应为空');
+  });
+
   test('Codex sends Chatgpt-Account-Id and tolerates reset-credit failure', async () => {
     const post = jest.fn((path, request) => {
       if (request.url.endsWith('/usage')) {
@@ -160,7 +180,14 @@ describe('CPA quota shared contract', () => {
       .replace(/\//g, '_');
     const post = jest.fn((path, request) =>
       request.url.endsWith('/usage')
-        ? ok({ rate_limit: {} })
+        ? ok({
+            rate_limit: {
+              primary_window: {
+                used_percent: 10,
+                limit_window_seconds: 18000,
+              },
+            },
+          })
         : ok({ available_count: 0, credits: [] })
     );
 
@@ -197,7 +224,14 @@ describe('CPA quota shared contract', () => {
   test('Codex falls back to token plan and subscription metadata', async () => {
     const post = jest.fn((path, request) =>
       request.url.endsWith('/usage')
-        ? ok({ rate_limit: {} })
+        ? ok({
+            rate_limit: {
+              primary_window: {
+                used_percent: 10,
+                limit_window_seconds: 18000,
+              },
+            },
+          })
         : ok({ available_count: 0, credits: [] })
     );
     const file = {
@@ -398,6 +432,21 @@ describe('CPA quota shared contract', () => {
         { post, downloadText }
       )
     ).rejects.toThrow('缺少 project ID');
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  test('Antigravity preserves an auth-file download failure', async () => {
+    const post = jest.fn();
+    const downloadText = jest.fn(() =>
+      Promise.reject(new Error('CPA auth download failed'))
+    );
+
+    await expect(
+      fetchCPAQuota(
+        { provider: 'antigravity', auth_index: 9, name: 'ag.json' },
+        { post, downloadText }
+      )
+    ).rejects.toThrow('CPA auth download failed');
     expect(post).not.toHaveBeenCalled();
   });
 

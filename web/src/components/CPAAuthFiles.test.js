@@ -177,7 +177,7 @@ describe('CPAAuthFiles', () => {
     });
 
     const button = container.querySelector(
-      '[aria-label="刷新 claude@example.com.json 的额度"]'
+      '[aria-label="获取 claude@example.com.json 的真实额度"]'
     );
     expect(button).not.toBeNull();
 
@@ -252,7 +252,7 @@ describe('CPAAuthFiles', () => {
       await waitForUI();
     });
 
-    const fetchAllButton = findButton(container, '获取全部额度');
+    const fetchAllButton = findButton(container, '获取全部真实额度');
     expect(fetchAllButton).not.toBeNull();
 
     await act(async () => {
@@ -283,7 +283,7 @@ describe('CPAAuthFiles', () => {
     });
 
     const button = container.querySelector(
-      '[aria-label="刷新 claude@example.com.json 的额度"]'
+      '[aria-label="获取 claude@example.com.json 的真实额度"]'
     );
     expect(button).not.toBeNull();
 
@@ -296,6 +296,131 @@ describe('CPAAuthFiles', () => {
       'https://api.anthropic.com/api/oauth/usage',
       'https://api.anthropic.com/api/oauth/profile',
     ]);
+  });
+
+  test('resets one auth cooldown through the official CPA route and reloads the list', async () => {
+    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    helpers.API.post.mockResolvedValue({
+      data: { status: 'ok', auth_index: '3', models: ['claude-sonnet-4'] },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const row = container.querySelector(
+      '[data-auth-file="claude@example.com.json"]'
+    );
+    const button = findButton(row, '重置冷却');
+    expect(button).not.toBeNull();
+
+    await act(async () => {
+      button.click();
+      await waitForUI();
+    });
+
+    expect(helpers.API.post).toHaveBeenCalledWith(
+      '/v0/management/reset-quota',
+      { auth_index: '3' }
+    );
+    expect(helpers.API.get).toHaveBeenCalledTimes(2);
+    expect(helpers.showSuccess).toHaveBeenCalledWith(
+      'claude@example.com.json 冷却状态已重置'
+    );
+  });
+
+  test('ignores duplicate cooldown reset clicks while the request is running', async () => {
+    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    helpers.API.post.mockReturnValue(new Promise(() => {}));
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const row = container.querySelector(
+      '[data-auth-file="claude@example.com.json"]'
+    );
+    const button = findButton(row, '重置冷却');
+    expect(button).not.toBeNull();
+
+    await act(async () => {
+      button.click();
+      button.click();
+    });
+
+    expect(helpers.API.post).toHaveBeenCalledTimes(1);
+  });
+
+  test('shows the Gateway message when Axios converted a quota error to data', async () => {
+    helpers.API.get.mockResolvedValue({
+      data: { files: [mockAuthFiles.files[0]] },
+    });
+    helpers.API.post.mockResolvedValue({
+      data: { success: false, message: 'CPA quota service unavailable' },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const row = container.querySelector(
+      '[data-auth-file="claude@example.com.json"]'
+    );
+    const button = findButton(row, '获取真实额度');
+    expect(button).not.toBeNull();
+
+    await act(async () => {
+      button.click();
+      await waitForUI();
+    });
+
+    expect(row.textContent).toContain('CPA quota service unavailable');
+  });
+
+  test('limits bulk real quota refresh to four auth workers', async () => {
+    const files = Array.from({ length: 9 }, (_, index) => ({
+      name: `kimi-${index}.json`,
+      type: 'kimi',
+      auth_index: index + 1,
+      disabled: false,
+    }));
+    helpers.API.get.mockResolvedValue({ data: { files } });
+    let active = 0;
+    let peak = 0;
+    helpers.API.post.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          active += 1;
+          peak = Math.max(peak, active);
+          setTimeout(() => {
+            active -= 1;
+            resolve({
+              data: {
+                status_code: 200,
+                body: { usage: { name: 'Weekly', used: 10, limit: 100 } },
+              },
+            });
+          }, 20);
+        })
+    );
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const button = findButton(container, '获取全部真实额度');
+    expect(button).not.toBeNull();
+    await act(async () => {
+      button.click();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(peak).toBe(4);
+    expect(helpers.API.post).toHaveBeenCalledTimes(9);
   });
 
   test('opens upload modal when upload button clicked', async () => {

@@ -15,11 +15,18 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // mockSnapshotStore implements the persistence interface for testing
 type mockSnapshotStore struct {
 	persistFunc func() error
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func (m *mockSnapshotStore) PersistRuntime() error {
@@ -161,6 +168,147 @@ func TestManagementProxyAPICallForwardsWithoutPersisting(t *testing.T) {
 	}
 	if persistCalls.Load() != 0 || syncCalls.Load() != 0 {
 		t.Fatalf("persist=%d sync=%d, want zero", persistCalls.Load(), syncCalls.Load())
+	}
+}
+
+func TestManagementProxyResetQuotaForwardsWithoutPersisting(t *testing.T) {
+	var capturedBody string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v0/management/reset-quota" {
+			t.Fatalf("unexpected upstream request %s %s", r.Method, r.URL.String())
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		capturedBody = string(body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"status":"ok","auth_index":"7","models":["claude-sonnet-4"]}`)
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	provider := &fakeLeaseProvider{target: upstreamURL, password: "runtime-secret"}
+	persistCalls := &atomic.Int32{}
+	syncCalls := &atomic.Int32{}
+	proxy := NewManagementProxy(provider, &mockSnapshotStore{persistFunc: func() error {
+		persistCalls.Add(1)
+		return nil
+	}}, func() { syncCalls.Add(1) })
+
+	payload := `{"auth_index":"7"}`
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/reset-quota", strings.NewReader(payload))
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if capturedBody != payload {
+		t.Fatalf("body = %q, want %q", capturedBody, payload)
+	}
+	if persistCalls.Load() != 0 || syncCalls.Load() != 0 {
+		t.Fatalf("persist=%d sync=%d, want zero", persistCalls.Load(), syncCalls.Load())
+	}
+}
+
+func TestManagementProxyAPICallRejectsOversizedRequestBody(t *testing.T) {
+	var upstreamCalls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	provider := &fakeLeaseProvider{target: upstreamURL, password: "runtime-secret"}
+	proxy := NewManagementProxy(provider, nil, nil)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v0/management/api-call",
+		strings.NewReader(strings.Repeat("x", (1<<20)+1)),
+	)
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+	if upstreamCalls.Load() != 0 {
+		t.Fatalf("upstream calls = %d, want zero", upstreamCalls.Load())
+	}
+	var payload struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Code != "request_body_too_large" {
+		t.Fatalf("code = %q, want request_body_too_large", payload.Code)
+	}
+}
+
+func TestManagementProxyAPICallFiltersHopByHopResponseHeaders(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Connection", "X-CPA-Secret")
+		w.Header().Set("X-CPA-Secret", "must-not-leak")
+		w.Header().Set("Keep-Alive", "timeout=5")
+		w.Header().Set("X-CPA-Request", "quota")
+		_, _ = io.WriteString(w, `{"status_code":200,"body":"{}"}`)
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	provider := &fakeLeaseProvider{target: upstreamURL, password: "runtime-secret"}
+	proxy := NewManagementProxy(provider, nil, nil)
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/api-call", strings.NewReader(`{"method":"GET","url":"https://example.test"}`))
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	for _, header := range []string{"Connection", "Keep-Alive", "X-CPA-Secret"} {
+		if got := rec.Header().Get(header); got != "" {
+			t.Fatalf("header %s = %q, want empty", header, got)
+		}
+	}
+	if got := rec.Header().Get("X-CPA-Request"); got != "quota" {
+		t.Fatalf("X-CPA-Request = %q, want quota", got)
+	}
+}
+
+func TestManagementProxyAPICallUsesCPACompatibleTimeoutAndStableTransportError(t *testing.T) {
+	provider := &fakeLeaseProvider{
+		target:   &url.URL{Scheme: "http", Host: "cpa.internal.invalid"},
+		password: "runtime-secret",
+	}
+	proxy := NewManagementProxy(provider, nil, nil)
+	transport, ok := proxy.transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type = %T, want *http.Transport", proxy.transport)
+	}
+	if transport.ResponseHeaderTimeout != 65*time.Second {
+		t.Fatalf("response header timeout = %s, want 65s", transport.ResponseHeaderTimeout)
+	}
+
+	proxy.transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("dial tcp 10.0.0.7:8317: secret internal failure")
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/api-call", strings.NewReader(`{"method":"GET","url":"https://example.test"}`))
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if strings.Contains(rec.Body.String(), "10.0.0.7") || strings.Contains(rec.Body.String(), "secret internal failure") {
+		t.Fatalf("response leaked transport details: %s", rec.Body.String())
+	}
+	var payload struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Code != "upstream_request_failed" || payload.Message != "CPA request failed" {
+		t.Fatalf("payload = %+v", payload)
 	}
 }
 

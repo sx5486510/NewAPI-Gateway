@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { API, showError, showSuccess } from '../helpers';
+import { requireCPASuccess } from '../helpers/cpa-management';
+import { mapWithConcurrency } from '../helpers/async-pool';
 import Button from './ui/Button';
 import Card from './ui/Card';
 import Modal from './ui/Modal';
@@ -13,6 +15,7 @@ import {
 } from 'lucide-react';
 import {
   fetchCPAQuota,
+  getAuthIndex,
   getQuotaProvider,
   isAuthFileDisabled,
 } from './cpaQuota';
@@ -30,13 +33,15 @@ const CPAAuthFiles = () => {
   const [editPriority, setEditPriority] = useState('');
   const [quotaStates, setQuotaStates] = useState({});
   const [fetchingAllQuotas, setFetchingAllQuotas] = useState(false);
+  const [cooldownResetting, setCooldownResetting] = useState({});
   const uploadInFlightRef = useRef(false);
   const quotaInFlightRef = useRef(new Set());
+  const cooldownResetInFlightRef = useRef(new Set());
 
   const fetchAuthFiles = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const res = await API.get('/v0/management/auth-files');
+      const res = requireCPASuccess(await API.get('/v0/management/auth-files'));
       if (res.data && res.data.files) {
         setAuthFiles(res.data.files || []);
       } else {
@@ -67,11 +72,17 @@ const CPAAuthFiles = () => {
     []
   );
 
+  const postCPA = useCallback(async (...args) => {
+    return requireCPASuccess(await API.post(...args));
+  }, []);
+
   const downloadAuthFileText = useCallback(async (name) => {
-    const response = await API.get('/v0/management/auth-files/download', {
-      params: { name },
-      responseType: 'text',
-    });
+    const response = requireCPASuccess(
+      await API.get('/v0/management/auth-files/download', {
+        params: { name },
+        responseType: 'text',
+      })
+    );
     return typeof response.data === 'string'
       ? response.data
       : JSON.stringify(response.data ?? {});
@@ -90,7 +101,7 @@ const CPAAuthFiles = () => {
 
       try {
         const quota = await fetchCPAQuota(file, {
-          post: API.post.bind(API),
+          post: postCPA,
           downloadText: downloadAuthFileText,
         });
         setQuotaStates((current) => ({
@@ -109,7 +120,39 @@ const CPAAuthFiles = () => {
         quotaInFlightRef.current.delete(key);
       }
     },
-    [downloadAuthFileText, quotaKey]
+    [downloadAuthFileText, postCPA, quotaKey]
+  );
+
+  const handleResetCooldown = useCallback(
+    async (file) => {
+      const key = quotaKey(file);
+      const authIndex = getAuthIndex(file);
+      if (!key || !authIndex || cooldownResetInFlightRef.current.has(key)) {
+        return;
+      }
+
+      cooldownResetInFlightRef.current.add(key);
+      setCooldownResetting((current) => ({ ...current, [key]: true }));
+      try {
+        await postCPA('/v0/management/reset-quota', {
+          auth_index: authIndex,
+        });
+        showSuccess(`${file.name || authIndex} 冷却状态已重置`);
+        await fetchAuthFiles(false);
+      } catch (error) {
+        showError(
+          `重置冷却失败: ${error instanceof Error ? error.message : '未知错误'}`
+        );
+      } finally {
+        cooldownResetInFlightRef.current.delete(key);
+        setCooldownResetting((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+      }
+    },
+    [fetchAuthFiles, postCPA, quotaKey]
   );
 
   const handleRefreshAllQuotas = useCallback(async () => {
@@ -121,7 +164,7 @@ const CPAAuthFiles = () => {
 
     setFetchingAllQuotas(true);
     try {
-      await Promise.allSettled(files.map((file) => handleRefreshQuota(file)));
+      await mapWithConcurrency(files, 4, handleRefreshQuota);
     } finally {
       setFetchingAllQuotas(false);
     }
@@ -160,13 +203,11 @@ const CPAAuthFiles = () => {
     uploadInFlightRef.current = true;
     setUploading(true);
     try {
-      const res = await API.post('/v0/management/auth-files', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      if (res.data?.success === false) {
-        showError('上传失败: ' + (res.data.message || '请求失败'));
-        return;
-      }
+      const res = requireCPASuccess(
+        await API.post('/v0/management/auth-files', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+      );
       if (
         Array.isArray(res.data?.duplicates) &&
         res.data.duplicates.length > 0
@@ -196,10 +237,12 @@ const CPAAuthFiles = () => {
 
   const handleDownload = async (name) => {
     try {
-      const res = await API.get('/v0/management/auth-files/download', {
-        params: { name },
-        responseType: 'blob',
-      });
+      const res = requireCPASuccess(
+        await API.get('/v0/management/auth-files/download', {
+          params: { name },
+          responseType: 'blob',
+        })
+      );
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -218,10 +261,12 @@ const CPAAuthFiles = () => {
 
   const handleToggleStatus = async (file) => {
     try {
-      await API.patch('/v0/management/auth-files/status', {
-        name: file.name,
-        disabled: !file.disabled,
-      });
+      requireCPASuccess(
+        await API.patch('/v0/management/auth-files/status', {
+          name: file.name,
+          disabled: !file.disabled,
+        })
+      );
       showSuccess(file.disabled ? '已启用' : '已禁用');
       await fetchAuthFiles(false);
     } catch (error) {
@@ -251,7 +296,9 @@ const CPAAuthFiles = () => {
         if (!isNaN(p)) payload.priority = p;
       }
 
-      await API.patch('/v0/management/auth-files/fields', payload);
+      requireCPASuccess(
+        await API.patch('/v0/management/auth-files/fields', payload)
+      );
       showSuccess('保存成功');
       setEditModalOpen(false);
       setSelectedFile(null);
@@ -269,7 +316,9 @@ const CPAAuthFiles = () => {
     }
 
     try {
-      await API.delete('/v0/management/auth-files', { params: { name } });
+      requireCPASuccess(
+        await API.delete('/v0/management/auth-files', { params: { name } })
+      );
       showSuccess('删除成功');
       await fetchAuthFiles(false);
     } catch (error) {
@@ -490,7 +539,7 @@ const CPAAuthFiles = () => {
                     : 'none',
                 }}
               />
-              获取全部额度
+              获取全部真实额度
             </Button>
             <Button
               onClick={() => setUploadModalOpen(true)}
@@ -672,6 +721,21 @@ const CPAAuthFiles = () => {
 
                           {/* 操作按钮 */}
                           <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            {getAuthIndex(file) && (
+                              <Button
+                                variant='ghost'
+                                size='sm'
+                                onClick={() => handleResetCooldown(file)}
+                                disabled={Boolean(
+                                  cooldownResetting[quotaKey(file)]
+                                )}
+                                title='重置 CPA 路由冷却状态'
+                                aria-label={`重置 ${file.name} 的冷却状态`}
+                              >
+                                <RefreshCw size={16} />
+                                重置冷却
+                              </Button>
+                            )}
                             {getQuotaProvider(file) &&
                               !isAuthFileDisabled(file) && (
                                 <Button
@@ -682,10 +746,11 @@ const CPAAuthFiles = () => {
                                     quotaStates[quotaKey(file)]?.status ===
                                     'loading'
                                   }
-                                  title='刷新配额'
-                                  aria-label={`刷新 ${file.name} 的额度`}
+                                  title='获取服务商真实额度'
+                                  aria-label={`获取 ${file.name} 的真实额度`}
                                 >
                                   <RefreshCw size={16} />
+                                  获取真实额度
                                 </Button>
                               )}
                             <Button

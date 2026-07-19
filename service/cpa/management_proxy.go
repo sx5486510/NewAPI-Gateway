@@ -56,6 +56,8 @@ type contextKey int
 
 const auditUsernameKey contextKey = 1
 
+const maxAPICallRequestBody int64 = 1 << 20
+
 // NewManagementProxy creates a management reverse proxy with the given lease
 // provider, snapshot store, and sync scheduler.
 func NewManagementProxy(
@@ -74,7 +76,7 @@ func NewManagementProxy(
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
+		ResponseHeaderTimeout: 65 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 
@@ -148,7 +150,7 @@ func (p *ManagementProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Transport: p.transport,
 		ModifyResponse: func(resp *http.Response) error {
 			// Handle mutation persistence and OAuth polling
-			if isMutation(r.Method) && isSuccess(resp.StatusCode) {
+			if isMutation(r.Method) && !isRuntimeOnlyManagementRequest(r) && isSuccess(resp.StatusCode) {
 				if p.store != nil {
 					if err := p.store.PersistRuntime(); err != nil {
 						return persistenceError{cause: err}
@@ -260,12 +262,16 @@ func (p *ManagementProxy) handleAuthFileQuota(w http.ResponseWriter, r *http.Req
 	}
 
 	// Read request body
-	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // 1MB limit
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxAPICallRequestBody+1))
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "body_read_failed", "Failed to read request body")
 		return true
 	}
 	defer r.Body.Close()
+	if int64(len(bodyBytes)) > maxAPICallRequestBody {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "request_body_too_large", "Request body exceeds 1 MiB")
+		return true
+	}
 
 	// Forward to CPA's /v0/management/api-call endpoint
 	target := *lease.Target
@@ -275,7 +281,7 @@ func (p *ManagementProxy) handleAuthFileQuota(w http.ResponseWriter, r *http.Req
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target.String(), bytes.NewReader(bodyBytes))
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "request_creation_failed", err.Error())
+		writeJSONError(w, http.StatusInternalServerError, "request_creation_failed", "Failed to create CPA request")
 		return true
 	}
 
@@ -285,20 +291,13 @@ func (p *ManagementProxy) handleAuthFileQuota(w http.ResponseWriter, r *http.Req
 
 	resp, err := p.transport.RoundTrip(req)
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, "upstream_request_failed", err.Error())
+		writeJSONError(w, http.StatusBadGateway, "upstream_request_failed", "CPA request failed")
 		return true
 	}
 	defer resp.Body.Close()
 
-	// Copy response status and headers
-	for key, values := range resp.Header {
-		if key == "Content-Length" || key == "Transfer-Encoding" {
-			continue
-		}
-		for _, value := range values {
-			w.Header().Add(key, value)
-		}
-	}
+	// Copy response status and end-to-end headers.
+	copyEndToEndHeaders(w.Header(), resp.Header)
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
 	}
@@ -635,6 +634,48 @@ func sanitizeHeaders(req *http.Request) {
 	req.Header.Del("Trailer")
 	req.Header.Del("Transfer-Encoding")
 	req.Header.Del("Upgrade")
+}
+
+func copyEndToEndHeaders(dst, src http.Header) {
+	hopByHop := map[string]bool{
+		"connection":          true,
+		"content-length":      true,
+		"keep-alive":          true,
+		"proxy-authenticate":  true,
+		"proxy-authorization": true,
+		"proxy-connection":    true,
+		"te":                  true,
+		"trailer":             true,
+		"transfer-encoding":   true,
+		"upgrade":             true,
+	}
+	for _, value := range src.Values("Connection") {
+		for _, name := range strings.Split(value, ",") {
+			if name = strings.TrimSpace(name); name != "" {
+				hopByHop[strings.ToLower(name)] = true
+			}
+		}
+	}
+	for key, values := range src {
+		if hopByHop[strings.ToLower(key)] {
+			continue
+		}
+		for _, value := range values {
+			dst.Add(key, value)
+		}
+	}
+}
+
+func isRuntimeOnlyManagementRequest(r *http.Request) bool {
+	if r == nil || r.Method != http.MethodPost {
+		return false
+	}
+	switch normalizePath(r.URL.Path) {
+	case "/v0/management/api-call", "/v0/management/reset-quota":
+		return true
+	default:
+		return false
+	}
 }
 
 // isMutation returns true for methods that modify state

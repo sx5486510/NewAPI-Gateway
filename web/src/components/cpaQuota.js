@@ -6,6 +6,14 @@ const supportedProviders = new Set([
   'xai',
 ]);
 
+const providerLabels = {
+  antigravity: 'Antigravity',
+  claude: 'Claude',
+  codex: 'Codex',
+  kimi: 'Kimi',
+  xai: 'Grok',
+};
+
 const stringValue = (value) => {
   if (typeof value === 'string') return value.trim() || null;
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
@@ -933,23 +941,23 @@ const extractAntigravityProjectId = async (file, downloadText) => {
   );
   if (direct) return direct;
   if (typeof downloadText !== 'function' || !file?.name) return null;
+  const downloaded = await downloadText(file.name);
+  let parsed;
   try {
-    const parsed = objectValue(
-      JSON.parse((await downloadText(file.name)).trim())
-    );
-    const installed = objectValue(parsed?.installed);
-    const web = objectValue(parsed?.web);
-    return stringValue(
-      parsed?.project_id ??
-        parsed?.projectId ??
-        installed?.project_id ??
-        installed?.projectId ??
-        web?.project_id ??
-        web?.projectId
-    );
+    parsed = objectValue(JSON.parse(String(downloaded).trim()));
   } catch {
-    return null;
+    throw new Error('Antigravity 凭证文件格式无效');
   }
+  const installed = objectValue(parsed?.installed);
+  const web = objectValue(parsed?.web);
+  return stringValue(
+    parsed?.project_id ??
+      parsed?.projectId ??
+      installed?.project_id ??
+      installed?.projectId ??
+      web?.project_id ??
+      web?.projectId
+  );
 };
 
 const unwrapAntigravityPayload = (payload) => {
@@ -1088,5 +1096,17 @@ export const fetchCPAQuota = async (file, { post, downloadText } = {}) => {
   if (!provider) throw new Error('不支持的供应商类型');
   const authIndex = getAuthIndex(file);
   if (!authIndex) throw new Error('认证文件缺少 auth_index');
-  return providerAdapters[provider]({ file, authIndex, post, downloadText });
+  const quota = await providerAdapters[provider]({
+    file,
+    authIndex,
+    post,
+    downloadText,
+  });
+  const hasQuotaItems = quota.groups?.some(
+    (group) => Array.isArray(group?.items) && group.items.length > 0
+  );
+  if (!hasQuotaItems) {
+    throw new Error(`${providerLabels[provider]} 额度响应为空`);
+  }
+  return quota;
 };
