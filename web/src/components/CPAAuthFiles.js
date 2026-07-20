@@ -1,10 +1,17 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { API, showError, showSuccess } from '../helpers';
 import { requireCPASuccess } from '../helpers/cpa-management';
 import { mapWithConcurrency } from '../helpers/async-pool';
 import Button from './ui/Button';
 import Card from './ui/Card';
 import Modal from './ui/Modal';
+import Pagination from './ui/Pagination';
 import {
   Upload,
   Download,
@@ -24,6 +31,49 @@ import {
   parseAuthCredentialMetadata,
 } from './cpaAuthStatus';
 
+const AUTH_FILE_PAGE_SIZES = [20, 50, 100];
+const DEFAULT_AUTH_FILE_PAGE_SIZE = 50;
+
+const typeLabels = {
+  antigravity: { name: 'Antigravity', color: '#006064' },
+  claude: { name: 'Claude', color: '#C4612F' },
+  codex: { name: 'Codex', color: '#10B981' },
+  kimi: { name: 'Kimi', color: '#0560CF' },
+  grok: { name: 'Grok', color: '#3B82F6' },
+  other: { name: '其他', color: '#6B7280' },
+};
+
+const groupFilesByType = (files) => {
+  const groups = Object.fromEntries(
+    Object.keys(typeLabels).map((key) => [key, []])
+  );
+
+  files.forEach((file) => {
+    const provider = getQuotaProvider(file);
+    if (provider === 'xai') groups.grok.push(file);
+    else if (provider && groups[provider]) groups[provider].push(file);
+    else groups.other.push(file);
+  });
+
+  return groups;
+};
+
+const normalizePageSize = (value) =>
+  AUTH_FILE_PAGE_SIZES.includes(value) ? value : DEFAULT_AUTH_FILE_PAGE_SIZE;
+
+const paginateFiles = (files, requestedPage, requestedPageSize) => {
+  const pageSize = normalizePageSize(requestedPageSize);
+  const totalPages = Math.max(1, Math.ceil(files.length / pageSize));
+  const page = Math.min(Math.max(requestedPage || 1, 1), totalPages);
+
+  return {
+    files: files.slice((page - 1) * pageSize, page * pageSize),
+    page,
+    pageSize,
+    totalPages,
+  };
+};
+
 const CPAAuthFiles = () => {
   const [authFiles, setAuthFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -39,10 +89,24 @@ const CPAAuthFiles = () => {
   const [credentialStates, setCredentialStates] = useState({});
   const [fetchingAllQuotas, setFetchingAllQuotas] = useState(false);
   const [cooldownResetting, setCooldownResetting] = useState({});
+  const [pageByGroup, setPageByGroup] = useState({});
+  const [pageSizeByGroup, setPageSizeByGroup] = useState({});
   const uploadInFlightRef = useRef(false);
   const quotaInFlightRef = useRef(new Set());
   const cooldownResetInFlightRef = useRef(new Set());
   const credentialLoadGenerationRef = useRef(0);
+
+  const groupedFiles = useMemo(() => groupFilesByType(authFiles), [authFiles]);
+  const paginatedGroups = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(groupedFiles).map(([key, files]) => [
+          key,
+          paginateFiles(files, pageByGroup[key], pageSizeByGroup[key]),
+        ])
+      ),
+    [groupedFiles, pageByGroup, pageSizeByGroup]
+  );
 
   const fetchAuthFiles = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -380,27 +444,6 @@ const CPAAuthFiles = () => {
     }
   };
 
-  // 按类型分组
-  const groupFilesByType = (files) => {
-    const groups = {
-      antigravity: [],
-      claude: [],
-      codex: [],
-      kimi: [],
-      grok: [],
-      other: [],
-    };
-
-    files.forEach((file) => {
-      const provider = getQuotaProvider(file);
-      if (provider === 'xai') groups.grok.push(file);
-      else if (provider && groups[provider]) groups[provider].push(file);
-      else groups.other.push(file);
-    });
-
-    return groups;
-  };
-
   const formatCredentialTime = (value) => {
     if (!value) return '未知';
     const date = new Date(value);
@@ -569,15 +612,6 @@ const CPAAuthFiles = () => {
     );
   };
 
-  const typeLabels = {
-    antigravity: { name: 'Antigravity', color: '#006064' },
-    claude: { name: 'Claude', color: '#C4612F' },
-    codex: { name: 'Codex', color: '#10B981' },
-    kimi: { name: 'Kimi', color: '#0560CF' },
-    grok: { name: 'Grok', color: '#3B82F6' },
-    other: { name: '其他', color: '#6B7280' },
-  };
-
   if (loading) {
     return (
       <div
@@ -592,8 +626,6 @@ const CPAAuthFiles = () => {
       </div>
     );
   }
-
-  const groupedFiles = groupFilesByType(authFiles);
 
   return (
     <div
@@ -691,11 +723,13 @@ const CPAAuthFiles = () => {
             style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}
           >
             {Object.entries(typeLabels).map(([key, { name, color }]) => {
+              const group = paginatedGroups[key];
               const files = groupedFiles[key];
+              const visibleFiles = group.files;
               if (files.length === 0) return null;
 
               return (
-                <div key={key}>
+                <div key={key} data-auth-group={key}>
                   {/* 类型标题栏 */}
                   <div
                     style={{
@@ -739,7 +773,7 @@ const CPAAuthFiles = () => {
                       gap: '0.5rem',
                     }}
                   >
-                    {files.map((file) => (
+                    {visibleFiles.map((file) => (
                       <div
                         key={file.name}
                         data-auth-file={file.name}
@@ -913,6 +947,80 @@ const CPAAuthFiles = () => {
                       </div>
                     ))}
                   </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '1rem',
+                      marginTop: '0.75rem',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.875rem',
+                      }}
+                    >
+                      共 {files.length} 条
+                    </span>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: 'var(--text-secondary)',
+                          fontSize: '0.875rem',
+                        }}
+                      >
+                        每页
+                      </span>
+                      <select
+                        aria-label={`${name} 每页条数`}
+                        value={group.pageSize}
+                        onChange={(event) => {
+                          const pageSize = Number(event.target.value);
+                          setPageSizeByGroup((current) => ({
+                            ...current,
+                            [key]: pageSize,
+                          }));
+                          setPageByGroup((current) => ({
+                            ...current,
+                            [key]: 1,
+                          }));
+                        }}
+                      >
+                        {AUTH_FILE_PAGE_SIZES.map((pageSize) => (
+                          <option key={pageSize} value={pageSize}>
+                            {pageSize}
+                          </option>
+                        ))}
+                      </select>
+                      <span
+                        style={{
+                          color: 'var(--text-secondary)',
+                          fontSize: '0.875rem',
+                        }}
+                      >
+                        条
+                      </span>
+                    </label>
+                    <Pagination
+                      activePage={group.page}
+                      totalPages={group.totalPages}
+                      onPageChange={(_, { activePage }) =>
+                        setPageByGroup((current) => ({
+                          ...current,
+                          [key]: activePage,
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -935,9 +1043,7 @@ const CPAAuthFiles = () => {
               type='file'
               multiple
               accept='.json,.zip,application/json,application/zip'
-              onChange={(e) =>
-                setUploadFiles(Array.from(e.target.files || []))
-              }
+              onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
               style={{ width: '100%' }}
             />
             <p

@@ -64,6 +64,14 @@ const mockAuthFiles = {
   ],
 };
 
+const buildAuthFiles = (type, count) =>
+  Array.from({ length: count }, (_, index) => ({
+    name: `${type}-${String(index + 1).padStart(3, '0')}.json`,
+    type,
+    auth_index: index + 1,
+    disabled: false,
+  }));
+
 const defaultCredential = JSON.stringify({
   expired: '2099-07-20T08:00:00Z',
   refresh_token: 'default-refresh-secret',
@@ -148,6 +156,84 @@ describe('CPAAuthFiles', () => {
     expect(container.textContent).toContain('认证文件');
     expect(container.textContent).toContain('claude@example.com.json');
     expect(container.textContent).toContain('codex-backup.json');
+  });
+
+  test('paginates every group independently with a default of 50 files', async () => {
+    mockCPAAuthGet({
+      listData: {
+        files: [
+          ...buildAuthFiles('claude', 55),
+          ...buildAuthFiles('codex', 55),
+        ],
+      },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const claudeGroup = container.querySelector('[data-auth-group="claude"]');
+    const codexGroup = container.querySelector('[data-auth-group="codex"]');
+    expect(claudeGroup).not.toBeNull();
+    expect(codexGroup).not.toBeNull();
+    if (!claudeGroup || !codexGroup) return;
+    expect(claudeGroup.querySelectorAll('[data-auth-file]')).toHaveLength(50);
+    expect(codexGroup.querySelectorAll('[data-auth-file]')).toHaveLength(50);
+    expect(claudeGroup.querySelector('select').value).toBe('50');
+    expect(codexGroup.querySelector('select').value).toBe('50');
+
+    await act(async () => {
+      findButton(claudeGroup, '2').click();
+    });
+
+    expect(claudeGroup.querySelectorAll('[data-auth-file]')).toHaveLength(5);
+    expect(codexGroup.querySelectorAll('[data-auth-file]')).toHaveLength(50);
+    expect(claudeGroup.textContent).toContain('claude-055.json');
+    expect(codexGroup.textContent).toContain('codex-001.json');
+  });
+
+  test('changes one group page size without changing another group', async () => {
+    mockCPAAuthGet({
+      listData: {
+        files: [
+          ...buildAuthFiles('claude', 55),
+          ...buildAuthFiles('codex', 55),
+        ],
+      },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const claudeGroup = container.querySelector('[data-auth-group="claude"]');
+    const codexGroup = container.querySelector('[data-auth-group="codex"]');
+    expect(claudeGroup).not.toBeNull();
+    expect(codexGroup).not.toBeNull();
+    if (!claudeGroup || !codexGroup) return;
+    const claudePageSize = claudeGroup.querySelector('select');
+    expect(
+      Array.from(claudePageSize.options).map((option) => option.value)
+    ).toEqual(['20', '50', '100']);
+
+    await act(async () => {
+      findButton(claudeGroup, '2').click();
+    });
+    expect(claudeGroup.textContent).toContain('claude-055.json');
+
+    await act(async () => {
+      claudePageSize.value = '20';
+      claudePageSize.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(claudePageSize.value).toBe('20');
+    expect(codexGroup.querySelector('select').value).toBe('50');
+    expect(claudeGroup.querySelectorAll('[data-auth-file]')).toHaveLength(20);
+    expect(codexGroup.querySelectorAll('[data-auth-file]')).toHaveLength(50);
+    expect(claudeGroup.textContent).toContain('claude-001.json');
+    expect(claudeGroup.textContent).not.toContain('claude-055.json');
   });
 
   test('loads and displays safe credential status from official CPA endpoints', async () => {
