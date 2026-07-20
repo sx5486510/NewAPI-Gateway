@@ -119,6 +119,8 @@ const CPAAuthFiles = () => {
   const [quotaStates, setQuotaStates] = useState({});
   const [credentialStates, setCredentialStates] = useState({});
   const [fetchingAllQuotas, setFetchingAllQuotas] = useState(false);
+  const [fetchingGroupQuotas, setFetchingGroupQuotas] = useState({});
+  const [groupQuotaProgress, setGroupQuotaProgress] = useState({});
   const [cooldownResetting, setCooldownResetting] = useState({});
   const [pageByGroup, setPageByGroup] = useState({});
   const [pageSizeByGroup, setPageSizeByGroup] = useState({});
@@ -358,6 +360,47 @@ const CPAAuthFiles = () => {
       setFetchingAllQuotas(false);
     }
   }, [authFiles, fetchingAllQuotas, handleRefreshQuota]);
+
+  const handleRefreshGroupQuotas = useCallback(
+    async (groupKey) => {
+      if (fetchingGroupQuotas[groupKey]) return;
+      const groupFiles = groupedFiles[groupKey] || [];
+      const files = groupFiles.filter(
+        (file) => getQuotaProvider(file) && !isAuthFileDisabled(file)
+      );
+      if (!files.length) return;
+
+      setFetchingGroupQuotas((current) => ({ ...current, [groupKey]: true }));
+      setGroupQuotaProgress((current) => ({
+        ...current,
+        [groupKey]: { completed: 0, total: files.length },
+      }));
+
+      try {
+        let completed = 0;
+        await mapWithConcurrency(files, 4, async (file) => {
+          await handleRefreshQuota(file);
+          completed += 1;
+          setGroupQuotaProgress((current) => ({
+            ...current,
+            [groupKey]: { completed, total: files.length },
+          }));
+        });
+      } finally {
+        setFetchingGroupQuotas((current) => {
+          const next = { ...current };
+          delete next[groupKey];
+          return next;
+        });
+        setGroupQuotaProgress((current) => {
+          const next = { ...current };
+          delete next[groupKey];
+          return next;
+        });
+      }
+    },
+    [fetchingGroupQuotas, groupedFiles, handleRefreshQuota]
+  );
 
   const handleUpload = async () => {
     if (uploadInFlightRef.current) {
@@ -944,7 +987,81 @@ const CPAAuthFiles = () => {
                     >
                       {files.length}
                     </span>
+                    <Button
+                      variant='ghost'
+                      size='sm'
+                      onClick={() => handleRefreshGroupQuotas(key)}
+                      disabled={fetchingGroupQuotas[key]}
+                      style={{
+                        marginLeft: 'auto',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                      }}
+                      title={`获取 ${name} 组全部真实额度`}
+                    >
+                      <RefreshCw
+                        size={14}
+                        style={{
+                          animation: fetchingGroupQuotas[key]
+                            ? 'spin 1s linear infinite'
+                            : 'none',
+                        }}
+                      />
+                      {fetchingGroupQuotas[key]
+                        ? `获取中 ${groupQuotaProgress[key]?.completed || 0}/${groupQuotaProgress[key]?.total || 0}`
+                        : '获取本组全部额度'}
+                    </Button>
                   </div>
+
+                  {/* 进度条 */}
+                  {groupQuotaProgress[key] && (
+                    <div
+                      style={{
+                        marginBottom: '0.75rem',
+                        padding: '0.5rem 0.75rem',
+                        backgroundColor: 'var(--bg-secondary)',
+                        borderRadius: '0.375rem',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginBottom: '0.5rem',
+                          fontSize: '0.875rem',
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
+                        <span>
+                          正在获取 {name} 组额度...
+                        </span>
+                        <span>
+                          {groupQuotaProgress[key].completed} /{' '}
+                          {groupQuotaProgress[key].total}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '6px',
+                          backgroundColor: 'var(--border-color)',
+                          borderRadius: '999px',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${(groupQuotaProgress[key].completed / groupQuotaProgress[key].total) * 100}%`,
+                            height: '100%',
+                            backgroundColor: color,
+                            transition: 'width 0.3s ease',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* 文件列表 */}
                   <div
