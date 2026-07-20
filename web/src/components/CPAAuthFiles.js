@@ -43,20 +43,51 @@ const typeLabels = {
   other: { name: '其他', color: '#6B7280' },
 };
 
+const getGroupKey = (file) => {
+  const provider = getQuotaProvider(file);
+  if (provider === 'xai') return 'grok';
+  if (provider && typeLabels[provider]) return provider;
+  return 'other';
+};
+
 const groupFilesByType = (files) => {
   const groups = Object.fromEntries(
     Object.keys(typeLabels).map((key) => [key, []])
   );
 
   files.forEach((file) => {
-    const provider = getQuotaProvider(file);
-    if (provider === 'xai') groups.grok.push(file);
-    else if (provider && groups[provider]) groups[provider].push(file);
-    else groups.other.push(file);
+    groups[getGroupKey(file)].push(file);
   });
 
   return groups;
 };
+
+const DEFAULT_FILTERS = { search: '', status: 'all', type: 'all' };
+
+const matchesSearch = (file, search) => {
+  const query = search.trim().toLowerCase();
+  if (!query) return true;
+  return [file.name, file.email, file.note]
+    .filter(Boolean)
+    .some((field) => String(field).toLowerCase().includes(query));
+};
+
+const matchesStatus = (file, status) => {
+  if (status === 'enabled') return !isAuthFileDisabled(file);
+  if (status === 'disabled') return isAuthFileDisabled(file);
+  return true;
+};
+
+const matchesType = (file, type) =>
+  type === 'all' || getGroupKey(file) === type;
+
+const filterAuthFiles = (files, { search, status, type }) =>
+  files.filter(
+    (file) =>
+      matchesSearch(file, search) &&
+      matchesStatus(file, status) &&
+      matchesType(file, type)
+  );
 
 const normalizePageSize = (value) =>
   AUTH_FILE_PAGE_SIZES.includes(value) ? value : DEFAULT_AUTH_FILE_PAGE_SIZE;
@@ -91,13 +122,21 @@ const CPAAuthFiles = () => {
   const [cooldownResetting, setCooldownResetting] = useState({});
   const [pageByGroup, setPageByGroup] = useState({});
   const [pageSizeByGroup, setPageSizeByGroup] = useState({});
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const uploadInFlightRef = useRef(false);
   const quotaInFlightRef = useRef(new Set());
   const cooldownResetInFlightRef = useRef(new Set());
   const credentialLoadGenerationRef = useRef(0);
   const credentialCacheRef = useRef({});
 
-  const groupedFiles = useMemo(() => groupFilesByType(authFiles), [authFiles]);
+  const filteredFiles = useMemo(
+    () => filterAuthFiles(authFiles, filters),
+    [authFiles, filters]
+  );
+  const groupedFiles = useMemo(
+    () => groupFilesByType(filteredFiles),
+    [filteredFiles]
+  );
   const paginatedGroups = useMemo(
     () =>
       Object.fromEntries(
@@ -753,10 +792,118 @@ const CPAAuthFiles = () => {
             </Button>
           </div>
         ) : (
-          <div
-            style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}
-          >
-            {Object.entries(typeLabels).map(([key, { name, color }]) => {
+          <>
+            {/* 筛选工具栏 */}
+            <div
+              data-auth-filters
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '0.75rem',
+                marginBottom: '1.5rem',
+              }}
+            >
+              <input
+                type='search'
+                aria-label='搜索认证文件'
+                placeholder='搜索文件名 / 邮箱 / 备注'
+                value={filters.search}
+                onChange={(event) =>
+                  setFilters((current) => ({
+                    ...current,
+                    search: event.target.value,
+                  }))
+                }
+                style={{
+                  flex: '1 1 240px',
+                  minWidth: '200px',
+                  padding: '0.5rem 0.75rem',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.375rem',
+                }}
+              />
+              <select
+                aria-label='按类型筛选'
+                value={filters.type}
+                onChange={(event) =>
+                  setFilters((current) => ({
+                    ...current,
+                    type: event.target.value,
+                  }))
+                }
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.375rem',
+                }}
+              >
+                <option value='all'>全部类型</option>
+                {Object.entries(typeLabels).map(([key, { name }]) => (
+                  <option key={key} value={key}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label='按状态筛选'
+                value={filters.status}
+                onChange={(event) =>
+                  setFilters((current) => ({
+                    ...current,
+                    status: event.target.value,
+                  }))
+                }
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.375rem',
+                }}
+              >
+                <option value='all'>全部状态</option>
+                <option value='enabled'>已启用</option>
+                <option value='disabled'>已禁用</option>
+              </select>
+              <span
+                style={{
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.875rem',
+                }}
+              >
+                匹配 {filteredFiles.length} / {authFiles.length} 条
+              </span>
+              {(filters.search ||
+                filters.type !== 'all' ||
+                filters.status !== 'all') && (
+                <Button
+                  variant='ghost'
+                  size='sm'
+                  onClick={() => setFilters(DEFAULT_FILTERS)}
+                >
+                  清除筛选
+                </Button>
+              )}
+            </div>
+
+            {filteredFiles.length === 0 ? (
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '3rem 1rem',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                <p>没有符合筛选条件的认证文件</p>
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1.5rem',
+                }}
+              >
+                {Object.entries(typeLabels).map(([key, { name, color }]) => {
               const group = paginatedGroups[key];
               const files = groupedFiles[key];
               const visibleFiles = group.files;
@@ -1059,6 +1206,8 @@ const CPAAuthFiles = () => {
               );
             })}
           </div>
+            )}
+          </>
         )}
       </Card>
 
