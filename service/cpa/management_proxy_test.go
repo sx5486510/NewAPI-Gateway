@@ -585,6 +585,91 @@ func TestManagementProxyAuthFileZipUploadExpandsArchiveAndSkipsDuplicates(t *tes
 	}
 }
 
+func TestManagementProxyRejectsInvalidAuthFileArchives(t *testing.T) {
+	tests := []struct {
+		name     string
+		filename string
+		body     func(*testing.T) []byte
+	}{
+		{
+			name:     "empty zip",
+			filename: "empty.zip",
+			body: func(t *testing.T) []byte {
+				return buildAuthFilesZip(t, nil)
+			},
+		},
+		{
+			name:     "zip without json",
+			filename: "notes.zip",
+			body: func(t *testing.T) []byte {
+				return buildAuthFilesZip(t, map[string]string{"nested/notes.txt": "ignored"})
+			},
+		},
+		{
+			name:     "damaged zip",
+			filename: "damaged.zip",
+			body: func(*testing.T) []byte {
+				return []byte("not a zip")
+			},
+		},
+		{
+			name:     "unsupported top-level file",
+			filename: "notes.txt",
+			body: func(*testing.T) []byte {
+				return []byte("not json")
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var upstreamCalls atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				upstreamCalls.Add(1)
+				t.Fatalf("unexpected upstream request %s %s", r.Method, r.URL.Path)
+			}))
+			defer upstream.Close()
+
+			upstreamURL, _ := url.Parse(upstream.URL)
+			proxy := NewManagementProxy(&fakeLeaseProvider{
+				target:   upstreamURL,
+				password: "runtime-secret",
+			}, nil, nil)
+			rec := postAuthUpload(t, proxy, tc.filename, tc.body(t))
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+			}
+			if upstreamCalls.Load() != 0 {
+				t.Fatalf("upstream calls = %d, want 0", upstreamCalls.Load())
+			}
+		})
+	}
+}
+
+func postAuthUpload(t *testing.T, proxy http.Handler, filename string, content []byte) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/auth-files", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+	return rec
+}
+
 func buildAuthFilesZip(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 

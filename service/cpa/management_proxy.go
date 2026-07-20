@@ -419,10 +419,14 @@ func uploadedAuthFiles(r *http.Request) ([]authUploadFile, bool, error) {
 
 	reader := multipart.NewReader(bytes.NewReader(body), boundary)
 	var files []authUploadFile
+	hasFilePart := false
 	for {
 		part, err := reader.NextPart()
 		if errors.Is(err, io.EOF) {
-			return files, len(files) > 0, nil
+			if hasFilePart && len(files) == 0 {
+				return nil, true, errors.New("upload contains no JSON authentication files")
+			}
+			return files, hasFilePart, nil
 		}
 		if err != nil {
 			return nil, false, err
@@ -431,6 +435,8 @@ func uploadedAuthFiles(r *http.Request) ([]authUploadFile, bool, error) {
 			_ = part.Close()
 			continue
 		}
+		hasFilePart = true
+		filename := part.FileName()
 
 		partBody, err := io.ReadAll(part)
 		_ = part.Close()
@@ -438,16 +444,18 @@ func uploadedAuthFiles(r *http.Request) ([]authUploadFile, bool, error) {
 			return nil, false, err
 		}
 
-		if isZipUpload(part.FileName()) {
-			zipFiles, err := authFilesFromZip(part.FileName(), partBody)
+		switch {
+		case strings.EqualFold(path.Ext(filename), ".json"):
+			files = append(files, authUploadFile{Name: filename, Body: partBody})
+		case isZipUpload(filename):
+			zipFiles, err := authFilesFromZip(filename, partBody)
 			if err != nil {
-				return nil, false, err
+				return nil, true, err
 			}
 			files = append(files, zipFiles...)
-			continue
+		default:
+			return nil, true, fmt.Errorf("unsupported authentication file type: %s", filename)
 		}
-
-		files = append(files, authUploadFile{Name: part.FileName(), Body: partBody})
 	}
 }
 
