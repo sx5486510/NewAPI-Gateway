@@ -96,6 +96,18 @@ const getCallsFor = (path) =>
 
 const waitForUI = () => new Promise((resolve) => setTimeout(resolve, 100));
 
+const waitForCondition = async (condition, description, timeoutMs = 3000) => {
+  const startedAt = Date.now();
+  while (!condition()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      const detail =
+        typeof description === 'function' ? description() : description;
+      throw new Error(`Timed out waiting for ${detail}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+};
+
 const findButton = (container, text) =>
   Array.from(container.querySelectorAll('button')).find((button) =>
     button.textContent.includes(text)
@@ -246,7 +258,18 @@ describe('CPAAuthFiles', () => {
 
     await act(async () => {
       createRoot(container).render(<CPAAuthFiles />);
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await waitForUI();
+    });
+    await act(async () => {
+      await waitForCondition(
+        () =>
+          getCallsFor('/v0/management/auth-files/download').length === 9 &&
+          active === 0,
+        () =>
+          `all credential detail downloads (calls=${
+            getCallsFor('/v0/management/auth-files/download').length
+          }, active=${active})`
+      );
     });
 
     expect(peak).toBe(4);
@@ -470,6 +493,30 @@ describe('CPAAuthFiles', () => {
     expect(container.textContent).toContain('80%');
     expect(container.textContent).toContain('90%');
     expect(container.textContent).toContain('401 denied');
+    const grokRow = container.querySelector('[data-auth-file="grok.json"]');
+    expect(grokRow.textContent).toContain('Refresh Token: 疑似失效');
+  });
+
+  test('does not mark refresh token invalid for a non-401 quota error', async () => {
+    const grok = mockAuthFiles.files.find((file) => file.name === 'grok.json');
+    mockCPAAuthGet({ listData: { files: [grok] } });
+    helpers.API.post.mockResolvedValue({
+      data: { status_code: 502, body: { error: 'upstream failed' } },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const row = container.querySelector('[data-auth-file="grok.json"]');
+    await act(async () => {
+      findButton(row, '获取真实额度').click();
+      await waitForUI();
+    });
+
+    expect(row.textContent).toContain('502 upstream failed');
+    expect(row.textContent).toContain('Refresh Token: 存在但未验证');
   });
 
   test('ignores repeated quota clicks while one file is loading', async () => {
