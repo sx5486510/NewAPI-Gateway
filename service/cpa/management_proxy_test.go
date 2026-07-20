@@ -647,6 +647,61 @@ func TestManagementProxyRejectsInvalidAuthFileArchives(t *testing.T) {
 	}
 }
 
+func TestManagementProxyRejectsAuthFileMultipartWithoutFiles(t *testing.T) {
+	var emptyForm bytes.Buffer
+	emptyFormWriter := multipart.NewWriter(&emptyForm)
+	if err := emptyFormWriter.WriteField("note", "missing file"); err != nil {
+		t.Fatal(err)
+	}
+	if err := emptyFormWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+	}{
+		{
+			name:        "missing boundary",
+			contentType: "multipart/form-data",
+		},
+		{
+			name:        "missing file part",
+			contentType: emptyFormWriter.FormDataContentType(),
+			body:        emptyForm.String(),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var upstreamCalls atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				upstreamCalls.Add(1)
+				w.WriteHeader(http.StatusInternalServerError)
+			}))
+			defer upstream.Close()
+
+			upstreamURL, _ := url.Parse(upstream.URL)
+			proxy := NewManagementProxy(&fakeLeaseProvider{
+				target:   upstreamURL,
+				password: "runtime-secret",
+			}, nil, nil)
+			req := httptest.NewRequest(http.MethodPost, "/v0/management/auth-files", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", tc.contentType)
+			rec := httptest.NewRecorder()
+			proxy.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+			}
+			if upstreamCalls.Load() != 0 {
+				t.Fatalf("upstream calls = %d, want 0", upstreamCalls.Load())
+			}
+		})
+	}
+}
+
 func postAuthUpload(t *testing.T, proxy http.Handler, filename string, content []byte) *httptest.ResponseRecorder {
 	t.Helper()
 

@@ -411,13 +411,20 @@ func uploadedAuthFileName(r *http.Request) (string, bool, error) {
 }
 
 func uploadedAuthFiles(r *http.Request) ([]authUploadFile, bool, error) {
-	mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || !strings.HasPrefix(mediaType, "multipart/") {
+	contentType := r.Header.Get("Content-Type")
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "multipart/") {
+			return nil, true, fmt.Errorf("invalid multipart content type: %w", err)
+		}
+		return nil, false, nil
+	}
+	if !strings.HasPrefix(mediaType, "multipart/") {
 		return nil, false, nil
 	}
 	boundary := params["boundary"]
 	if boundary == "" {
-		return nil, false, nil
+		return nil, true, errors.New("multipart boundary is missing")
 	}
 
 	body, err := io.ReadAll(r.Body)
@@ -435,7 +442,10 @@ func uploadedAuthFiles(r *http.Request) ([]authUploadFile, bool, error) {
 	for {
 		part, err := reader.NextPart()
 		if errors.Is(err, io.EOF) {
-			if hasFilePart && len(files) == 0 {
+			if !hasFilePart {
+				return nil, true, errors.New("upload contains no authentication files")
+			}
+			if len(files) == 0 {
 				return nil, true, errors.New("upload contains no JSON authentication files")
 			}
 			return files, hasFilePart, nil
