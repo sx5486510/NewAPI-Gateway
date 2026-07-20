@@ -19,6 +19,10 @@ import {
   getQuotaProvider,
   isAuthFileDisabled,
 } from './cpaQuota';
+import {
+  getRefreshTokenStatus,
+  parseAuthCredentialMetadata,
+} from './cpaAuthStatus';
 
 const CPAAuthFiles = () => {
   const [authFiles, setAuthFiles] = useState([]);
@@ -32,11 +36,13 @@ const CPAAuthFiles = () => {
   const [editNote, setEditNote] = useState('');
   const [editPriority, setEditPriority] = useState('');
   const [quotaStates, setQuotaStates] = useState({});
+  const [credentialStates, setCredentialStates] = useState({});
   const [fetchingAllQuotas, setFetchingAllQuotas] = useState(false);
   const [cooldownResetting, setCooldownResetting] = useState({});
   const uploadInFlightRef = useRef(false);
   const quotaInFlightRef = useRef(new Set());
   const cooldownResetInFlightRef = useRef(new Set());
+  const credentialLoadGenerationRef = useRef(0);
 
   const fetchAuthFiles = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -55,10 +61,6 @@ const CPAAuthFiles = () => {
       setLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    fetchAuthFiles();
-  }, [fetchAuthFiles]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -87,6 +89,56 @@ const CPAAuthFiles = () => {
       ? response.data
       : JSON.stringify(response.data ?? {});
   }, []);
+
+  useEffect(() => {
+    fetchAuthFiles();
+  }, [fetchAuthFiles]);
+
+  useEffect(() => {
+    const generation = ++credentialLoadGenerationRef.current;
+    const files = authFiles.filter((file) => file.name);
+    setCredentialStates(
+      Object.fromEntries(
+        files.map((file) => [file.name, { status: 'loading' }])
+      )
+    );
+
+    if (!files.length) return undefined;
+    let cancelled = false;
+
+    const loadDetails = async () => {
+      await mapWithConcurrency(files, 4, async (file) => {
+        let nextState;
+        try {
+          const text = await downloadAuthFileText(file.name);
+          nextState = {
+            status: 'success',
+            metadata: parseAuthCredentialMetadata(text),
+          };
+        } catch (error) {
+          nextState = {
+            status: 'error',
+            error:
+              error instanceof Error && error.message === '认证文件格式无效'
+                ? error.message
+                : '无法读取认证详情',
+          };
+        }
+        if (cancelled || generation !== credentialLoadGenerationRef.current) {
+          return;
+        }
+        setCredentialStates((current) => ({
+          ...current,
+          [file.name]: nextState,
+        }));
+      });
+    };
+
+    loadDetails();
+    return () => {
+      cancelled = true;
+    };
+  }, [authFiles, downloadAuthFileText]);
 
   const handleRefreshQuota = useCallback(
     async (file) => {
@@ -347,6 +399,73 @@ const CPAAuthFiles = () => {
     });
 
     return groups;
+  };
+
+  const formatCredentialTime = (value) => {
+    if (!value) return '未知';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '未知' : date.toLocaleString('zh-CN');
+  };
+
+  const renderCredentialInfo = (file) => {
+    const detail = credentialStates[file.name];
+    const itemStyle = {
+      fontSize: '0.8rem',
+      color: 'var(--text-secondary)',
+    };
+    const containerStyle = {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '0.35rem 1rem',
+    };
+
+    if (!detail || detail.status === 'loading') {
+      return (
+        <div data-credential-status={file.name} style={containerStyle}>
+          <span style={itemStyle}>
+            最近刷新: {formatCredentialTime(file.last_refresh)}
+          </span>
+          <span style={itemStyle}>Access Token: 读取中</span>
+          <span style={itemStyle}>Refresh Token: 读取中</span>
+        </div>
+      );
+    }
+    if (detail.status === 'error') {
+      return (
+        <div data-credential-status={file.name} style={containerStyle}>
+          <span style={itemStyle}>
+            最近刷新: {formatCredentialTime(file.last_refresh)}
+          </span>
+          <span style={itemStyle}>{detail.error}</span>
+        </div>
+      );
+    }
+
+    const accessText =
+      detail.metadata.accessStatus === 'valid'
+        ? `有效至 ${formatCredentialTime(detail.metadata.expiresAt)}`
+        : detail.metadata.accessStatus === 'expired'
+        ? `已过期（${formatCredentialTime(detail.metadata.expiresAt)}）`
+        : '未知';
+    const refreshStatus = getRefreshTokenStatus(detail.metadata, {
+      file,
+      quotaState: quotaStates[quotaKey(file)],
+    });
+    const refreshText = {
+      missing: '缺失',
+      unverified: '存在但未验证',
+      suspected_invalid: '疑似失效',
+    }[refreshStatus];
+
+    return (
+      <div data-credential-status={file.name} style={containerStyle}>
+        <span style={itemStyle}>
+          最近刷新: {formatCredentialTime(file.last_refresh)}
+        </span>
+        <span style={itemStyle}>Access Token: {accessText}</span>
+        <span style={itemStyle}>Refresh Token: {refreshText}</span>
+      </div>
+    );
   };
 
   const renderQuotaInfo = (file) => {
@@ -688,6 +807,9 @@ const CPAAuthFiles = () => {
                               </span>
                             )}
                           </div>
+
+                          {/* 认证状态 */}
+                          {renderCredentialInfo(file)}
 
                           {/* 配额信息 */}
                           {renderQuotaInfo(file)}

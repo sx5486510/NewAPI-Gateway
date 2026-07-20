@@ -26,6 +26,7 @@ const mockAuthFiles = {
       disabled: false,
       priority: 100,
       note: 'Primary account',
+      last_refresh: '2026-07-20T07:00:00Z',
     },
     {
       name: 'codex-backup.json',
@@ -63,6 +64,36 @@ const mockAuthFiles = {
   ],
 };
 
+const defaultCredential = JSON.stringify({
+  expired: '2099-07-20T08:00:00Z',
+  refresh_token: 'default-refresh-secret',
+});
+
+const mockCPAAuthGet = ({
+  listData = mockAuthFiles,
+  downloads = {},
+  downloadHandler,
+} = {}) => {
+  helpers.API.get.mockImplementation((path, config = {}) => {
+    if (path === '/v0/management/auth-files') {
+      return Promise.resolve({ data: listData });
+    }
+    if (path === '/v0/management/auth-files/download') {
+      const name = config.params?.name;
+      if (downloadHandler) return downloadHandler(name);
+      const result = downloads[name];
+      if (result instanceof Error) return Promise.reject(result);
+      return Promise.resolve({ data: result ?? defaultCredential });
+    }
+    return Promise.reject(new Error(`unexpected GET ${path}`));
+  });
+};
+
+const getCallsFor = (path) =>
+  helpers.API.get.mock.calls.filter(
+    ([requestedPath]) => requestedPath === path
+  );
+
 const waitForUI = () => new Promise((resolve) => setTimeout(resolve, 100));
 
 const findButton = (container, text) =>
@@ -95,7 +126,7 @@ describe('CPAAuthFiles', () => {
   });
 
   test('fetches and displays auth files on mount', async () => {
-    helpers.API.get.mockResolvedValueOnce({ data: mockAuthFiles });
+    mockCPAAuthGet();
 
     await act(async () => {
       createRoot(container).render(<CPAAuthFiles />);
@@ -107,8 +138,45 @@ describe('CPAAuthFiles', () => {
     expect(container.textContent).toContain('codex-backup.json');
   });
 
+  test('loads and displays safe credential status from official CPA endpoints', async () => {
+    mockCPAAuthGet({
+      listData: { files: [mockAuthFiles.files[0]] },
+      downloads: {
+        'claude@example.com.json': JSON.stringify({
+          expired: '2020-01-01T00:00:00Z',
+          access_token: 'access-secret-value',
+          refresh_token: 'refresh-secret-value',
+        }),
+      },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const row = container.querySelector(
+      '[data-auth-file="claude@example.com.json"]'
+    );
+    expect(row.textContent).toContain('最近刷新');
+    expect(row.textContent).toContain('2026');
+    expect(row.textContent).toContain('Access Token');
+    expect(row.textContent).toContain('已过期');
+    expect(row.textContent).toContain('Refresh Token');
+    expect(row.textContent).toContain('存在但未验证');
+    expect(row.textContent).not.toMatch(
+      /access-secret-value|refresh-secret-value/
+    );
+    expect(
+      getCallsFor('/v0/management/auth-files/download')[0][1]
+    ).toMatchObject({
+      params: { name: 'claude@example.com.json' },
+      responseType: 'text',
+    });
+  });
+
   test('displays empty state when no auth files', async () => {
-    helpers.API.get.mockResolvedValueOnce({ data: { files: [] } });
+    mockCPAAuthGet({ listData: { files: [] } });
 
     await act(async () => {
       createRoot(container).render(<CPAAuthFiles />);
@@ -133,7 +201,7 @@ describe('CPAAuthFiles', () => {
   });
 
   test('refresh button reloads auth files', async () => {
-    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    mockCPAAuthGet();
 
     await act(async () => {
       createRoot(container).render(<CPAAuthFiles />);
@@ -149,12 +217,12 @@ describe('CPAAuthFiles', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
     });
 
-    expect(helpers.API.get).toHaveBeenCalledTimes(2);
+    expect(getCallsFor('/v0/management/auth-files')).toHaveLength(2);
     expect(helpers.showSuccess).toHaveBeenCalledWith('列表已刷新');
   });
 
   test('refreshes one quota and renders limits without reloading auth files', async () => {
-    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    mockCPAAuthGet();
     helpers.API.post.mockImplementation((path, request) => {
       if (request.url.endsWith('/usage')) {
         return Promise.resolve({
@@ -192,11 +260,11 @@ describe('CPAAuthFiles', () => {
     ]);
     expect(container.textContent).toContain('5 小时限额');
     expect(container.textContent).toContain('80%');
-    expect(helpers.API.get).toHaveBeenCalledTimes(1);
+    expect(getCallsFor('/v0/management/auth-files')).toHaveLength(1);
   });
 
   test('fetches all supported enabled quotas and keeps partial failures local', async () => {
-    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    mockCPAAuthGet();
     helpers.API.post.mockImplementation((path, request) => {
       if (request.authIndex === '3' && request.url.endsWith('/usage')) {
         return Promise.resolve({
@@ -272,8 +340,8 @@ describe('CPAAuthFiles', () => {
   });
 
   test('ignores repeated quota clicks while one file is loading', async () => {
-    helpers.API.get.mockResolvedValue({
-      data: { files: [mockAuthFiles.files[0]] },
+    mockCPAAuthGet({
+      listData: { files: [mockAuthFiles.files[0]] },
     });
     helpers.API.post.mockReturnValue(new Promise(() => {}));
 
@@ -299,7 +367,7 @@ describe('CPAAuthFiles', () => {
   });
 
   test('resets one auth cooldown through the official CPA route and reloads the list', async () => {
-    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    mockCPAAuthGet();
     helpers.API.post.mockResolvedValue({
       data: { status: 'ok', auth_index: '3', models: ['claude-sonnet-4'] },
     });
@@ -324,14 +392,14 @@ describe('CPAAuthFiles', () => {
       '/v0/management/reset-quota',
       { auth_index: '3' }
     );
-    expect(helpers.API.get).toHaveBeenCalledTimes(2);
+    expect(getCallsFor('/v0/management/auth-files')).toHaveLength(2);
     expect(helpers.showSuccess).toHaveBeenCalledWith(
       'claude@example.com.json 冷却状态已重置'
     );
   });
 
   test('ignores duplicate cooldown reset clicks while the request is running', async () => {
-    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    mockCPAAuthGet();
     helpers.API.post.mockReturnValue(new Promise(() => {}));
 
     await act(async () => {
@@ -354,8 +422,8 @@ describe('CPAAuthFiles', () => {
   });
 
   test('shows the Gateway message when Axios converted a quota error to data', async () => {
-    helpers.API.get.mockResolvedValue({
-      data: { files: [mockAuthFiles.files[0]] },
+    mockCPAAuthGet({
+      listData: { files: [mockAuthFiles.files[0]] },
     });
     helpers.API.post.mockResolvedValue({
       data: { success: false, message: 'CPA quota service unavailable' },
@@ -387,7 +455,7 @@ describe('CPAAuthFiles', () => {
       auth_index: index + 1,
       disabled: false,
     }));
-    helpers.API.get.mockResolvedValue({ data: { files } });
+    mockCPAAuthGet({ listData: { files } });
     let active = 0;
     let peak = 0;
     helpers.API.post.mockImplementation(
@@ -424,7 +492,7 @@ describe('CPAAuthFiles', () => {
   });
 
   test('opens upload modal when upload button clicked', async () => {
-    helpers.API.get.mockResolvedValueOnce({ data: mockAuthFiles });
+    mockCPAAuthGet();
 
     await act(async () => {
       createRoot(container).render(<CPAAuthFiles />);
@@ -444,7 +512,7 @@ describe('CPAAuthFiles', () => {
   });
 
   test('ignores duplicate upload clicks while upload is in flight', async () => {
-    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    mockCPAAuthGet();
     helpers.API.post.mockReturnValue(new Promise(() => {}));
 
     await act(async () => {
@@ -484,7 +552,7 @@ describe('CPAAuthFiles', () => {
   });
 
   test('shows duplicate upload warning without posting existing file', async () => {
-    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    mockCPAAuthGet();
 
     await act(async () => {
       createRoot(container).render(<CPAAuthFiles />);
@@ -525,7 +593,7 @@ describe('CPAAuthFiles', () => {
   });
 
   test('uploads non-duplicate files and warns about duplicate selections', async () => {
-    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    mockCPAAuthGet();
     helpers.API.post.mockResolvedValueOnce({
       data: {
         success: true,
@@ -584,7 +652,7 @@ describe('CPAAuthFiles', () => {
   });
 
   test('toggles file status', async () => {
-    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    mockCPAAuthGet();
     helpers.API.patch.mockResolvedValueOnce({ data: { success: true } });
 
     await act(async () => {
@@ -612,7 +680,7 @@ describe('CPAAuthFiles', () => {
   });
 
   test('deletes file with confirmation', async () => {
-    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    mockCPAAuthGet();
     helpers.API.delete.mockResolvedValueOnce({ data: { success: true } });
     window.confirm = jest.fn(() => true);
 
@@ -641,7 +709,7 @@ describe('CPAAuthFiles', () => {
   });
 
   test('cancels delete when confirmation declined', async () => {
-    helpers.API.get.mockResolvedValue({ data: mockAuthFiles });
+    mockCPAAuthGet();
     window.confirm = jest.fn(() => false);
 
     await act(async () => {
