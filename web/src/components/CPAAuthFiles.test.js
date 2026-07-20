@@ -362,6 +362,70 @@ describe('CPAAuthFiles', () => {
     expect(getCallsFor('/v0/management/auth-files/download')).toHaveLength(9);
   });
 
+  test('downloads credential details only for files visible on group pages', async () => {
+    const files = buildAuthFiles('codex', 55);
+    mockCPAAuthGet({ listData: { files } });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+    await act(async () => {
+      await waitForCondition(
+        () => getCallsFor('/v0/management/auth-files/download').length >= 50,
+        () =>
+          `visible credential downloads (calls=${
+            getCallsFor('/v0/management/auth-files/download').length
+          })`,
+        10000
+      );
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+
+    expect(getCallsFor('/v0/management/auth-files/download')).toHaveLength(50);
+    expect(
+      getCallsFor('/v0/management/auth-files/download').map(
+        ([, config]) => config.params.name
+      )
+    ).not.toContain('codex-055.json');
+  }, 15000);
+
+  test('loads a new page once and reuses cached credential details', async () => {
+    const files = buildAuthFiles('codex', 55);
+    mockCPAAuthGet({ listData: { files } });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+    await act(async () => {
+      await waitForCondition(
+        () => getCallsFor('/v0/management/auth-files/download').length === 50,
+        'first page credential downloads',
+        10000
+      );
+    });
+
+    const codexGroup = container.querySelector('[data-auth-group="codex"]');
+    await act(async () => {
+      findButton(codexGroup, '2').click();
+      await waitForUI();
+    });
+    await act(async () => {
+      await waitForCondition(
+        () => getCallsFor('/v0/management/auth-files/download').length === 55,
+        'second page credential downloads',
+        5000
+      );
+    });
+    await act(async () => {
+      findButton(codexGroup, '1').click();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    expect(getCallsFor('/v0/management/auth-files/download')).toHaveLength(55);
+  }, 20000);
+
   test('ignores an old credential download after refreshing the list', async () => {
     const file = mockAuthFiles.files[0];
     let downloadCount = 0;

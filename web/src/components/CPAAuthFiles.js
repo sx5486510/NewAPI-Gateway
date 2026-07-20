@@ -95,6 +95,7 @@ const CPAAuthFiles = () => {
   const quotaInFlightRef = useRef(new Set());
   const cooldownResetInFlightRef = useRef(new Set());
   const credentialLoadGenerationRef = useRef(0);
+  const credentialCacheRef = useRef({});
 
   const groupedFiles = useMemo(() => groupFilesByType(authFiles), [authFiles]);
   const paginatedGroups = useMemo(
@@ -106,6 +107,10 @@ const CPAAuthFiles = () => {
         ])
       ),
     [groupedFiles, pageByGroup, pageSizeByGroup]
+  );
+  const visibleAuthFiles = useMemo(
+    () => Object.values(paginatedGroups).flatMap((group) => group.files),
+    [paginatedGroups]
   );
 
   const fetchAuthFiles = useCallback(async (showLoading = true) => {
@@ -160,10 +165,24 @@ const CPAAuthFiles = () => {
 
   useEffect(() => {
     const generation = ++credentialLoadGenerationRef.current;
-    const files = authFiles.filter((file) => file.name);
-    setCredentialStates(
+    const validNames = new Set(
+      authFiles.filter((file) => file.name).map((file) => file.name)
+    );
+    Object.keys(credentialCacheRef.current).forEach((name) => {
+      if (!validNames.has(name)) delete credentialCacheRef.current[name];
+    });
+
+    const files = visibleAuthFiles.filter(
+      (file) => file.name && !credentialCacheRef.current[file.name]
+    );
+    setCredentialStates(() =>
       Object.fromEntries(
-        files.map((file) => [file.name, { status: 'loading' }])
+        visibleAuthFiles
+          .filter((file) => file.name)
+          .map((file) => [
+            file.name,
+            credentialCacheRef.current[file.name] || { status: 'loading' },
+          ])
       )
     );
 
@@ -191,6 +210,7 @@ const CPAAuthFiles = () => {
         if (cancelled || generation !== credentialLoadGenerationRef.current) {
           return;
         }
+        credentialCacheRef.current[file.name] = nextState;
         setCredentialStates((current) => ({
           ...current,
           [file.name]: nextState,
@@ -202,7 +222,7 @@ const CPAAuthFiles = () => {
     return () => {
       cancelled = true;
     };
-  }, [authFiles, downloadAuthFileText]);
+  }, [authFiles, downloadAuthFileText, visibleAuthFiles]);
 
   const handleRefreshQuota = useCallback(
     async (file) => {
