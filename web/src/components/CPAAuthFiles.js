@@ -934,8 +934,10 @@ const CPAAuthFiles = () => {
             <input
               type='file'
               multiple
-              accept='.json'
-              onChange={(e) => setUploadFiles(Array.from(e.target.files))}
+              accept='.json,.zip,application/json,application/zip'
+              onChange={(e) =>
+                setUploadFiles(Array.from(e.target.files || []))
+              }
               style={{ width: '100%' }}
             />
             <p
@@ -945,7 +947,7 @@ const CPAAuthFiles = () => {
                 color: 'var(--text-secondary)',
               }}
             >
-              支持同时上传多个 JSON 文件
+              支持多个 JSON 或 ZIP；递归扫描 ZIP 子目录，只导入 JSON 文件
             </p>
           </div>
 

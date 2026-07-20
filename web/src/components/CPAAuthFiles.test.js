@@ -688,7 +688,49 @@ describe('CPAAuthFiles', () => {
     });
 
     expect(container.textContent).toContain('上传认证文件');
-    expect(container.textContent).toContain('支持同时上传多个 JSON 文件');
+    const fileInput = container.querySelector('input[type="file"]');
+    expect(fileInput.accept).toContain('.json');
+    expect(fileInput.accept).toContain('.zip');
+    expect(container.textContent).toContain('递归扫描 ZIP 子目录');
+    expect(container.textContent).toContain('只导入 JSON 文件');
+  });
+
+  test('uploads zip archives for server-side expansion', async () => {
+    mockCPAAuthGet();
+    helpers.API.post.mockResolvedValueOnce({
+      data: { success: true, uploaded: ['nested.json'], duplicates: [] },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    await act(async () => {
+      findButton(container, '上传认证文件').click();
+    });
+
+    const fileInput = container.querySelector('input[type="file"]');
+    const archive = new File(['zip-content'], 'accounts.zip', {
+      type: 'application/zip',
+    });
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        value: [archive],
+        configurable: true,
+      });
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    await act(async () => {
+      Array.from(container.querySelectorAll('button')).pop().click();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    const formData = helpers.API.post.mock.calls[0][1];
+    expect(formData.getAll('file').map((file) => file.name)).toEqual([
+      'accounts.zip',
+    ]);
   });
 
   test('ignores duplicate upload clicks while upload is in flight', async () => {
