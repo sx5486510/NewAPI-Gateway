@@ -113,6 +113,20 @@ const CPAAuthFiles = () => {
     [paginatedGroups]
   );
 
+  useEffect(() => {
+    setPageByGroup((current) => {
+      let changed = false;
+      const next = { ...current };
+      Object.entries(paginatedGroups).forEach(([key, group]) => {
+        if (next[key] !== group.page) {
+          next[key] = group.page;
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [paginatedGroups]);
+
   const fetchAuthFiles = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {

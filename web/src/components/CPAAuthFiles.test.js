@@ -236,6 +236,55 @@ describe('CPAAuthFiles', () => {
     expect(claudeGroup.textContent).not.toContain('claude-055.json');
   });
 
+  test('persists the clamped group page after refreshed data grows again', async () => {
+    let listRequest = 0;
+    helpers.API.get.mockImplementation((path) => {
+      if (path === '/v0/management/auth-files') {
+        listRequest += 1;
+        return Promise.resolve({
+          data: {
+            files:
+              listRequest === 2
+                ? buildAuthFiles('codex', 10)
+                : buildAuthFiles('codex', 55),
+          },
+        });
+      }
+      if (path === '/v0/management/auth-files/download') {
+        return Promise.resolve({ data: defaultCredential });
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+    const codexGroup = container.querySelector('[data-auth-group="codex"]');
+    await act(async () => {
+      findButton(codexGroup, '2').click();
+    });
+    expect(codexGroup.textContent).toContain('codex-055.json');
+
+    await act(async () => {
+      findButton(container, '刷新列表').click();
+      await waitForUI();
+    });
+
+    expect(codexGroup.querySelectorAll('[data-auth-file]')).toHaveLength(10);
+    expect(codexGroup.textContent).toContain('codex-001.json');
+    expect(codexGroup.textContent).not.toContain('codex-055.json');
+
+    await act(async () => {
+      findButton(container, '刷新列表').click();
+      await waitForUI();
+    });
+
+    expect(codexGroup.querySelectorAll('[data-auth-file]')).toHaveLength(50);
+    expect(codexGroup.textContent).toContain('codex-001.json');
+    expect(codexGroup.textContent).not.toContain('codex-055.json');
+  });
+
   test('loads and displays safe credential status from official CPA endpoints', async () => {
     mockCPAAuthGet({
       listData: { files: [mockAuthFiles.files[0]] },
