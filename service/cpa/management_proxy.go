@@ -58,6 +58,17 @@ const auditUsernameKey contextKey = 1
 
 const maxAPICallRequestBody int64 = 1 << 20
 
+const (
+	maxAuthFilesFromZip      = 10_000
+	maxAuthFileFromZipBytes  = int64(8 << 20)
+	maxAuthFilesFromZipBytes = int64(64 << 20)
+)
+
+type authZipBudget struct {
+	files int
+	bytes int64
+}
+
 // NewManagementProxy creates a management reverse proxy with the given lease
 // provider, snapshot store, and sync scheduler.
 func NewManagementProxy(
@@ -419,6 +430,7 @@ func uploadedAuthFiles(r *http.Request) ([]authUploadFile, bool, error) {
 
 	reader := multipart.NewReader(bytes.NewReader(body), boundary)
 	var files []authUploadFile
+	budget := authZipBudget{}
 	hasFilePart := false
 	for {
 		part, err := reader.NextPart()
@@ -448,7 +460,7 @@ func uploadedAuthFiles(r *http.Request) ([]authUploadFile, bool, error) {
 		case strings.EqualFold(path.Ext(filename), ".json"):
 			files = append(files, authUploadFile{Name: filename, Body: partBody})
 		case isZipUpload(filename):
-			zipFiles, err := authFilesFromZip(filename, partBody)
+			zipFiles, err := authFilesFromZip(filename, partBody, &budget)
 			if err != nil {
 				return nil, true, err
 			}
@@ -535,7 +547,7 @@ func (p *ManagementProxy) authFileNames(ctx context.Context, lease *ManagementLe
 	return names, nil
 }
 
-func authFilesFromZip(filename string, body []byte) ([]authUploadFile, error) {
+func authFilesFromZip(filename string, body []byte, budget *authZipBudget) ([]authUploadFile, error) {
 	reader, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
 	if err != nil {
 		return nil, fmt.Errorf("invalid zip %s: %w", filename, err)
@@ -546,16 +558,27 @@ func authFilesFromZip(filename string, body []byte) ([]authUploadFile, error) {
 		if entry.FileInfo().IsDir() {
 			continue
 		}
-		name := path.Base(entry.Name)
+		name := path.Base(strings.ReplaceAll(entry.Name, "\\", "/"))
 		if name == "." || name == "/" || name == "" || !strings.EqualFold(path.Ext(name), ".json") {
 			continue
+		}
+		if budget.files >= maxAuthFilesFromZip {
+			return nil, errors.New("ZIP upload contains more than 10,000 JSON files")
+		}
+		budget.files++
+		if entry.UncompressedSize64 > uint64(maxAuthFileFromZipBytes) {
+			return nil, fmt.Errorf("ZIP entry %s exceeds 8 MiB", entry.Name)
+		}
+		remaining := maxAuthFilesFromZipBytes - budget.bytes
+		if entry.UncompressedSize64 > uint64(remaining) {
+			return nil, errors.New("ZIP JSON content exceeds 64 MiB")
 		}
 
 		rc, err := entry.Open()
 		if err != nil {
 			return nil, fmt.Errorf("read zip entry %s: %w", entry.Name, err)
 		}
-		entryBody, readErr := io.ReadAll(rc)
+		entryBody, readErr := io.ReadAll(io.LimitReader(rc, minInt64(maxAuthFileFromZipBytes, remaining)+1))
 		closeErr := rc.Close()
 		if readErr != nil {
 			return nil, fmt.Errorf("read zip entry %s: %w", entry.Name, readErr)
@@ -563,10 +586,24 @@ func authFilesFromZip(filename string, body []byte) ([]authUploadFile, error) {
 		if closeErr != nil {
 			return nil, fmt.Errorf("close zip entry %s: %w", entry.Name, closeErr)
 		}
+		if int64(len(entryBody)) > maxAuthFileFromZipBytes {
+			return nil, fmt.Errorf("ZIP entry %s exceeds 8 MiB", entry.Name)
+		}
+		if int64(len(entryBody)) > remaining {
+			return nil, errors.New("ZIP JSON content exceeds 64 MiB")
+		}
+		budget.bytes += int64(len(entryBody))
 
 		files = append(files, authUploadFile{Name: name, Body: entryBody})
 	}
 	return files, nil
+}
+
+func minInt64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func isZipUpload(filename string) bool {

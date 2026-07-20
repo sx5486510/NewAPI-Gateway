@@ -670,6 +670,42 @@ func postAuthUpload(t *testing.T, proxy http.Handler, filename string, content [
 	return rec
 }
 
+func TestAuthFilesFromZipEnforcesExpansionLimits(t *testing.T) {
+	t.Run("file count", func(t *testing.T) {
+		files := make(map[string]string, 10001)
+		for i := 0; i < 10001; i++ {
+			files[fmt.Sprintf("nested/%05d.json", i)] = ""
+		}
+		_, err := authFilesFromZip("many.zip", buildAuthFilesZip(t, files), &authZipBudget{})
+		if err == nil || !strings.Contains(err.Error(), "10,000") {
+			t.Fatalf("err = %v, want file-count error", err)
+		}
+	})
+
+	t.Run("single file size", func(t *testing.T) {
+		archive := buildAuthFilesZip(t, map[string]string{
+			"large.json": strings.Repeat("x", (8<<20)+1),
+		})
+		_, err := authFilesFromZip("large.zip", archive, &authZipBudget{})
+		if err == nil || !strings.Contains(err.Error(), "8 MiB") {
+			t.Fatalf("err = %v, want per-file size error", err)
+		}
+	})
+
+	t.Run("combined size", func(t *testing.T) {
+		files := make(map[string]string, 9)
+		chunk := strings.Repeat("x", 8<<20)
+		for i := 0; i < 9; i++ {
+			files[fmt.Sprintf("%d.json", i)] = chunk
+		}
+		archive := buildAuthFilesZip(t, files)
+		_, err := authFilesFromZip("total.zip", archive, &authZipBudget{})
+		if err == nil || !strings.Contains(err.Error(), "64 MiB") {
+			t.Fatalf("err = %v, want total-size error", err)
+		}
+	})
+}
+
 func buildAuthFilesZip(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 
