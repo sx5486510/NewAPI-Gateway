@@ -18,6 +18,7 @@ server.key
 .codegraph/
 .smoke/
 .worktrees/
+worktrees/
 log.txt
 test-debug.txt
 *.htm
