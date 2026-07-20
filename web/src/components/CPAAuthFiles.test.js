@@ -175,6 +175,139 @@ describe('CPAAuthFiles', () => {
     });
   });
 
+  test('isolates credential download failures per auth file', async () => {
+    const files = [mockAuthFiles.files[0], mockAuthFiles.files[2]];
+    mockCPAAuthGet({
+      listData: { files },
+      downloads: {
+        'claude@example.com.json': JSON.stringify({
+          expired: '2099-01-01T00:00:00Z',
+          refresh_token: 'safe-row-secret',
+        }),
+        'antigravity.json': new Error('proxy response included hidden-secret'),
+      },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    expect(
+      container.querySelector('[data-auth-file="claude@example.com.json"]')
+        .textContent
+    ).toContain('存在但未验证');
+    expect(
+      container.querySelector('[data-auth-file="antigravity.json"]').textContent
+    ).toContain('无法读取认证详情');
+    expect(container.textContent).not.toMatch(/safe-row-secret|hidden-secret/);
+  });
+
+  test('reports invalid credential JSON without exposing its response', async () => {
+    mockCPAAuthGet({
+      listData: { files: [mockAuthFiles.files[0]] },
+      downloads: {
+        'claude@example.com.json': 'not-json-with-hidden-secret',
+      },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const row = container.querySelector(
+      '[data-auth-file="claude@example.com.json"]'
+    );
+    expect(row.textContent).toContain('认证文件格式无效');
+    expect(container.textContent).not.toContain('not-json-with-hidden-secret');
+  });
+
+  test('limits credential detail downloads to four workers', async () => {
+    const files = Array.from({ length: 9 }, (_, index) => ({
+      name: `auth-${index}.json`,
+      type: 'codex',
+      auth_index: index + 1,
+    }));
+    let active = 0;
+    let peak = 0;
+    mockCPAAuthGet({
+      listData: { files },
+      downloadHandler: () =>
+        new Promise((resolve) => {
+          active += 1;
+          peak = Math.max(peak, active);
+          setTimeout(() => {
+            active -= 1;
+            resolve({ data: defaultCredential });
+          }, 20);
+        }),
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(peak).toBe(4);
+    expect(getCallsFor('/v0/management/auth-files/download')).toHaveLength(9);
+  });
+
+  test('ignores an old credential download after refreshing the list', async () => {
+    const file = mockAuthFiles.files[0];
+    let downloadCount = 0;
+    let resolveFirstDownload;
+    helpers.API.get.mockImplementation((path) => {
+      if (path === '/v0/management/auth-files') {
+        return Promise.resolve({ data: { files: [{ ...file }] } });
+      }
+      if (path === '/v0/management/auth-files/download') {
+        downloadCount += 1;
+        if (downloadCount === 1) {
+          return new Promise((resolve) => {
+            resolveFirstDownload = resolve;
+          });
+        }
+        return Promise.resolve({
+          data: JSON.stringify({
+            expired: '2099-01-01T00:00:00Z',
+            refresh_token: '',
+          }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    await act(async () => {
+      findButton(container, '刷新列表').click();
+      await waitForUI();
+    });
+    const row = container.querySelector(
+      '[data-auth-file="claude@example.com.json"]'
+    );
+    expect(row.textContent).toContain('Refresh Token: 缺失');
+
+    await act(async () => {
+      resolveFirstDownload({
+        data: JSON.stringify({
+          expired: '2099-01-01T00:00:00Z',
+          refresh_token: 'old-refresh-secret',
+        }),
+      });
+      await waitForUI();
+    });
+
+    expect(row.textContent).toContain('Refresh Token: 缺失');
+    expect(row.textContent).not.toContain('old-refresh-secret');
+    expect(getCallsFor('/v0/management/auth-files')).toHaveLength(2);
+    expect(getCallsFor('/v0/management/auth-files/download')).toHaveLength(2);
+  });
+
   test('displays empty state when no auth files', async () => {
     mockCPAAuthGet({ listData: { files: [] } });
 
