@@ -355,7 +355,16 @@ func (s *SnapshotStore) writeAtomic(data []byte) (err error) {
 	if err = file.Close(); err != nil {
 		return fmt.Errorf("cpa: close temporary config: %w", err)
 	}
-	if err = s.renameFile(tempPath, s.Path()); err != nil {
+
+	// Windows: 先删除目标文件再重命名（如果存在）
+	targetPath := s.Path()
+	if _, statErr := os.Stat(targetPath); statErr == nil {
+		if err = os.Remove(targetPath); err != nil {
+			return fmt.Errorf("cpa: remove old config before replace: %w", err)
+		}
+	}
+
+	if err = s.renameFile(tempPath, targetPath); err != nil {
 		return fmt.Errorf("cpa: replace runtime config: %w", err)
 	}
 	return nil

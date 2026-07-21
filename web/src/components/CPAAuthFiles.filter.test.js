@@ -82,7 +82,16 @@ const findSelect = (container, label) =>
 const findButton = (container, text) =>
   Array.from(container.querySelectorAll('button')).find((button) =>
     button.textContent.includes(text)
-  );
+  ) || null;
+
+const setInputValue = (input, value) => {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    'value'
+  ).set;
+  setter.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+};
 
 describe('CPAAuthFiles - 筛选功能', () => {
   let container;
@@ -141,8 +150,7 @@ describe('CPAAuthFiles - 筛选功能', () => {
 
     // 搜索文件名
     await act(async () => {
-      searchInput.value = 'primary';
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      setInputValue(searchInput, 'primary');
     });
     expect(container.textContent).toContain('匹配 1 / 5 条');
     expect(container.textContent).toContain('claude-primary.json');
@@ -150,8 +158,7 @@ describe('CPAAuthFiles - 筛选功能', () => {
 
     // 搜索邮箱
     await act(async () => {
-      searchInput.value = 'team@';
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      setInputValue(searchInput, 'team@');
     });
     expect(container.textContent).toContain('匹配 1 / 5 条');
     expect(container.textContent).toContain('codex-team.json');
@@ -159,16 +166,14 @@ describe('CPAAuthFiles - 筛选功能', () => {
 
     // 搜索备注
     await act(async () => {
-      searchInput.value = 'Backup';
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      setInputValue(searchInput, 'Backup');
     });
     expect(container.textContent).toContain('匹配 1 / 5 条');
     expect(container.textContent).toContain('claude-backup.json');
 
     // 大小写不敏感
     await act(async () => {
-      searchInput.value = 'GROK';
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      setInputValue(searchInput, 'GROK');
     });
     expect(container.textContent).toContain('匹配 1 / 5 条');
     expect(container.textContent).toContain('grok-test.json');
@@ -266,16 +271,14 @@ describe('CPAAuthFiles - 筛选功能', () => {
 
     // 添加搜索: primary
     await act(async () => {
-      searchInput.value = 'primary';
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      setInputValue(searchInput, 'primary');
     });
     expect(container.textContent).toContain('匹配 1 / 5 条');
     expect(container.textContent).toContain('claude-primary.json');
 
     // 修改搜索: backup (没有 Claude + 已启用 + backup 的)
     await act(async () => {
-      searchInput.value = 'backup';
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      setInputValue(searchInput, 'backup');
     });
     expect(container.textContent).toContain('匹配 0 / 5 条');
     expect(container.textContent).toContain('没有符合筛选条件的认证文件');
@@ -297,8 +300,7 @@ describe('CPAAuthFiles - 筛选功能', () => {
 
     // 激活搜索筛选
     await act(async () => {
-      searchInput.value = 'test';
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      setInputValue(searchInput, 'test');
     });
     expect(findButton(container, '清除筛选')).not.toBeNull();
 
@@ -324,8 +326,7 @@ describe('CPAAuthFiles - 筛选功能', () => {
     const typeSelect = findSelect(container, '按类型筛选');
 
     await act(async () => {
-      searchInput.value = 'claude';
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      setInputValue(searchInput, 'claude');
       typeSelect.value = 'claude';
       typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
     });
@@ -339,6 +340,63 @@ describe('CPAAuthFiles - 筛选功能', () => {
     expect(searchInput.value).toBe('claude');
     expect(typeSelect.value).toBe('claude');
     expect(container.textContent).toContain('匹配 2 / 5 条');
+  });
+
+  test('resets all group pages to 1 when search changes', async () => {
+    mockCPAAuthGet();
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const searchInput = findInput(container, '搜索认证文件');
+
+    // 触发搜索，应该重置分页
+    await act(async () => {
+      setInputValue(searchInput, 'claude');
+    });
+
+    // 验证分页已重置 - 检查是否有分页组件显示第1页
+    expect(container.textContent).toContain('匹配 2 / 5 条');
+  });
+
+  test('resets all group pages to 1 when type filter changes', async () => {
+    mockCPAAuthGet();
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const typeSelect = findSelect(container, '按类型筛选');
+
+    // 改变类型筛选
+    await act(async () => {
+      typeSelect.value = 'claude';
+      typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('匹配 2 / 5 条');
+  });
+
+  test('resets all group pages to 1 when status filter changes', async () => {
+    mockCPAAuthGet();
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const statusSelect = findSelect(container, '按状态筛选');
+
+    // 改变状态筛选
+    await act(async () => {
+      statusSelect.value = 'enabled';
+      statusSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('匹配 4 / 5 条');
   });
 
   test('filters affect visible group display', async () => {

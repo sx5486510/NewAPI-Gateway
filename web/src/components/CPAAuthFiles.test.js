@@ -121,6 +121,12 @@ const findButton = (container, text) =>
     button.textContent.includes(text)
   );
 
+const findGroupCheckbox = (group, groupName) =>
+  group.querySelector(`input[aria-label="选择 ${groupName} 当前页认证文件"]`);
+
+const findRowCheckbox = (group, fileName) =>
+  group.querySelector(`input[aria-label="选择认证文件 ${fileName}"]`);
+
 describe('CPAAuthFiles', () => {
   let container;
 
@@ -283,6 +289,124 @@ describe('CPAAuthFiles', () => {
     expect(codexGroup.querySelectorAll('[data-auth-file]')).toHaveLength(50);
     expect(codexGroup.textContent).toContain('codex-001.json');
     expect(codexGroup.textContent).not.toContain('codex-055.json');
+  });
+
+  test('selects only the current group page and retains selections across pages', async () => {
+    mockCPAAuthGet({
+      listData: {
+        files: [...buildAuthFiles('claude', 55), ...buildAuthFiles('codex', 2)],
+      },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const claudeGroup = container.querySelector('[data-auth-group="claude"]');
+    const codexGroup = container.querySelector('[data-auth-group="codex"]');
+    const claudeSelectPage = findGroupCheckbox(claudeGroup, 'Claude');
+
+    await act(async () => {
+      claudeSelectPage.click();
+    });
+
+    expect(findButton(claudeGroup, '删除已选 (50)')).not.toBeNull();
+    expect(findButton(codexGroup, '删除已选 (0)').disabled).toBe(true);
+    expect(findGroupCheckbox(codexGroup, 'Codex').checked).toBe(false);
+
+    await act(async () => {
+      findButton(claudeGroup, '2').click();
+    });
+
+    expect(findGroupCheckbox(claudeGroup, 'Claude').checked).toBe(false);
+    expect(findButton(claudeGroup, '删除已选 (50)')).not.toBeNull();
+
+    await act(async () => {
+      findGroupCheckbox(claudeGroup, 'Claude').click();
+    });
+
+    expect(findButton(claudeGroup, '删除已选 (55)')).not.toBeNull();
+
+    await act(async () => {
+      findButton(claudeGroup, '1').click();
+    });
+    await act(async () => {
+      findGroupCheckbox(claudeGroup, 'Claude').click();
+    });
+
+    expect(findButton(claudeGroup, '删除已选 (5)')).not.toBeNull();
+    expect(findRowCheckbox(claudeGroup, 'claude-001.json').checked).toBe(false);
+  });
+
+  test('keeps selections for page-size changes but clears them and resets pages for filters', async () => {
+    mockCPAAuthGet({ listData: { files: buildAuthFiles('claude', 55) } });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const group = container.querySelector('[data-auth-group="claude"]');
+    await act(async () => {
+      findButton(group, '2').click();
+    });
+    await act(async () => {
+      findGroupCheckbox(group, 'Claude').click();
+    });
+    expect(findButton(group, '删除已选 (5)')).not.toBeNull();
+
+    const pageSize = group.querySelector('select');
+    await act(async () => {
+      pageSize.value = '20';
+      pageSize.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(findButton(group, '删除已选 (5)')).not.toBeNull();
+    expect(group.textContent).toContain('claude-001.json');
+
+    const search = container.querySelector('input[aria-label="搜索认证文件"]');
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'value'
+      ).set;
+      setter.call(search, 'claude');
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(findButton(group, '删除已选 (0)').disabled).toBe(true);
+    expect(group.textContent).toContain('claude-001.json');
+  });
+
+  test('removes selected names that disappear from the refreshed auth list', async () => {
+    let listCalls = 0;
+    const files = buildAuthFiles('codex', 2);
+    helpers.API.get.mockImplementation((path) => {
+      if (path === '/v0/management/auth-files') {
+        listCalls += 1;
+        return Promise.resolve({
+          data: { files: listCalls === 1 ? files : [files[1]] },
+        });
+      }
+      if (path === '/v0/management/auth-files/download') {
+        return Promise.resolve({ data: defaultCredential });
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const group = container.querySelector('[data-auth-group="codex"]');
+    await act(async () => {
+      findRowCheckbox(group, 'codex-001.json').click();
+      findButton(container, '刷新列表').click();
+      await waitForUI();
+    });
+
+    expect(findButton(group, '删除已选 (0)').disabled).toBe(true);
   });
 
   test('loads and displays safe credential status from official CPA endpoints', async () => {
@@ -1148,5 +1272,203 @@ describe('CPAAuthFiles', () => {
 
     expect(window.confirm).toHaveBeenCalled();
     expect(helpers.API.delete).not.toHaveBeenCalled();
+  });
+
+  test('filters auth files by quota 401 error status', async () => {
+    mockCPAAuthGet({
+      listData: {
+        files: [
+          {
+            name: 'claude-valid.json',
+            type: 'claude',
+            auth_index: 1,
+            disabled: false,
+          },
+          {
+            name: 'claude-401.json',
+            type: 'claude',
+            auth_index: 2,
+            disabled: false,
+          },
+          {
+            name: 'codex-valid.json',
+            type: 'codex',
+            auth_index: 3,
+            disabled: false,
+          },
+        ],
+      },
+      downloads: {
+        'claude-valid.json': defaultCredential,
+        'claude-401.json': defaultCredential,
+        'codex-valid.json': defaultCredential,
+      },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    // 模拟获取额度，其中一个返回 401
+    const claude401Button = container.querySelector(
+      '[data-auth-file="claude-401.json"] button[title="获取服务商真实额度"]'
+    );
+
+    helpers.API.post.mockImplementation((path, data) => {
+      if (path === '/v0/management/api-call' && data.authIndex === '2') {
+        return Promise.resolve({
+          data: {
+            status_code: 401,
+            body: JSON.stringify({ error: { message: 'Unauthorized' } }),
+          },
+        });
+      }
+      return Promise.reject(new Error('Not mocked'));
+    });
+
+    await act(async () => {
+      claude401Button?.click();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    // 选择 "额度返回 401" 筛选
+    const statusSelect = Array.from(container.querySelectorAll('select')).find(
+      (select) =>
+        Array.from(select.options).some((opt) => opt.value === 'quota_401')
+    );
+    expect(statusSelect).not.toBeNull();
+
+    await act(async () => {
+      statusSelect.value = 'quota_401';
+      statusSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    // 应该只显示返回 401 的认证文件
+    expect(container.textContent).toContain('claude-401.json');
+    expect(container.textContent).not.toContain('claude-valid.json');
+    expect(container.textContent).not.toContain('codex-valid.json');
+    expect(container.textContent).toContain('匹配 1 / 3 条');
+  });
+
+  test('cancels grouped deletion without sending requests', async () => {
+    mockCPAAuthGet({ listData: { files: buildAuthFiles('claude', 2) } });
+    window.confirm = jest.fn(() => false);
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const group = container.querySelector('[data-auth-group="claude"]');
+    await act(async () => {
+      findGroupCheckbox(group, 'Claude').click();
+    });
+    await act(async () => {
+      findButton(group, '删除已选 (2)').click();
+    });
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/Claude.*2/)
+    );
+    expect(helpers.API.delete).not.toHaveBeenCalled();
+    expect(findButton(group, '删除已选 (2)')).not.toBeNull();
+  });
+
+  test('deletes only the selected group and refreshes the list once', async () => {
+    const files = [...buildAuthFiles('claude', 2), ...buildAuthFiles('codex', 1)];
+    mockCPAAuthGet({ listData: { files } });
+    helpers.API.delete.mockResolvedValue({ data: { success: true } });
+    window.confirm = jest.fn(() => true);
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const claudeGroup = container.querySelector('[data-auth-group="claude"]');
+    const codexGroup = container.querySelector('[data-auth-group="codex"]');
+    await act(async () => {
+      findGroupCheckbox(claudeGroup, 'Claude').click();
+      findRowCheckbox(codexGroup, 'codex-001.json').click();
+    });
+    await act(async () => {
+      findButton(claudeGroup, '删除已选 (2)').click();
+      await waitForUI();
+    });
+
+    expect(helpers.API.delete.mock.calls).toEqual([
+      ['/v0/management/auth-files', { params: { name: 'claude-001.json' } }],
+      ['/v0/management/auth-files', { params: { name: 'claude-002.json' } }],
+    ]);
+    expect(getCallsFor('/v0/management/auth-files')).toHaveLength(2);
+    expect(findButton(codexGroup, '删除已选 (1)')).not.toBeNull();
+    expect(helpers.showSuccess).toHaveBeenCalledWith('已删除 2 个认证文件');
+  });
+
+  test('keeps only failed auth files selected after grouped deletion', async () => {
+    const files = buildAuthFiles('kimi', 3);
+    mockCPAAuthGet({ listData: { files } });
+    helpers.API.delete.mockImplementation((path, { params }) =>
+      params.name === 'kimi-002.json'
+        ? Promise.reject(new Error('locked'))
+        : Promise.resolve({ data: { success: true } })
+    );
+    window.confirm = jest.fn(() => true);
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const group = container.querySelector('[data-auth-group="kimi"]');
+    await act(async () => {
+      findGroupCheckbox(group, 'Kimi').click();
+    });
+    await act(async () => {
+      findButton(group, '删除已选 (3)').click();
+      await waitForUI();
+    });
+
+    expect(findButton(group, '删除已选 (1)')).not.toBeNull();
+    expect(findRowCheckbox(group, 'kimi-002.json').checked).toBe(true);
+    expect(helpers.showError).toHaveBeenCalledWith(
+      expect.stringMatching(/成功 2.*失败 1.*kimi-002\.json/)
+    );
+  });
+
+  test('limits grouped auth deletion to four workers', async () => {
+    const files = buildAuthFiles('codex', 9);
+    mockCPAAuthGet({ listData: { files } });
+    let active = 0;
+    let peak = 0;
+    helpers.API.delete.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          active += 1;
+          peak = Math.max(peak, active);
+          setTimeout(() => {
+            active -= 1;
+            resolve({ data: { success: true } });
+          }, 20);
+        })
+    );
+    window.confirm = jest.fn(() => true);
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+    const group = container.querySelector('[data-auth-group="codex"]');
+    await act(async () => {
+      findGroupCheckbox(group, 'Codex').click();
+    });
+    await act(async () => {
+      findButton(group, '删除已选 (9)').click();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(peak).toBe(4);
+    expect(helpers.API.delete).toHaveBeenCalledTimes(9);
   });
 });

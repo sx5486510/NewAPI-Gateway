@@ -133,7 +133,7 @@ const CPA = () => {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionInFlight, setActionInFlight] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('auth-files');
   const pollTimerRef = useRef(null);
   const mountedRef = useRef(true);
   const statusRequestSeqRef = useRef(0);

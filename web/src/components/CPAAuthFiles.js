@@ -72,20 +72,35 @@ const matchesSearch = (file, search) => {
     .some((field) => String(field).toLowerCase().includes(query));
 };
 
-const matchesStatus = (file, status) => {
+const matchesStatus = (file, status, quotaStates, quotaKeyFn) => {
   if (status === 'enabled') return !isAuthFileDisabled(file);
   if (status === 'disabled') return isAuthFileDisabled(file);
+  if (status === 'quota_401') {
+    const key = quotaKeyFn(file);
+    const state = quotaStates[key];
+    if (!state || state.status !== 'error') return false;
+    const errorMsg = state.error || '';
+    return (
+      errorMsg.includes('401') ||
+      errorMsg.toLowerCase().includes('unauthorized')
+    );
+  }
   return true;
 };
 
 const matchesType = (file, type) =>
   type === 'all' || getGroupKey(file) === type;
 
-const filterAuthFiles = (files, { search, status, type }) =>
+const filterAuthFiles = (
+  files,
+  { search, status, type },
+  quotaStates,
+  quotaKeyFn
+) =>
   files.filter(
     (file) =>
       matchesSearch(file, search) &&
-      matchesStatus(file, status) &&
+      matchesStatus(file, status, quotaStates, quotaKeyFn) &&
       matchesType(file, type)
   );
 
@@ -125,15 +140,23 @@ const CPAAuthFiles = () => {
   const [pageByGroup, setPageByGroup] = useState({});
   const [pageSizeByGroup, setPageSizeByGroup] = useState({});
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [selectedNamesByGroup, setSelectedNamesByGroup] = useState({});
+  const [deletingGroups, setDeletingGroups] = useState({});
   const uploadInFlightRef = useRef(false);
   const quotaInFlightRef = useRef(new Set());
   const cooldownResetInFlightRef = useRef(new Set());
+  const bulkDeleteInFlightRef = useRef(new Set());
   const credentialLoadGenerationRef = useRef(0);
   const credentialCacheRef = useRef({});
 
+  const quotaKey = useCallback(
+    (file) => file.name || String(file.auth_index ?? file.authIndex ?? ''),
+    []
+  );
+
   const filteredFiles = useMemo(
-    () => filterAuthFiles(authFiles, filters),
-    [authFiles, filters]
+    () => filterAuthFiles(authFiles, filters, quotaStates, quotaKey),
+    [authFiles, filters, quotaStates, quotaKey]
   );
   const groupedFiles = useMemo(
     () => groupFilesByType(filteredFiles),
@@ -168,6 +191,104 @@ const CPAAuthFiles = () => {
     });
   }, [paginatedGroups]);
 
+  const handleFilterChange = (patch) => {
+    setFilters((current) => ({ ...current, ...patch }));
+    setSelectedNamesByGroup({});
+    setPageByGroup({});
+  };
+
+  const handleClearFilters = () => {
+    setFilters(DEFAULT_FILTERS);
+    setSelectedNamesByGroup({});
+    setPageByGroup({});
+  };
+
+  const handleToggleFileSelection = (groupKey, fileName, checked) => {
+    setSelectedNamesByGroup((current) => {
+      const nextNames = new Set(current[groupKey] || []);
+      if (checked) nextNames.add(fileName);
+      else nextNames.delete(fileName);
+      return { ...current, [groupKey]: Array.from(nextNames) };
+    });
+  };
+
+  const handleToggleVisibleSelection = (groupKey, files, checked) => {
+    setSelectedNamesByGroup((current) => {
+      const nextNames = new Set(current[groupKey] || []);
+      files.forEach((file) => {
+        if (!file.name) return;
+        if (checked) nextNames.add(file.name);
+        else nextNames.delete(file.name);
+      });
+      return { ...current, [groupKey]: Array.from(nextNames) };
+    });
+  };
+
+  useEffect(() => {
+    const validNamesByGroup = Object.fromEntries(
+      Object.entries(groupFilesByType(authFiles)).map(([key, files]) => [
+        key,
+        new Set(files.map((file) => file.name).filter(Boolean)),
+      ])
+    );
+
+    setSelectedNamesByGroup((current) => {
+      let changed = false;
+      const next = {};
+      Object.entries(current).forEach(([key, names]) => {
+        const validNames = validNamesByGroup[key] || new Set();
+        const kept = names.filter((name) => validNames.has(name));
+        if (kept.length > 0) next[key] = kept;
+        if (kept.length !== names.length) changed = true;
+      });
+      return changed ? next : current;
+    });
+  }, [authFiles]);
+
+  const handleBulkDelete = async (groupKey, groupName) => {
+    const names = [...(selectedNamesByGroup[groupKey] || [])];
+    if (!names.length || bulkDeleteInFlightRef.current.has(groupKey)) return;
+    if (
+      !window.confirm(
+        `确定要删除 ${groupName} 组已选择的 ${names.length} 个认证文件吗？`
+      )
+    ) {
+      return;
+    }
+
+    bulkDeleteInFlightRef.current.add(groupKey);
+    setDeletingGroups((current) => ({ ...current, [groupKey]: true }));
+    try {
+      const results = await mapWithConcurrency(names, 4, async (name) => {
+        requireCPASuccess(
+          await API.delete('/v0/management/auth-files', { params: { name } })
+        );
+        return name;
+      });
+      const failedNames = results.flatMap((result, index) =>
+        result.status === 'rejected' ? [names[index]] : []
+      );
+      const successCount = names.length - failedNames.length;
+
+      setSelectedNamesByGroup((current) => ({
+        ...current,
+        [groupKey]: failedNames,
+      }));
+      await fetchAuthFiles(false);
+
+      if (failedNames.length === 0) {
+        showSuccess(`已删除 ${successCount} 个认证文件`);
+      } else {
+        showError(
+          `批量删除完成：成功 ${successCount}，失败 ${failedNames.length}：${failedNames.join(', ')}`
+        );
+      }
+    } finally {
+      bulkDeleteInFlightRef.current.delete(groupKey);
+      setDeletingGroups((current) => ({ ...current, [groupKey]: false }));
+    }
+  };
+
   const fetchAuthFiles = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
@@ -192,11 +313,6 @@ const CPAAuthFiles = () => {
     setRefreshing(false);
     showSuccess('列表已刷新');
   };
-
-  const quotaKey = useCallback(
-    (file) => file.name || String(file.auth_index ?? file.authIndex ?? ''),
-    []
-  );
 
   const postCPA = useCallback(async (...args) => {
     return requireCPASuccess(await API.post(...args));
@@ -853,10 +969,7 @@ const CPAAuthFiles = () => {
                 placeholder='搜索文件名 / 邮箱 / 备注'
                 value={filters.search}
                 onChange={(event) =>
-                  setFilters((current) => ({
-                    ...current,
-                    search: event.target.value,
-                  }))
+                  handleFilterChange({ search: event.target.value })
                 }
                 style={{
                   flex: '1 1 240px',
@@ -870,10 +983,7 @@ const CPAAuthFiles = () => {
                 aria-label='按类型筛选'
                 value={filters.type}
                 onChange={(event) =>
-                  setFilters((current) => ({
-                    ...current,
-                    type: event.target.value,
-                  }))
+                  handleFilterChange({ type: event.target.value })
                 }
                 style={{
                   padding: '0.5rem 0.75rem',
@@ -892,10 +1002,7 @@ const CPAAuthFiles = () => {
                 aria-label='按状态筛选'
                 value={filters.status}
                 onChange={(event) =>
-                  setFilters((current) => ({
-                    ...current,
-                    status: event.target.value,
-                  }))
+                  handleFilterChange({ status: event.target.value })
                 }
                 style={{
                   padding: '0.5rem 0.75rem',
@@ -906,6 +1013,7 @@ const CPAAuthFiles = () => {
                 <option value='all'>全部状态</option>
                 <option value='enabled'>已启用</option>
                 <option value='disabled'>已禁用</option>
+                <option value='quota_401'>额度返回 401</option>
               </select>
               <span
                 style={{
@@ -918,11 +1026,7 @@ const CPAAuthFiles = () => {
               {(filters.search ||
                 filters.type !== 'all' ||
                 filters.status !== 'all') && (
-                <Button
-                  variant='ghost'
-                  size='sm'
-                  onClick={() => setFilters(DEFAULT_FILTERS)}
-                >
+                <Button variant='ghost' size='sm' onClick={handleClearFilters}>
                   清除筛选
                 </Button>
               )}
@@ -947,382 +1051,472 @@ const CPAAuthFiles = () => {
                 }}
               >
                 {Object.entries(typeLabels).map(([key, { name, color }]) => {
-              const group = paginatedGroups[key];
-              const files = groupedFiles[key];
-              const visibleFiles = group.files;
-              if (files.length === 0) return null;
+                  const group = paginatedGroups[key];
+                  const files = groupedFiles[key];
+                  const visibleFiles = group.files;
+                  if (files.length === 0) return null;
 
-              return (
-                <div key={key} data-auth-group={key}>
-                  {/* 类型标题栏 */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem',
-                      marginBottom: '0.75rem',
-                      paddingBottom: '0.5rem',
-                      borderBottom: `2px solid ${color}`,
-                    }}
-                  >
-                    <h4
-                      style={{
-                        fontSize: '1rem',
-                        fontWeight: 'bold',
-                        color,
-                        margin: 0,
-                      }}
-                    >
-                      {name}
-                    </h4>
-                    <span
-                      style={{
-                        fontSize: '0.75rem',
-                        fontWeight: 'bold',
-                        color: 'white',
-                        backgroundColor: color,
-                        padding: '0.125rem 0.5rem',
-                        borderRadius: '999px',
-                      }}
-                    >
-                      {files.length}
-                    </span>
-                    <Button
-                      variant='ghost'
-                      size='sm'
-                      onClick={() => handleRefreshGroupQuotas(key)}
-                      disabled={fetchingGroupQuotas[key]}
-                      style={{
-                        marginLeft: 'auto',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                      }}
-                      title={`获取 ${name} 组全部真实额度`}
-                    >
-                      <RefreshCw
-                        size={14}
-                        style={{
-                          animation: fetchingGroupQuotas[key]
-                            ? 'spin 1s linear infinite'
-                            : 'none',
-                        }}
-                      />
-                      {fetchingGroupQuotas[key]
-                        ? `获取中 ${groupQuotaProgress[key]?.completed || 0}/${groupQuotaProgress[key]?.total || 0}`
-                        : '获取本组全部额度'}
-                    </Button>
-                  </div>
+                  const selectedNames = selectedNamesByGroup[key] || [];
+                  const selectedNameSet = new Set(selectedNames);
+                  const visibleNames = visibleFiles
+                    .map((file) => file.name)
+                    .filter(Boolean);
+                  const selectedVisibleCount = visibleNames.filter((fileName) =>
+                    selectedNameSet.has(fileName)
+                  ).length;
+                  const allVisibleSelected =
+                    visibleNames.length > 0 &&
+                    selectedVisibleCount === visibleNames.length;
+                  const someVisibleSelected =
+                    selectedVisibleCount > 0 && !allVisibleSelected;
 
-                  {/* 进度条 */}
-                  {groupQuotaProgress[key] && (
-                    <div
-                      style={{
-                        marginBottom: '0.75rem',
-                        padding: '0.5rem 0.75rem',
-                        backgroundColor: 'var(--bg-secondary)',
-                        borderRadius: '0.375rem',
-                      }}
-                    >
+                  return (
+                    <div key={key} data-auth-group={key}>
+                      {/* 类型标题栏 */}
                       <div
                         style={{
                           display: 'flex',
-                          justifyContent: 'space-between',
                           alignItems: 'center',
-                          marginBottom: '0.5rem',
-                          fontSize: '0.875rem',
-                          color: 'var(--text-secondary)',
+                          gap: '0.75rem',
+                          marginBottom: '0.75rem',
+                          paddingBottom: '0.5rem',
+                          borderBottom: `2px solid ${color}`,
                         }}
                       >
-                        <span>
-                          正在获取 {name} 组额度...
-                        </span>
-                        <span>
-                          {groupQuotaProgress[key].completed} /{' '}
-                          {groupQuotaProgress[key].total}
-                        </span>
-                      </div>
-                      <div
-                        style={{
-                          width: '100%',
-                          height: '6px',
-                          backgroundColor: 'var(--border-color)',
-                          borderRadius: '999px',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <div
+                        <h4
                           style={{
-                            width: `${(groupQuotaProgress[key].completed / groupQuotaProgress[key].total) * 100}%`,
-                            height: '100%',
-                            backgroundColor: color,
-                            transition: 'width 0.3s ease',
+                            fontSize: '1rem',
+                            fontWeight: 'bold',
+                            color,
+                            margin: 0,
                           }}
-                        />
+                        >
+                          {name}
+                        </h4>
+                        <span
+                          style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold',
+                            color: 'white',
+                            backgroundColor: color,
+                            padding: '0.125rem 0.5rem',
+                            borderRadius: '999px',
+                          }}
+                        >
+                          {files.length}
+                        </span>
+                        <label
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.375rem',
+                            fontSize: '0.875rem',
+                            color: 'var(--text-secondary)',
+                          }}
+                        >
+                          <input
+                            type='checkbox'
+                            aria-label={`选择 ${name} 当前页认证文件`}
+                            checked={allVisibleSelected}
+                            disabled={Boolean(deletingGroups[key])}
+                            ref={(element) => {
+                              if (element)
+                                element.indeterminate = someVisibleSelected;
+                            }}
+                            onChange={(event) =>
+                              handleToggleVisibleSelection(
+                                key,
+                                visibleFiles,
+                                event.target.checked
+                              )
+                            }
+                          />
+                          选择当前页
+                        </label>
+                        <Button
+                          variant='danger'
+                          size='sm'
+                          onClick={() => handleBulkDelete(key, name)}
+                          disabled={
+                            selectedNames.length === 0 || deletingGroups[key]
+                          }
+                          loading={Boolean(deletingGroups[key])}
+                          data-bulk-delete-group={key}
+                        >
+                          {!deletingGroups[key] && (
+                            <Trash2
+                              size={14}
+                              style={{ marginRight: '0.375rem' }}
+                            />
+                          )}
+                          删除已选 ({selectedNames.length})
+                        </Button>
+                        <span style={{ flex: 1 }} />
+                        <Button
+                          variant='ghost'
+                          size='sm'
+                          onClick={() => handleRefreshGroupQuotas(key)}
+                          disabled={fetchingGroupQuotas[key]}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                          }}
+                          title={`获取 ${name} 组全部真实额度`}
+                        >
+                          <RefreshCw
+                            size={14}
+                            style={{
+                              animation: fetchingGroupQuotas[key]
+                                ? 'spin 1s linear infinite'
+                                : 'none',
+                            }}
+                          />
+                          {fetchingGroupQuotas[key]
+                            ? `获取中 ${
+                                groupQuotaProgress[key]?.completed || 0
+                              }/${groupQuotaProgress[key]?.total || 0}`
+                            : '获取本组全部额度'}
+                        </Button>
                       </div>
-                    </div>
-                  )}
 
-                  {/* 文件列表 */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.5rem',
-                    }}
-                  >
-                    {visibleFiles.map((file) => (
-                      <div
-                        key={file.name}
-                        data-auth-file={file.name}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '1rem',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '0.5rem',
-                          transition: 'all 0.2s',
-                          cursor: 'default',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = color;
-                          e.currentTarget.style.backgroundColor = `${color}08`;
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor =
-                            'var(--border-color)';
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                        }}
-                      >
-                        {/* 左侧：文件信息 */}
+                      {/* 进度条 */}
+                      {groupQuotaProgress[key] && (
                         <div
                           style={{
-                            flex: 1,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.5rem',
+                            marginBottom: '0.75rem',
+                            padding: '0.5rem 0.75rem',
+                            backgroundColor: 'var(--bg-secondary)',
+                            borderRadius: '0.375rem',
                           }}
                         >
                           <div
                             style={{
                               display: 'flex',
+                              justifyContent: 'space-between',
                               alignItems: 'center',
-                              gap: '0.75rem',
-                              flexWrap: 'wrap',
+                              marginBottom: '0.5rem',
+                              fontSize: '0.875rem',
+                              color: 'var(--text-secondary)',
                             }}
                           >
-                            <span
-                              style={{ fontWeight: 600, fontSize: '0.95rem' }}
-                            >
-                              {file.name}
+                            <span>正在获取 {name} 组额度...</span>
+                            <span>
+                              {groupQuotaProgress[key].completed} /{' '}
+                              {groupQuotaProgress[key].total}
                             </span>
-                            {file.email && (
-                              <span
-                                style={{
-                                  fontSize: '0.875rem',
-                                  color: 'var(--text-secondary)',
-                                }}
-                              >
-                                {file.email}
-                              </span>
-                            )}
-                            {file.note && (
-                              <span
-                                style={{
-                                  fontSize: '0.875rem',
-                                  color: 'var(--text-secondary)',
-                                  fontStyle: 'italic',
-                                }}
-                              >
-                                {file.note}
-                              </span>
-                            )}
                           </div>
-
-                          {/* 认证状态 */}
-                          {renderCredentialInfo(file)}
-
-                          {/* 配额信息 */}
-                          {renderQuotaInfo(file)}
-                        </div>
-
-                        {/* 右侧：状态和操作按钮 */}
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.75rem',
-                            marginLeft: '1rem',
-                          }}
-                        >
-                          {/* 状态徽章 */}
-                          <span
+                          <div
                             style={{
-                              padding: '0.25rem 0.75rem',
+                              width: '100%',
+                              height: '6px',
+                              backgroundColor: 'var(--border-color)',
                               borderRadius: '999px',
-                              fontSize: '0.75rem',
-                              fontWeight: 500,
-                              backgroundColor: file.disabled
-                                ? '#FEE2E2'
-                                : '#DCFCE7',
-                              color: file.disabled ? '#991B1B' : '#166534',
-                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
                             }}
                           >
-                            {file.disabled ? '已禁用' : '已启用'}
-                          </span>
+                            <div
+                              style={{
+                                width: `${
+                                  (groupQuotaProgress[key].completed /
+                                    groupQuotaProgress[key].total) *
+                                  100
+                                }%`,
+                                height: '100%',
+                                backgroundColor: color,
+                                transition: 'width 0.3s ease',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
 
-                          {/* 操作按钮 */}
-                          <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            {getAuthIndex(file) && (
-                              <Button
-                                variant='ghost'
-                                size='sm'
-                                onClick={() => handleResetCooldown(file)}
-                                disabled={Boolean(
-                                  cooldownResetting[quotaKey(file)]
-                                )}
-                                title='重置 CPA 路由冷却状态'
-                                aria-label={`重置 ${file.name} 的冷却状态`}
+                      {/* 文件列表 */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.5rem',
+                        }}
+                      >
+                        {visibleFiles.map((file) => (
+                          <div
+                            key={file.name}
+                            data-auth-file={file.name}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '1rem',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '0.5rem',
+                              transition: 'all 0.2s',
+                              cursor: 'default',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = color;
+                              e.currentTarget.style.backgroundColor = `${color}08`;
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor =
+                                'var(--border-color)';
+                              e.currentTarget.style.backgroundColor =
+                                'transparent';
+                            }}
+                          >
+                            {/* 选择复选框 */}
+                            <input
+                              type='checkbox'
+                              aria-label={`选择认证文件 ${file.name}`}
+                              checked={selectedNameSet.has(file.name)}
+                              disabled={Boolean(deletingGroups[key])}
+                              onChange={(event) =>
+                                handleToggleFileSelection(
+                                  key,
+                                  file.name,
+                                  event.target.checked
+                                )
+                              }
+                              style={{
+                                flex: '0 0 auto',
+                                marginRight: '0.75rem',
+                              }}
+                            />
+                            {/* 左侧：文件信息 */}
+                            <div
+                              style={{
+                                flex: 1,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.5rem',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '0.75rem',
+                                  flexWrap: 'wrap',
+                                }}
                               >
-                                <RefreshCw size={16} />
-                                重置冷却
-                              </Button>
-                            )}
-                            {getQuotaProvider(file) &&
-                              !isAuthFileDisabled(file) && (
+                                <span
+                                  style={{
+                                    fontWeight: 600,
+                                    fontSize: '0.95rem',
+                                  }}
+                                >
+                                  {file.name}
+                                </span>
+                                {file.email && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.875rem',
+                                      color: 'var(--text-secondary)',
+                                    }}
+                                  >
+                                    {file.email}
+                                  </span>
+                                )}
+                                {file.note && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.875rem',
+                                      color: 'var(--text-secondary)',
+                                      fontStyle: 'italic',
+                                    }}
+                                  >
+                                    {file.note}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* 认证状态 */}
+                              {renderCredentialInfo(file)}
+
+                              {/* 配额信息 */}
+                              {renderQuotaInfo(file)}
+                            </div>
+
+                            {/* 右侧：状态和操作按钮 */}
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.75rem',
+                                marginLeft: '1rem',
+                              }}
+                            >
+                              {/* 状态徽章 */}
+                              <span
+                                style={{
+                                  padding: '0.25rem 0.75rem',
+                                  borderRadius: '999px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 500,
+                                  backgroundColor: file.disabled
+                                    ? '#FEE2E2'
+                                    : '#DCFCE7',
+                                  color: file.disabled ? '#991B1B' : '#166534',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {file.disabled ? '已禁用' : '已启用'}
+                              </span>
+
+                              {/* 操作按钮 */}
+                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                {getAuthIndex(file) && (
+                                  <Button
+                                    variant='ghost'
+                                    size='sm'
+                                    onClick={() => handleResetCooldown(file)}
+                                    disabled={
+                                      Boolean(cooldownResetting[quotaKey(file)]) ||
+                                      Boolean(deletingGroups[key])
+                                    }
+                                    title='重置 CPA 路由冷却状态'
+                                    aria-label={`重置 ${file.name} 的冷却状态`}
+                                  >
+                                    <RefreshCw size={16} />
+                                    重置冷却
+                                  </Button>
+                                )}
+                                {getQuotaProvider(file) &&
+                                  !isAuthFileDisabled(file) && (
+                                    <Button
+                                      variant='ghost'
+                                      size='sm'
+                                      onClick={() => handleRefreshQuota(file)}
+                                      disabled={
+                                        quotaStates[quotaKey(file)]?.status ===
+                                          'loading' || Boolean(deletingGroups[key])
+                                      }
+                                      title='获取服务商真实额度'
+                                      aria-label={`获取 ${file.name} 的真实额度`}
+                                    >
+                                      <RefreshCw size={16} />
+                                      获取真实额度
+                                    </Button>
+                                  )}
                                 <Button
                                   variant='ghost'
                                   size='sm'
-                                  onClick={() => handleRefreshQuota(file)}
-                                  disabled={
-                                    quotaStates[quotaKey(file)]?.status ===
-                                    'loading'
-                                  }
-                                  title='获取服务商真实额度'
-                                  aria-label={`获取 ${file.name} 的真实额度`}
+                                  onClick={() => handleToggleStatus(file)}
+                                  disabled={Boolean(deletingGroups[key])}
+                                  title={file.disabled ? '启用' : '禁用'}
                                 >
-                                  <RefreshCw size={16} />
-                                  获取真实额度
+                                  {file.disabled ? '启用' : '禁用'}
                                 </Button>
-                              )}
-                            <Button
-                              variant='ghost'
-                              size='sm'
-                              onClick={() => handleToggleStatus(file)}
-                              title={file.disabled ? '启用' : '禁用'}
-                            >
-                              {file.disabled ? '启用' : '禁用'}
-                            </Button>
-                            <Button
-                              variant='ghost'
-                              size='sm'
-                              onClick={() => handleOpenEdit(file)}
-                              title='编辑'
-                            >
-                              <Edit size={16} />
-                            </Button>
-                            <Button
-                              variant='ghost'
-                              size='sm'
-                              onClick={() => handleDownload(file.name)}
-                              title='下载'
-                            >
-                              <Download size={16} />
-                            </Button>
-                            <Button
-                              variant='ghost'
-                              size='sm'
-                              onClick={() => handleDelete(file.name)}
-                              title='删除'
-                              style={{ color: '#DC2626' }}
-                            >
-                              <Trash2 size={16} />
-                            </Button>
+                                <Button
+                                  variant='ghost'
+                                  size='sm'
+                                  onClick={() => handleOpenEdit(file)}
+                                  disabled={Boolean(deletingGroups[key])}
+                                  title='编辑'
+                                >
+                                  <Edit size={16} />
+                                </Button>
+                                <Button
+                                  variant='ghost'
+                                  size='sm'
+                                  onClick={() => handleDownload(file.name)}
+                                  title='下载'
+                                >
+                                  <Download size={16} />
+                                </Button>
+                                <Button
+                                  variant='ghost'
+                                  size='sm'
+                                  onClick={() => handleDelete(file.name)}
+                                  disabled={Boolean(deletingGroups[key])}
+                                  title='删除'
+                                  style={{ color: '#DC2626' }}
+                                >
+                                  <Trash2 size={16} />
+                                </Button>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: '1rem',
-                      marginTop: '0.75rem',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: 'var(--text-secondary)',
-                        fontSize: '0.875rem',
-                      }}
-                    >
-                      共 {files.length} 条
-                    </span>
-                    <label
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                      }}
-                    >
-                      <span
-                        style={{
-                          color: 'var(--text-secondary)',
-                          fontSize: '0.875rem',
-                        }}
-                      >
-                        每页
-                      </span>
-                      <select
-                        aria-label={`${name} 每页条数`}
-                        value={group.pageSize}
-                        onChange={(event) => {
-                          const pageSize = Number(event.target.value);
-                          setPageSizeByGroup((current) => ({
-                            ...current,
-                            [key]: pageSize,
-                          }));
-                          setPageByGroup((current) => ({
-                            ...current,
-                            [key]: 1,
-                          }));
-                        }}
-                      >
-                        {AUTH_FILE_PAGE_SIZES.map((pageSize) => (
-                          <option key={pageSize} value={pageSize}>
-                            {pageSize}
-                          </option>
                         ))}
-                      </select>
-                      <span
+                      </div>
+                      <div
                         style={{
-                          color: 'var(--text-secondary)',
-                          fontSize: '0.875rem',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: '1rem',
+                          marginTop: '0.75rem',
+                          flexWrap: 'wrap',
                         }}
                       >
-                        条
-                      </span>
-                    </label>
-                    <Pagination
-                      activePage={group.page}
-                      totalPages={group.totalPages}
-                      onPageChange={(_, { activePage }) =>
-                        setPageByGroup((current) => ({
-                          ...current,
-                          [key]: activePage,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                        <span
+                          style={{
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.875rem',
+                          }}
+                        >
+                          共 {files.length} 条
+                        </span>
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: 'var(--text-secondary)',
+                              fontSize: '0.875rem',
+                            }}
+                          >
+                            每页
+                          </span>
+                          <select
+                            aria-label={`${name} 每页条数`}
+                            value={group.pageSize}
+                            onChange={(event) => {
+                              const pageSize = Number(event.target.value);
+                              setPageSizeByGroup((current) => ({
+                                ...current,
+                                [key]: pageSize,
+                              }));
+                              setPageByGroup((current) => ({
+                                ...current,
+                                [key]: 1,
+                              }));
+                            }}
+                          >
+                            {AUTH_FILE_PAGE_SIZES.map((pageSize) => (
+                              <option key={pageSize} value={pageSize}>
+                                {pageSize}
+                              </option>
+                            ))}
+                          </select>
+                          <span
+                            style={{
+                              color: 'var(--text-secondary)',
+                              fontSize: '0.875rem',
+                            }}
+                          >
+                            条
+                          </span>
+                        </label>
+                        <Pagination
+                          activePage={group.page}
+                          totalPages={group.totalPages}
+                          onPageChange={(_, { activePage }) =>
+                            setPageByGroup((current) => ({
+                              ...current,
+                              [key]: activePage,
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </>
         )}
