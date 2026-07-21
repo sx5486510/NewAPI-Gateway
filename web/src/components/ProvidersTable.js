@@ -29,6 +29,7 @@ const ProvidersTable = () => {
   const [resolvingTitle, setResolvingTitle] = useState(false);
   const [activePage, setActivePage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const [searchKeyword, setSearchKeyword] = useState('');
   const inFlightPagesRef = useRef(new Set());
   const loadedPagesRef = useRef(new Set());
   const fetchEpochRef = useRef(0);
@@ -73,7 +74,7 @@ const ProvidersTable = () => {
   const providerType = editProvider?.provider_type || 'full';
   const isKeyOnlyProvider = providerType === 'key_only';
 
-  const loadProviders = useCallback(async (startIdx = 0) => {
+  const loadProviders = useCallback(async (startIdx = 0, keyword = '') => {
     // Prevent concurrent duplicated fetch for the same page.
     if (inFlightPagesRef.current.has(startIdx)) {
       return 0;
@@ -87,7 +88,11 @@ const ProvidersTable = () => {
     inFlightPagesRef.current.add(startIdx);
     setLoading(true);
     try {
-      const res = await API.get(`/api/provider/?p=${startIdx}`);
+      const params = { p: startIdx };
+      if (keyword) {
+        params.keyword = keyword;
+      }
+      const res = await API.get('/api/provider/', { params });
       const { success, data, message } = res.data;
       // Ignore stale response from previous reload.
       if (requestEpoch !== fetchEpochRef.current) {
@@ -133,12 +138,12 @@ const ProvidersTable = () => {
     inFlightPagesRef.current.clear();
     loadedPagesRef.current.clear();
     setActivePage(1);
-    await loadProviders(0);
-  }, [loadProviders]);
+    await loadProviders(0, searchKeyword);
+  }, [loadProviders, searchKeyword]);
 
   useEffect(() => {
-    loadProviders(0);
-  }, [loadProviders]);
+    loadProviders(0, searchKeyword);
+  }, [loadProviders, searchKeyword]);
 
   const deleteProvider = async (id) => {
     if (!window.confirm('确定要删除此供应商吗？')) return;
@@ -439,10 +444,27 @@ const ProvidersTable = () => {
     const loadedPages = Math.max(1, Math.ceil(providers.length / PROVIDERS_PER_PAGE));
     if (nextActivePage > loadedPages) {
       if (!hasMore) return;
-      const loadedCount = await loadProviders(nextActivePage - 1);
+      const loadedCount = await loadProviders(nextActivePage - 1, searchKeyword);
       if (loadedCount === 0) return;
     }
     setActivePage(nextActivePage);
+  };
+
+  const handleSearch = () => {
+    fetchEpochRef.current += 1;
+    inFlightPagesRef.current.clear();
+    loadedPagesRef.current.clear();
+    setActivePage(1);
+    loadProviders(0, searchKeyword);
+  };
+
+  const handleClearSearch = () => {
+    setSearchKeyword('');
+    fetchEpochRef.current += 1;
+    inFlightPagesRef.current.clear();
+    loadedPagesRef.current.clear();
+    setActivePage(1);
+    loadProviders(0, '');
   };
 
   const displayedProviders = providers.slice(
@@ -461,6 +483,24 @@ const ProvidersTable = () => {
             <Button variant="outline" onClick={importProviders} icon={Upload}>导入</Button>
             <Button variant="primary" onClick={openAdd} icon={Plus}>添加供应商</Button>
           </div>
+        </div>
+
+        <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <Input
+            placeholder="搜索名称或地址..."
+            value={searchKeyword}
+            onChange={(e) => setSearchKeyword(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                handleSearch();
+              }
+            }}
+            style={{ flex: 1, marginBottom: 0 }}
+          />
+          <Button variant="primary" onClick={handleSearch}>搜索</Button>
+          {searchKeyword && (
+            <Button variant="outline" onClick={handleClearSearch}>清除</Button>
+          )}
         </div>
 
         {loading ? (

@@ -41,6 +41,19 @@ func GetAllProviders(startIdx int, num int) ([]*Provider, error) {
 	return providers, err
 }
 
+func SearchProviders(startIdx int, num int, keyword string) ([]*Provider, error) {
+	var providers []*Provider
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return GetAllProviders(startIdx, num)
+	}
+	query := DB.Order("id desc").Limit(num).Offset(startIdx)
+	// Search by name or base_url
+	searchPattern := "%" + keyword + "%"
+	err := query.Where("name LIKE ? OR base_url LIKE ?", searchPattern, searchPattern).Find(&providers).Error
+	return providers, err
+}
+
 func GetProviderById(id int) (*Provider, error) {
 	if id == 0 {
 		return nil, errors.New("id 为空")

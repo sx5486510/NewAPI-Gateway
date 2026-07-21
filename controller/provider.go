@@ -21,7 +21,14 @@ func GetProviders(c *gin.Context) {
 	if p < 0 {
 		p = 0
 	}
-	providers, err := model.GetAllProviders(p*common.ProviderItemsPerPage, common.ProviderItemsPerPage)
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	var providers []*model.Provider
+	var err error
+	if keyword != "" {
+		providers, err = model.SearchProviders(p*common.ProviderItemsPerPage, common.ProviderItemsPerPage, keyword)
+	} else {
+		providers, err = model.GetAllProviders(p*common.ProviderItemsPerPage, common.ProviderItemsPerPage)
+	}
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
