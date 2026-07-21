@@ -721,13 +721,12 @@ const buildGrokSummary = (config) => {
       ? (onDemandUsedCents / onDemandCapCents) * 100
       : null;
   const hasWeekly =
-    usagePercent !== null || periodType === 'weekly' || productUsage.length > 0;
+    usagePercent !== null || productUsage.length > 0;
   const hasMonthly =
     monthlyLimitCents !== null ||
     usedCents !== null ||
-    (!hasWeekly &&
-      (onDemandCapCents !== null ||
-        Boolean(record.billingPeriodEnd ?? record.billing_period_end)));
+    onDemandCapCents !== null ||
+    Boolean(record.billingPeriodEnd ?? record.billing_period_end);
   if (!hasWeekly && !hasMonthly) return null;
   return {
     periodType: hasWeekly
@@ -840,9 +839,7 @@ const fetchGrokQuota = async ({ file, authIndex, post }) => {
   const items = [];
   if (
     summary.periodType === 'weekly' &&
-    (summary.usagePercent !== null ||
-      summary.periodEnd ||
-      summary.productUsage.length)
+    (summary.usagePercent !== null || summary.productUsage.length)
   ) {
     items.push(
       quotaItem({
@@ -882,6 +879,8 @@ const fetchGrokQuota = async ({ file, authIndex, post }) => {
     summary.usedCents !== null ||
     summary.billingPeriodEnd
   ) {
+    const limitCents = summary.monthlyLimitCents ?? 0;
+    const usedCents = summary.includedUsedCents ?? 0;
     items.push(
       quotaItem({
         id: 'monthly-credits',
@@ -889,14 +888,11 @@ const fetchGrokQuota = async ({ file, authIndex, post }) => {
         remainingPercent: remainingFromUsed(summary.usedPercent),
         resetAt: summary.billingPeriodEnd,
         detail:
-          summary.monthlyLimitCents === null
-            ? '--'
+          limitCents === 0
+            ? '无配额'
             : `${formatUsd(
-                Math.max(
-                  0,
-                  summary.monthlyLimitCents - (summary.includedUsedCents ?? 0)
-                )
-              )} / ${formatUsd(summary.monthlyLimitCents)}`,
+                Math.max(0, limitCents - usedCents)
+              )} / ${formatUsd(limitCents)}`,
       })
     );
   }
@@ -907,7 +903,7 @@ const fetchGrokQuota = async ({ file, authIndex, post }) => {
       ? 'SuperGrok Heavy'
       : null;
   const meta = [];
-  if (summary.monthlyLimitCents !== null) {
+  if (summary.monthlyLimitCents !== null && summary.monthlyLimitCents > 0) {
     meta.push({
       label: '月度积分',
       value: `${formatUsd(

@@ -12,6 +12,7 @@ import Button from './ui/Button';
 import Card from './ui/Card';
 import Modal from './ui/Modal';
 import Pagination from './ui/Pagination';
+import ProgressBar from './ui/ProgressBar';
 import {
   Upload,
   Download,
@@ -62,7 +63,7 @@ const groupFilesByType = (files) => {
   return groups;
 };
 
-const DEFAULT_FILTERS = { search: '', status: 'all', type: 'all' };
+const DEFAULT_FILTERS = { search: '', status: 'all', type: 'all', hideZeroQuota: false };
 
 const matchesSearch = (file, search) => {
   const query = search.trim().toLowerCase();
@@ -91,9 +92,28 @@ const matchesStatus = (file, status, quotaStates, quotaKeyFn) => {
 const matchesType = (file, type) =>
   type === 'all' || getGroupKey(file) === type;
 
+// 判断某个 auth 是否已刷新出额度且额度为空（全部额度项均为无配额或剩余 0）
+const isZeroQuota = (file, quotaStates, quotaKeyFn) => {
+  const state = quotaStates[quotaKeyFn(file)];
+  if (!state || state.status !== 'success' || !state.quota) return false;
+  const items = (state.quota.groups || []).flatMap(
+    (group) => group.items || []
+  );
+  if (items.length === 0) return true;
+  return items.every((item) => {
+    const percent = item.remainingPercent;
+    return percent === null || percent <= 0;
+  });
+};
+
+const matchesQuota = (file, hideZeroQuota, quotaStates, quotaKeyFn) => {
+  if (!hideZeroQuota) return true;
+  return !isZeroQuota(file, quotaStates, quotaKeyFn);
+};
+
 const filterAuthFiles = (
   files,
-  { search, status, type },
+  { search, status, type, hideZeroQuota },
   quotaStates,
   quotaKeyFn
 ) =>
@@ -101,7 +121,8 @@ const filterAuthFiles = (
     (file) =>
       matchesSearch(file, search) &&
       matchesStatus(file, status, quotaStates, quotaKeyFn) &&
-      matchesType(file, type)
+      matchesType(file, type) &&
+      matchesQuota(file, hideZeroQuota, quotaStates, quotaKeyFn)
   );
 
 const normalizePageSize = (value) =>
@@ -802,7 +823,7 @@ const CPAAuthFiles = () => {
         {quota.groups?.map((group) => (
           <div
             key={group.id}
-            style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
           >
             <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
               {group.label}
@@ -816,18 +837,27 @@ const CPAAuthFiles = () => {
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
+                    alignItems: 'baseline',
                     gap: '0.5rem',
+                    marginBottom: '0.2rem',
                   }}
                 >
                   <span>{item.label}</span>
-                  <span>
+                  <span style={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                     {item.remainingPercent === null
                       ? '--'
                       : `${Math.round(item.remainingPercent)}%`}
                   </span>
                 </div>
-                {item.resetAt && <div>重置: {formatReset(item.resetAt)}</div>}
-                {item.detail && <div>{item.detail}</div>}
+                <ProgressBar percent={item.remainingPercent} />
+                {item.detail && (
+                  <div style={{ marginTop: '0.15rem' }}>{item.detail}</div>
+                )}
+                {item.resetAt && (
+                  <div style={{ marginTop: '0.1rem' }}>
+                    重置: {formatReset(item.resetAt)}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1015,6 +1045,26 @@ const CPAAuthFiles = () => {
                 <option value='disabled'>已禁用</option>
                 <option value='quota_401'>额度返回 401</option>
               </select>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.875rem',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                <input
+                  type='checkbox'
+                  checked={filters.hideZeroQuota}
+                  onChange={(event) =>
+                    handleFilterChange({ hideZeroQuota: event.target.checked })
+                  }
+                />
+                隐藏 0 额度
+              </label>
               <span
                 style={{
                   color: 'var(--text-secondary)',
@@ -1025,7 +1075,8 @@ const CPAAuthFiles = () => {
               </span>
               {(filters.search ||
                 filters.type !== 'all' ||
-                filters.status !== 'all') && (
+                filters.status !== 'all' ||
+                filters.hideZeroQuota) && (
                 <Button variant='ghost' size='sm' onClick={handleClearFilters}>
                   清除筛选
                 </Button>

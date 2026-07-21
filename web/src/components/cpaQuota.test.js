@@ -357,6 +357,37 @@ describe('CPA quota shared contract', () => {
     expect(quota.groups[0].items[0].remainingPercent).toBe(100);
   });
 
+  test('Grok rejects an all-zero account without emitting empty quota items', async () => {
+    const zeroConfig = {
+      config: {
+        monthlyLimit: { val: 0 },
+        used: { val: 0 },
+        onDemandCap: { val: 0 },
+        billingPeriodStart: '2026-07-01T00:00:00+00:00',
+        billingPeriodEnd: '2026-08-01T00:00:00+00:00',
+        history: [
+          {
+            billingCycle: { year: 2026, month: 6 },
+            includedUsed: { val: 0 },
+            onDemandUsed: { val: 0 },
+            totalUsed: { val: 0 },
+          },
+        ],
+      },
+    };
+    const post = jest.fn(() => ok(zeroConfig));
+
+    const result = await fetchCPAQuota({ type: 'xai', auth_index: 6 }, { post });
+    expect(result.groups[0].items).toHaveLength(1);
+    expect(result.groups[0].items[0]).toMatchObject({
+      id: 'monthly-credits',
+      label: '月度积分',
+      detail: '无配额',
+      remainingPercent: null,
+      resetAt: '2026-08-01T00:00:00+00:00',
+    });
+  });
+
   test('Grok returns the first provider error when both billing endpoints fail', async () => {
     const post = jest.fn((path, request) =>
       Promise.resolve({
