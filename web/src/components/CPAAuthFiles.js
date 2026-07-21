@@ -31,7 +31,7 @@ import {
   parseAuthCredentialMetadata,
 } from './cpaAuthStatus';
 
-const AUTH_FILE_PAGE_SIZES = [20, 50, 100];
+const AUTH_FILE_PAGE_SIZES = [20, 50, 100, 500, 1000, Infinity];
 const DEFAULT_AUTH_FILE_PAGE_SIZE = 50;
 
 const typeLabels = {
@@ -1489,7 +1489,7 @@ const CPAAuthFiles = () => {
                           >
                             {AUTH_FILE_PAGE_SIZES.map((pageSize) => (
                               <option key={pageSize} value={pageSize}>
-                                {pageSize}
+                                {pageSize === Infinity ? '全部' : pageSize}
                               </option>
                             ))}
                           </select>
