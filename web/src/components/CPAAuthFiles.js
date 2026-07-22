@@ -104,7 +104,7 @@ const isZeroQuota = (file, quotaStates, quotaKeyFn) => {
   if (items.length === 0) return true;
   return items.every((item) => {
     const percent = item.remainingPercent;
-    return percent === null || percent <= 0;
+    return percent === null ? item.detail === '无配额' : percent <= 0;
   });
 };
 

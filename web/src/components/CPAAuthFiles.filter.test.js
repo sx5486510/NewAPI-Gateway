@@ -84,6 +84,11 @@ const findButton = (container, text) =>
     button.textContent.includes(text)
   ) || null;
 
+const findCheckbox = (container, text) =>
+  Array.from(container.querySelectorAll('label')).find((label) =>
+    label.textContent.includes(text)
+  )?.querySelector('input[type="checkbox"]') || null;
+
 const setInputValue = (input, value) => {
   const setter = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
@@ -446,5 +451,83 @@ describe('CPAAuthFiles - 筛选功能', () => {
       statusSelect.dispatchEvent(new Event('change', { bubbles: true }));
     });
     expect(container.textContent).toContain('匹配 4 / 5 条');
+  });
+
+  test('does not hide a weekly quota whose usage percentage is unknown', async () => {
+    mockCPAAuthGet([mockAuthFiles[3]]);
+    helpers.API.post.mockResolvedValue({
+      data: {
+        status_code: 200,
+        body: {
+          config: {
+            currentPeriod: {
+              type: 'USAGE_PERIOD_TYPE_WEEKLY',
+              end: '2026-07-29T00:00:00+00:00',
+            },
+            onDemandCap: { val: 0 },
+            onDemandUsed: { val: 0 },
+            billingPeriodEnd: '2026-07-29T00:00:00+00:00',
+          },
+        },
+      },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const refreshButton = container.querySelector(
+      '[aria-label="获取 grok-test.json 的真实额度"]'
+    );
+    await act(async () => {
+      refreshButton.click();
+      await waitForUI();
+    });
+
+    const hideZeroQuota = findCheckbox(container, '隐藏 0 额度');
+    await act(async () => {
+      hideZeroQuota.click();
+    });
+
+    expect(container.textContent).toContain('匹配 1 / 1 条');
+    expect(container.textContent).toContain('grok-test.json');
+  });
+
+  test('still hides an explicitly empty monthly quota', async () => {
+    mockCPAAuthGet([mockAuthFiles[3]]);
+    helpers.API.post.mockResolvedValue({
+      data: {
+        status_code: 200,
+        body: {
+          config: {
+            monthlyLimit: { val: 0 },
+            used: { val: 0 },
+            billingPeriodEnd: '2026-08-01T00:00:00+00:00',
+          },
+        },
+      },
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const refreshButton = container.querySelector(
+      '[aria-label="获取 grok-test.json 的真实额度"]'
+    );
+    await act(async () => {
+      refreshButton.click();
+      await waitForUI();
+    });
+
+    const hideZeroQuota = findCheckbox(container, '隐藏 0 额度');
+    await act(async () => {
+      hideZeroQuota.click();
+    });
+
+    expect(container.textContent).toContain('匹配 0 / 1 条');
+    expect(container.textContent).not.toContain('grok-test.json');
   });
 });

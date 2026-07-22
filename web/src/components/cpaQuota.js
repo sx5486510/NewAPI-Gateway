@@ -721,12 +721,15 @@ const buildGrokSummary = (config) => {
       ? (onDemandUsedCents / onDemandCapCents) * 100
       : null;
   const hasWeekly =
-    usagePercent !== null || productUsage.length > 0;
+    periodType === 'weekly' ||
+    usagePercent !== null ||
+    productUsage.length > 0;
   const hasMonthly =
     monthlyLimitCents !== null ||
     usedCents !== null ||
-    onDemandCapCents !== null ||
-    Boolean(record.billingPeriodEnd ?? record.billing_period_end);
+    (!hasWeekly &&
+      (onDemandCapCents !== null ||
+        Boolean(record.billingPeriodEnd ?? record.billing_period_end)));
   if (!hasWeekly && !hasMonthly) return null;
   return {
     periodType: hasWeekly
@@ -745,9 +748,9 @@ const buildGrokSummary = (config) => {
     onDemandCapCents,
     onDemandUsedCents,
     onDemandUsedPercent,
-    billingPeriodEnd: stringValue(
-      record.billingPeriodEnd ?? record.billing_period_end
-    ),
+    billingPeriodEnd: hasMonthly
+      ? stringValue(record.billingPeriodEnd ?? record.billing_period_end)
+      : null,
     usedPercent,
   };
 };
@@ -852,7 +855,9 @@ const fetchGrokQuota = async ({ file, authIndex, post, downloadText }) => {
   const items = [];
   if (
     summary.periodType === 'weekly' &&
-    (summary.usagePercent !== null || summary.productUsage.length)
+    (summary.usagePercent !== null ||
+      summary.periodEnd ||
+      summary.productUsage.length)
   ) {
     items.push(
       quotaItem({

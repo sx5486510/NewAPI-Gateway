@@ -383,6 +383,35 @@ describe('CPA quota shared contract', () => {
     expect(quota.groups[0].items[0].remainingPercent).toBe(100);
   });
 
+  test('Grok keeps an unused weekly period when usage fields are omitted', async () => {
+    const zeroUsageWeeklyConfig = {
+      config: {
+        currentPeriod: {
+          type: 'USAGE_PERIOD_TYPE_WEEKLY',
+          start: '2026-07-22T00:00:00+00:00',
+          end: '2026-07-29T00:00:00+00:00',
+        },
+        onDemandCap: { val: 0 },
+        onDemandUsed: { val: 0 },
+        isUnifiedBillingUser: true,
+        prepaidBalance: { val: 0 },
+        billingPeriodStart: '2026-07-22T00:00:00+00:00',
+        billingPeriodEnd: '2026-07-29T00:00:00+00:00',
+      },
+    };
+    const post = jest.fn(() => ok(zeroUsageWeeklyConfig));
+
+    const quota = await fetchCPAQuota({ type: 'xai', auth_index: 6 }, { post });
+
+    expect(quota.groups[0].items).toEqual([
+      expect.objectContaining({
+        id: 'weekly',
+        remainingPercent: null,
+        resetAt: '2026-07-29T00:00:00+00:00',
+      }),
+    ]);
+  });
+
   test('Grok rejects an all-zero account without emitting empty quota items', async () => {
     const zeroConfig = {
       config: {
