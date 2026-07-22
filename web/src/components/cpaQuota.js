@@ -809,12 +809,25 @@ const extractGrokUserId = (file) => {
   return null;
 };
 
+const resolveGrokUserId = async (file, downloadText) => {
+  const direct = extractGrokUserId(file);
+  if (direct || typeof downloadText !== 'function' || !file?.name) return direct;
+  try {
+    const credential = objectValue(
+      JSON.parse(String(await downloadText(file.name)).trim())
+    );
+    return extractGrokUserId(credential);
+  } catch {
+    throw new Error('Grok credential file format is invalid');
+  }
+};
+
 const formatUsd = (cents) =>
   cents === null ? '--' : `$${(cents / 100).toFixed(2)}`;
 
-const fetchGrokQuota = async ({ file, authIndex, post }) => {
+const fetchGrokQuota = async ({ file, authIndex, post, downloadText }) => {
   const header = { ...GROK_HEADERS };
-  const userId = extractGrokUserId(file);
+  const userId = await resolveGrokUserId(file, downloadText);
   if (userId) header['x-userid'] = userId;
   const requests = [GROK_CREDITS_URL, GROK_BILLING_URL].map(async (url) => {
     const result = await callCPA(post, {

@@ -344,6 +344,32 @@ describe('CPA quota shared contract', () => {
     });
   });
 
+  test('Grok loads x-userid from the credential when the auth list omits it', async () => {
+    const post = jest.fn((path, request) =>
+      request.url.includes('format=credits')
+        ? ok({ config: { creditUsagePercent: 25 } })
+        : ok({ config: { monthlyLimit: { val: 2000 }, used: { val: 500 } } })
+    );
+    const downloadText = jest.fn(() =>
+      JSON.stringify({ type: 'xai', sub: 'subject-from-auth-file' })
+    );
+
+    await fetchCPAQuota(
+      {
+        name: 'xai-production.json',
+        provider: 'xai',
+        auth_index: 'runtime-index',
+      },
+      { post, downloadText }
+    );
+
+    expect(downloadText).toHaveBeenCalledWith('xai-production.json');
+    expect(post.mock.calls.map((call) => call[1].header['x-userid'])).toEqual([
+      'subject-from-auth-file',
+      'subject-from-auth-file',
+    ]);
+  });
+
   test('Grok succeeds when only one billing endpoint returns data', async () => {
     const post = jest.fn((path, request) =>
       request.url.includes('format=credits')
