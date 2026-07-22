@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"NewAPI-Gateway/common"
+	"golang.org/x/sync/singleflight"
 )
 
 // managementLeaseProvider abstracts the Manager's lease acquisition for testing.
@@ -40,6 +41,7 @@ type ManagementProxy struct {
 	transport    http.RoundTripper
 	scheduleSync func()
 	auditf       func(string, ...interface{})
+	xaiRefresh   singleflight.Group
 }
 
 // persistenceError signals that CPA applied a mutation but Gateway persistence failed.
