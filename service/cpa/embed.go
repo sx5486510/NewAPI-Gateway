@@ -98,6 +98,14 @@ func StartEmbedded(configPath, managementPassword string) (*EmbedResult, error) 
 	cfg.RemoteManagement.DisableControlPanel = true
 	cfg.RemoteManagement.DisableAutoUpdatePanel = true
 
+	// Expand a leading "~" in the auth dir. CPA's own entrypoint
+	// (cmd/server/main.go) resolves this via util.ResolveAuthDir, but the SDK
+	// builder path we use for embedding does not. Without this, CPA writes and
+	// lists auth files under a literal "~" directory in the process CWD, which
+	// diverges from the real home directory and surfaces as duplicate/desynced
+	// auth-file entries.
+	cfg.AuthDir = expandHome(cfg.AuthDir)
+
 	apiKey := ""
 	if len(cfg.APIKeys) > 0 {
 		apiKey = strings.TrimSpace(cfg.APIKeys[0])

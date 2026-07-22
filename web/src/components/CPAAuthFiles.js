@@ -616,16 +616,20 @@ const CPAAuthFiles = () => {
         Array.isArray(res.data?.duplicates) &&
         res.data.duplicates.length > 0
       ) {
-        showError(`认证文件已存在: ${res.data.duplicates.join(', ')}`);
+        showError(
+          `认证文件已存在: ${[...new Set(res.data.duplicates)].join(', ')}`
+        );
       }
       const uploadedCount = Array.isArray(res.data?.uploaded)
         ? res.data.uploaded.length
         : filesToUpload.length;
-      showSuccess(
-        uploadedCount > 1
-          ? `认证文件上传成功: ${uploadedCount}`
-          : '认证文件上传成功'
-      );
+      if (uploadedCount > 0) {
+        showSuccess(
+          uploadedCount > 1
+            ? `认证文件上传成功: ${uploadedCount}`
+            : '认证文件上传成功'
+        );
+      }
       setUploadModalOpen(false);
       setUploadFiles([]);
       await fetchAuthFiles(false);
@@ -633,6 +637,8 @@ const CPAAuthFiles = () => {
       showError(
         '上传失败: ' + (error.response?.data?.message || error.message)
       );
+      // 即使失败也刷新列表，保证 UI 与 CPA 实际状态同步
+      await fetchAuthFiles(false);
     } finally {
       uploadInFlightRef.current = false;
       setUploading(false);

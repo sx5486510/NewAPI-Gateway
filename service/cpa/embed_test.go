@@ -140,6 +140,61 @@ func TestCPALocalPasswordStillRequiresConfiguredSentinel(t *testing.T) {
 	}
 }
 
+func TestStartEmbeddedExpandsTildeAuthDir(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("UserHomeDir unavailable: %v", err)
+	}
+
+	dir := t.TempDir()
+	port := freePort(t)
+	// A tilde auth-dir must resolve to the real home directory. Without
+	// expansion, CPA writes and lists auth files under a literal "~" directory
+	// in the process CWD, which surfaces as duplicate/desynced auth entries.
+	unique := ".cpa-embed-test-" + filepath.Base(dir)
+	tildeAuthDir := "~/" + unique
+	resolvedAuthDir := filepath.Join(home, unique)
+	t.Cleanup(func() { _ = os.RemoveAll(resolvedAuthDir) })
+
+	raw := fmt.Sprintf("host: 0.0.0.0\nport: %d\nauth-dir: %q\napi-keys: [embed-key]\nremote-management:\n  allow-remote: true\n  secret-key: ignored\n", port, tildeAuthDir)
+	invariants, err := NewRuntimeInvariants(bytes.NewReader(bytes.Repeat([]byte{0x44}, 64)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized, _, err := invariants.ApplyYAML([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, normalized, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Run from a clean working directory so a stray literal "~" dir is detectable.
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+
+	result, err := StartEmbedded(path, "runtime-secret")
+	if err != nil {
+		t.Fatalf("StartEmbedded: %v", err)
+	}
+	t.Cleanup(func() { stopEmbedResult(t, result) })
+	waitForHealth(t, result.BaseURL)
+
+	if st, err := os.Stat(resolvedAuthDir); err != nil || !st.IsDir() {
+		t.Fatalf("expanded auth dir not created at %s: %v", resolvedAuthDir, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "~")); !os.IsNotExist(err) {
+		t.Fatalf("literal \"~\" dir must not be created in CWD (err=%v)", err)
+	}
+}
+
 func writeManagedCPAConfig(t *testing.T) (string, int) {
 	t.Helper()
 	dir := t.TempDir()
