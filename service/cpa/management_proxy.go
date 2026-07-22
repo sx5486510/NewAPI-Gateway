@@ -283,6 +283,11 @@ func (p *ManagementProxy) handleAuthFileQuota(w http.ResponseWriter, r *http.Req
 		writeJSONError(w, http.StatusRequestEntityTooLarge, "request_body_too_large", "Request body exceeds 1 MiB")
 		return true
 	}
+	forwardBody, err := p.prepareXAIQuotaAPICall(r.Context(), bodyBytes, lease)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, "auth_token_refresh_failed", "Failed to prepare xAI credentials")
+		return true
+	}
 
 	// Forward to CPA's /v0/management/api-call endpoint
 	target := *lease.Target
@@ -290,7 +295,7 @@ func (p *ManagementProxy) handleAuthFileQuota(w http.ResponseWriter, r *http.Req
 	target.RawQuery = ""
 	target.Fragment = ""
 
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target.String(), bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target.String(), bytes.NewReader(forwardBody))
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "request_creation_failed", "Failed to create CPA request")
 		return true
