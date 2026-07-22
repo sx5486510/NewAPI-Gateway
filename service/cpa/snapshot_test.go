@@ -194,3 +194,57 @@ func TestAtomicWriteLeavesOriginalOnRenameFailure(t *testing.T) {
 		t.Fatalf("temporary file remains: %v", err)
 	}
 }
+
+// TestAtomicWriteRestoresOriginalWhenReplaceFails exercises the recovery path:
+// the original is renamed aside to a backup, the temp->target rename then fails,
+// and the backup must be restored so the original config survives.
+func TestAtomicWriteRestoresOriginalWhenReplaceFails(t *testing.T) {
+	options := newMemoryOptions(map[string]string{
+		snapshotOptionKey: "host: 127.0.0.1\nport: 29001\napi-keys: [old]\nauth-dir: auth\n",
+		"CPAEnabled":      "true",
+	})
+	store := newTestSnapshotStore(t, options)
+	if _, _, err := store.LoadOrMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	originalFile, err := os.ReadFile(store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalOption := options.Get(snapshotOptionKey)
+
+	// Succeed on the backup (target->.bak) and restore (.bak->target) renames,
+	// but fail the temp->target replace to trigger the recovery path.
+	target := store.Path()
+	backup := target + ".bak"
+	store.renameFile = func(oldPath, newPath string) error {
+		if oldPath == target && newPath == backup {
+			return os.Rename(oldPath, newPath)
+		}
+		if oldPath == backup && newPath == target {
+			return os.Rename(oldPath, newPath)
+		}
+		return errors.New("replace failed")
+	}
+
+	err = store.PatchBasic(CPAConfig{Enabled: true, APIKeys: []string{"new"}, AuthDir: "auth", Port: 29002})
+	if err == nil || !strings.Contains(err.Error(), "replace failed") {
+		t.Fatalf("expected replace failure, got %v", err)
+	}
+	after, err := os.ReadFile(store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, originalFile) {
+		t.Fatal("original runtime file was not restored after failed replace")
+	}
+	if options.Get(snapshotOptionKey) != originalOption {
+		t.Fatal("database snapshot changed after failed replace")
+	}
+	if _, err := os.Stat(store.Path() + ".tmp"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("temporary file remains: %v", err)
+	}
+	if _, err := os.Stat(backup); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("backup file remains: %v", err)
+	}
+}

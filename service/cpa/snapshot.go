@@ -356,16 +356,38 @@ func (s *SnapshotStore) writeAtomic(data []byte) (err error) {
 		return fmt.Errorf("cpa: close temporary config: %w", err)
 	}
 
-	// Windows: 先删除目标文件再重命名（如果存在）
+	// Windows does not allow rename onto an existing file, so we cannot simply
+	// rename the temp file over the target. Rather than deleting the target
+	// first (which loses the original if the rename then fails), move the
+	// original aside to a backup, rename the temp file into place, and only
+	// then drop the backup. If the rename fails, restore the backup so the
+	// original config survives.
 	targetPath := s.Path()
+	backupPath := targetPath + ".bak"
+	haveBackup := false
 	if _, statErr := os.Stat(targetPath); statErr == nil {
-		if err = os.Remove(targetPath); err != nil {
-			return fmt.Errorf("cpa: remove old config before replace: %w", err)
+		_ = os.Remove(backupPath)
+		if err = s.renameFile(targetPath, backupPath); err != nil {
+			return fmt.Errorf("cpa: back up old config before replace: %w", err)
 		}
+		haveBackup = true
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		err = statErr
+		return fmt.Errorf("cpa: stat old config before replace: %w", err)
 	}
 
 	if err = s.renameFile(tempPath, targetPath); err != nil {
+		if haveBackup {
+			// Restore the original; report the restore failure too if it happens.
+			if restoreErr := s.renameFile(backupPath, targetPath); restoreErr != nil {
+				return fmt.Errorf("cpa: replace runtime config: %w (and restoring original failed: %v)", err, restoreErr)
+			}
+		}
 		return fmt.Errorf("cpa: replace runtime config: %w", err)
+	}
+
+	if haveBackup {
+		_ = os.Remove(backupPath)
 	}
 	return nil
 }
