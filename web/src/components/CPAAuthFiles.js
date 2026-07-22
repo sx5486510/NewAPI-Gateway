@@ -317,7 +317,20 @@ const CPAAuthFiles = () => {
     try {
       const res = requireCPASuccess(await API.get('/v0/management/auth-files'));
       if (res.data && res.data.files) {
-        setAuthFiles(res.data.files || []);
+        const raw = res.data.files || [];
+        // 防御性去重：CPA 有时会返回同名条目
+        const seen = new Set();
+        const deduped = raw.filter((file) => {
+          if (!file.name || seen.has(file.name)) return false;
+          seen.add(file.name);
+          return true;
+        });
+        if (deduped.length !== raw.length) {
+          console.warn(
+            `[CPA] auth-files list had ${raw.length - deduped.length} duplicate name(s); deduped before render`
+          );
+        }
+        setAuthFiles(deduped);
       } else {
         setAuthFiles([]);
       }
@@ -552,8 +565,27 @@ const CPAAuthFiles = () => {
       return;
     }
 
+    // 先对本次上传的文件按名称去重（保留第一个）
+    const seenThisUpload = new Set();
+    const dedupedUploadFiles = [];
+    const internalDuplicates = [];
+    uploadFiles.forEach((file) => {
+      if (seenThisUpload.has(file.name)) {
+        internalDuplicates.push(file.name);
+      } else {
+        seenThisUpload.add(file.name);
+        dedupedUploadFiles.push(file);
+      }
+    });
+
+    if (internalDuplicates.length > 0) {
+      showError(
+        `本次选择的文件中有重名，已自动去重: ${[...new Set(internalDuplicates)].join(', ')}`
+      );
+    }
+
     const existingNames = new Set(authFiles.map((file) => file.name));
-    const duplicateFiles = uploadFiles.filter((file) =>
+    const duplicateFiles = dedupedUploadFiles.filter((file) =>
       existingNames.has(file.name)
     );
     if (duplicateFiles.length > 0) {
@@ -562,7 +594,7 @@ const CPAAuthFiles = () => {
       );
     }
 
-    const filesToUpload = uploadFiles.filter(
+    const filesToUpload = dedupedUploadFiles.filter(
       (file) => !existingNames.has(file.name)
     );
     if (filesToUpload.length === 0) {
