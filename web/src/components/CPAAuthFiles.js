@@ -140,40 +140,55 @@ const filterAuthFiles = (
       matchesQuota(file, hideZeroQuota, quotaStates, quotaKeyFn)
   );
 
-// 健康度指示器颜色与文案（对应 CPA recent_requests 的成功率评估）
-const HEALTH_COLORS = {
-  healthy: '#10B981',
-  warning: '#F59E0B',
-  error: '#DC2626',
-  idle: '#9CA3AF',
-  unknown: '#D1D5DB',
+// 健康度状态条：还原原 CPA 的时间序列小方块 + 成功率徽章。
+// recent_requests 由 CPA 返回，形如 [{ time, success, failed }, ...]（旧→新），共 20 桶。
+
+// 方块颜色渐变色标（红 → 黄 → 绿），与 CPA 一致。
+const HEALTH_GRADIENT_STOPS = [
+  { r: 239, g: 68, b: 68 }, // 0%：红
+  { r: 250, g: 204, b: 21 }, // 50%：黄
+  { r: 34, g: 197, b: 94 }, // 100%：绿
+];
+
+// 依据成功率（0~1）在红-黄-绿之间线性插值出方块颜色。
+const healthBlockColor = (rate) => {
+  const clamped = Math.max(0, Math.min(1, rate));
+  const segment = clamped < 0.5 ? 0 : 1;
+  const t = segment === 0 ? clamped * 2 : (clamped - 0.5) * 2;
+  const from = HEALTH_GRADIENT_STOPS[segment];
+  const to = HEALTH_GRADIENT_STOPS[segment + 1];
+  const channel = (a, b) => Math.round(a + (b - a) * t);
+  return `rgb(${channel(from.r, to.r)}, ${channel(from.g, to.g)}, ${channel(
+    from.b,
+    to.b
+  )})`;
 };
 
-const HEALTH_LABELS = {
-  healthy: '健康',
-  warning: '波动',
-  error: '异常',
-  idle: '空闲',
-  unknown: '无数据',
+// 把 recent_requests 转成每个时间桶的展示明细。rate 为 -1 表示该桶无请求（idle）。
+const buildHealthBlocks = (recentRequests) => {
+  if (!Array.isArray(recentRequests)) return [];
+  return recentRequests.map((bucket) => {
+    const success = Number(bucket?.success) || 0;
+    const failed = Number(bucket?.failed) || 0;
+    const total = success + failed;
+    return {
+      time: bucket?.time || '',
+      success,
+      failed,
+      rate: total > 0 ? success / total : -1,
+    };
+  });
 };
 
-// 根据最近 5 个时间桶（约 50 分钟）的成功率评估近期健康度。
-// recent_requests 由 CPA 返回，形如 [{ time, success, failed }, ...]（旧→新）。
-const getRecentHealth = (recentRequests) => {
-  if (!Array.isArray(recentRequests) || recentRequests.length === 0) {
-    return 'unknown';
+// 成功率徽章配色阈值（与 CPA 一致：≥90% 高、≥50% 中、否则低）。
+const healthRateBadgeStyle = (successRate) => {
+  if (successRate >= 90) {
+    return { color: '#065F46', background: '#D1FAE5' };
   }
-  const recent = recentRequests.slice(-5);
-  const total = recent.reduce(
-    (sum, bucket) => sum + (bucket.success || 0) + (bucket.failed || 0),
-    0
-  );
-  if (total === 0) return 'idle';
-  const successRate =
-    recent.reduce((sum, bucket) => sum + (bucket.success || 0), 0) / total;
-  if (successRate >= 0.95) return 'healthy';
-  if (successRate >= 0.7) return 'warning';
-  return 'error';
+  if (successRate >= 50) {
+    return { color: '#92400E', background: '#FEF3C7' };
+  }
+  return { color: '#991B1B', background: '#FEE2E2' };
 };
 
 const normalizePageSize = (value) =>
@@ -894,15 +909,20 @@ const CPAAuthFiles = () => {
     );
   };
 
-  // 健康度：彩色圆点（近 50 分钟成功率）+ 累计成功/失败与总成功率。
+  // 健康度：还原原 CPA 的时间序列状态条（每桶一个小方块，红→黄→绿）+ 成功率徽章，
+  // 末尾附累计成功/失败计数。方块按 recent_requests（旧→新）逐桶着色，无请求为灰。
   const renderHealthInfo = (file) => {
     const healthId = toElementId('cpa-auth-file-health', file.name);
     const success = Number(file.success) || 0;
     const failed = Number(file.failed) || 0;
     const total = success + failed;
-    const health = getRecentHealth(file.recent_requests);
-    const overallRate =
-      total > 0 ? `${Math.round((success / total) * 100)}%` : 'N/A';
+    const blocks = buildHealthBlocks(file.recent_requests);
+    const hasData = total > 0;
+    const overallRate = hasData ? (success / total) * 100 : null;
+    const rateText = overallRate === null ? '--' : `${Math.round(overallRate)}%`;
+    const badgeStyle = hasData
+      ? healthRateBadgeStyle(overallRate)
+      : { color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' };
 
     return (
       <div
@@ -911,27 +931,69 @@ const CPAAuthFiles = () => {
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '0.5rem',
+          gap: '0.75rem',
           fontSize: '0.8rem',
           color: 'var(--text-secondary)',
         }}
       >
+        {blocks.length > 0 && (
+          <div
+            id={`${healthId}-blocks`}
+            style={{
+              display: 'flex',
+              flex: '1 1 auto',
+              gap: '3px',
+              minWidth: 0,
+              maxWidth: '360px',
+            }}
+          >
+            {blocks.map((block, index) => {
+              const idle = block.rate < 0;
+              return (
+                <div
+                  key={`${block.time}-${index}`}
+                  title={
+                    idle
+                      ? `${block.time}: 无请求`
+                      : `${block.time}: 成功 ${block.success}, 失败 ${block.failed} (${Math.round(
+                          block.rate * 100
+                        )}%)`
+                  }
+                  style={{
+                    flex: '1 1 0',
+                    minWidth: '4px',
+                    height: '6px',
+                    borderRadius: '999px',
+                    backgroundColor: idle
+                      ? 'var(--border-secondary, #E5E7EB)'
+                      : healthBlockColor(block.rate),
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
         <span
-          id={`${healthId}-dot`}
-          title={`近期健康度: ${HEALTH_LABELS[health]}`}
-          aria-label={`近期健康度: ${HEALTH_LABELS[health]}`}
+          id={`${healthId}-rate`}
+          title='累计成功率'
           style={{
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            backgroundColor: HEALTH_COLORS[health],
             flexShrink: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            borderRadius: '999px',
+            padding: '2px 8px',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            fontVariantNumeric: 'tabular-nums',
+            color: badgeStyle.color,
+            background: badgeStyle.background,
           }}
-        />
-        <span id={`${healthId}-counts`}>
+        >
+          {rateText}
+        </span>
+        <span id={`${healthId}-counts`} style={{ flexShrink: 0 }}>
           成功 {success} / 失败 {failed}
         </span>
-        <span id={`${healthId}-rate`}>成功率 {overallRate}</span>
       </div>
     );
   };
