@@ -57,6 +57,7 @@ func (e persistenceError) Error() string {
 type contextKey int
 
 const auditUsernameKey contextKey = 1
+const managementKeyContextKey contextKey = 2
 
 const maxAPICallRequestBody int64 = 1 << 20
 
@@ -131,18 +132,29 @@ func (p *ManagementProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer lease.Release()
 
+	// Check if request has X-Management-Key for external API access
+	managementKey := extractManagementKey(r)
+	useExternalAuth := managementKey != ""
+
+	// Store management key in context for later use in uploadAuthFile
+	ctx := r.Context()
+	if useExternalAuth {
+		ctx = context.WithValue(ctx, managementKeyContextKey, managementKey)
+		r = r.WithContext(ctx)
+	}
+
 	wrapped := &managementAuditWriter{
 		ResponseWriter: w,
 	}
 
-	if handled := p.handleAuthFileUpload(wrapped, r, lease); handled {
+	if handled := p.handleAuthFileUpload(wrapped, r, lease, useExternalAuth); handled {
 		p.auditf("management proxy: user=%q method=%s path=%s status=%d duration=%v",
 			username, r.Method, normalizePath(r.URL.Path), wrapped.status(), time.Since(start))
 		return
 	}
 
 	// Handle auth file quota refresh
-	if handled := p.handleAuthFileQuota(wrapped, r, lease); handled {
+	if handled := p.handleAuthFileQuota(wrapped, r, lease, useExternalAuth); handled {
 		p.auditf("management proxy: user=%q method=%s path=%s status=%d duration=%v",
 			username, r.Method, normalizePath(r.URL.Path), wrapped.status(), time.Since(start))
 		return
@@ -157,8 +169,14 @@ func (p *ManagementProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			req.Host = lease.Target.Host
 
 			// Sanitize and inject credentials
-			sanitizeHeaders(req)
-			req.Header.Set("Authorization", "Bearer "+lease.Password)
+			if useExternalAuth {
+				// External API access: preserve X-Management-Key for CPA validation
+				sanitizeHeadersExceptManagementKey(req)
+			} else {
+				// Internal browser access: strip all credentials and use runtime password
+				sanitizeHeaders(req)
+				req.Header.Set("Authorization", "Bearer "+lease.Password)
+			}
 		},
 		Transport: p.transport,
 		ModifyResponse: func(resp *http.Response) error {
@@ -190,7 +208,7 @@ func (p *ManagementProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		username, r.Method, normalizePath(r.URL.Path), wrapped.status(), time.Since(start))
 }
 
-func (p *ManagementProxy) handleAuthFileUpload(w http.ResponseWriter, r *http.Request, lease *ManagementLease) bool {
+func (p *ManagementProxy) handleAuthFileUpload(w http.ResponseWriter, r *http.Request, lease *ManagementLease, useExternalAuth bool) bool {
 	if !isAuthFileUpload(r) {
 		return false
 	}
@@ -240,7 +258,7 @@ func (p *ManagementProxy) handleAuthFileUpload(w http.ResponseWriter, r *http.Re
 
 	uploaded := make([]string, 0, len(uploadQueue))
 	for _, file := range uploadQueue {
-		if err := p.uploadAuthFile(r.Context(), lease, file); err != nil {
+		if err := p.uploadAuthFile(r.Context(), lease, file, useExternalAuth); err != nil {
 			writeJSONError(w, http.StatusBadGateway, "auth_file_upload_failed", err.Error())
 			return true
 		}
@@ -263,7 +281,7 @@ func (p *ManagementProxy) handleAuthFileUpload(w http.ResponseWriter, r *http.Re
 
 // handleAuthFileQuota handles POST /v0/management/api-call proxy
 // This is a transparent proxy to CPA's generic API call endpoint
-func (p *ManagementProxy) handleAuthFileQuota(w http.ResponseWriter, r *http.Request, lease *ManagementLease) bool {
+func (p *ManagementProxy) handleAuthFileQuota(w http.ResponseWriter, r *http.Request, lease *ManagementLease, useExternalAuth bool) bool {
 	// Only handle POST /v0/management/api-call
 	if r.Method != http.MethodPost {
 		return false
@@ -305,7 +323,17 @@ func (p *ManagementProxy) handleAuthFileQuota(w http.ResponseWriter, r *http.Req
 
 	// Copy headers and inject auth
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+lease.Password)
+	if useExternalAuth {
+		// Preserve X-Management-Key for external API access
+		if key := r.Context().Value(managementKeyContextKey); key != nil {
+			if keyStr, ok := key.(string); ok && keyStr != "" {
+				req.Header.Set("X-Management-Key", keyStr)
+			}
+		}
+	} else {
+		// Use runtime password for internal browser access
+		req.Header.Set("Authorization", "Bearer "+lease.Password)
+	}
 
 	resp, err := p.transport.RoundTrip(req)
 	if err != nil {
@@ -627,7 +655,7 @@ func isZipUpload(filename string) bool {
 	return strings.EqualFold(path.Ext(filename), ".zip")
 }
 
-func (p *ManagementProxy) uploadAuthFile(ctx context.Context, lease *ManagementLease, file authUploadFile) error {
+func (p *ManagementProxy) uploadAuthFile(ctx context.Context, lease *ManagementLease, file authUploadFile, useExternalAuth bool) error {
 	target := *lease.Target
 	target.Path = "/v0/management/auth-files"
 	target.RawQuery = ""
@@ -650,7 +678,18 @@ func (p *ManagementProxy) uploadAuthFile(ctx context.Context, lease *ManagementL
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+lease.Password)
+
+	if useExternalAuth {
+		// External API access: preserve X-Management-Key from parent request
+		if key := ctx.Value(managementKeyContextKey); key != nil {
+			if keyStr, ok := key.(string); ok && keyStr != "" {
+				req.Header.Set("X-Management-Key", keyStr)
+			}
+		}
+	} else {
+		// Internal browser access: use runtime password
+		req.Header.Set("Authorization", "Bearer "+lease.Password)
+	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	resp, err := p.transport.RoundTrip(req)
@@ -696,6 +735,60 @@ func sanitizeHeaders(req *http.Request) {
 	req.Header.Del("Trailer")
 	req.Header.Del("Transfer-Encoding")
 	req.Header.Del("Upgrade")
+}
+
+// sanitizeHeadersExceptManagementKey removes sensitive headers but preserves X-Management-Key
+// or Authorization Bearer for external API access
+func sanitizeHeadersExceptManagementKey(req *http.Request) {
+	// Preserve X-Management-Key or Authorization Bearer, remove others
+	hasManagementKey := req.Header.Get("X-Management-Key") != ""
+
+	// If no X-Management-Key, check if Authorization is a Bearer token
+	hasBearerToken := false
+	if !hasManagementKey {
+		if auth := req.Header.Get("Authorization"); auth != "" {
+			parts := strings.SplitN(auth, " ", 2)
+			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+				hasBearerToken = true
+			}
+		}
+	}
+
+	// Remove Authorization only if it's not a Bearer token for management
+	if !hasBearerToken {
+		req.Header.Del("Authorization")
+	}
+
+	// Always remove Cookie and Proxy-Authorization
+	req.Header.Del("Cookie")
+	req.Header.Del("Proxy-Authorization")
+
+	// Remove hop-by-hop headers
+	req.Header.Del("Connection")
+	req.Header.Del("Proxy-Connection")
+	req.Header.Del("Keep-Alive")
+	req.Header.Del("TE")
+	req.Header.Del("Trailer")
+	req.Header.Del("Transfer-Encoding")
+	req.Header.Del("Upgrade")
+}
+
+// extractManagementKey extracts X-Management-Key or Authorization Bearer token from request
+func extractManagementKey(r *http.Request) string {
+	// Try X-Management-Key first
+	if key := r.Header.Get("X-Management-Key"); key != "" {
+		return key
+	}
+
+	// Try Authorization: Bearer <key>
+	if auth := r.Header.Get("Authorization"); auth != "" {
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+			return parts[1]
+		}
+	}
+
+	return ""
 }
 
 func copyEndToEndHeaders(dst, src http.Header) {

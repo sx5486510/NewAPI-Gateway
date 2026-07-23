@@ -152,9 +152,9 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/dashboard", middleware.AdminAuth(), controller.GetDashboard)
 	}
 
-	// === CPA Management API (Root only, outside /api prefix) ===
+	// === CPA Management API (Root session OR X-Management-Key) ===
 	management := router.Group("/v0/management")
-	management.Use(middleware.RootAuth(), middleware.NoTokenAuth(), middleware.SameOrigin())
+	management.Use(middleware.CPAManagementAuth())
 	{
 		management.Any("", controller.ProxyCPAManagement)
 		management.Any("/*path", controller.ProxyCPAManagement)
