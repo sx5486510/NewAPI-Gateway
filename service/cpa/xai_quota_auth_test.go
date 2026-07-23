@@ -103,6 +103,99 @@ func TestManagementProxyXAIQuotaUsesCredentialIdentity(t *testing.T) {
 	}
 }
 
+func TestIsXAIManagedURL(t *testing.T) {
+	cases := []struct {
+		url  string
+		want bool
+	}{
+		{"https://cli-chat-proxy.grok.com/v1/billing", true},
+		{"https://cli-chat-proxy.grok.com/v1/billing?format=credits", true},
+		{"https://cli-chat-proxy.grok.com/v1/responses", true},
+		{"https://cli-chat-proxy.grok.com/v1/responses/compact", true},
+		{"https://cli-chat-proxy.grok.com/v1/chat/completions", true},
+		{"http://cli-chat-proxy.grok.com/v1/billing", false},
+		{"https://evil.com/v1/responses", false},
+		{"https://cli-chat-proxy.grok.com/v1/other", false},
+		{"not a url", false},
+	}
+	for _, tc := range cases {
+		if got := isXAIManagedURL(tc.url); got != tc.want {
+			t.Errorf("isXAIManagedURL(%q) = %v, want %v", tc.url, got, tc.want)
+		}
+	}
+}
+
+// A Grok chat test message hits /v1/responses on the same host as the billing
+// endpoint. The gateway must refresh/substitute the credential token there too,
+// otherwise chat tests would send an unrefreshed $TOKEN$ and fail spuriously.
+func TestManagementProxyXAIChatEndpointGetsCredentialToken(t *testing.T) {
+	authDir := t.TempDir()
+	const authName = "xai-chat.json"
+	credential := map[string]interface{}{
+		"type":          "xai",
+		"access_token":  "chat-access",
+		"refresh_token": "chat-refresh",
+		"sub":           "chat-subject",
+		"expired":       time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+	}
+	credentialBody, err := json.Marshal(credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(authDir, authName), credentialBody, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var forwarded capturedAPICall
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v0/management/auth-files":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"files": []map[string]interface{}{{
+					"name": authName, "provider": "xai", "auth_index": "chat-index",
+				}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v0/management/api-call":
+			body, readErr := io.ReadAll(r.Body)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if err := json.Unmarshal(body, &forwarded); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"status_code": http.StatusOK,
+				"body":        map[string]interface{}{"id": "resp-1"},
+			})
+		default:
+			t.Fatalf("unexpected upstream request %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer upstream.Close()
+
+	target, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := NewManagementProxy(
+		&fakeLeaseProvider{target: target, password: "runtime-secret"},
+		&xaiQuotaTestStore{authDir: authDir},
+		nil,
+	)
+
+	payload := `{"authIndex":"chat-index","method":"POST","url":"https://cli-chat-proxy.grok.com/v1/responses","header":{"Authorization":"Bearer $TOKEN$"},"data":"{}"}`
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/api-call", strings.NewReader(payload))
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := forwarded.Header["Authorization"]; got != "Bearer chat-access" {
+		t.Fatalf("Authorization = %q, want credential token substituted on chat endpoint", got)
+	}
+}
+
 func TestManagementProxyXAIQuotaRefreshesExpiredCredential(t *testing.T) {
 	authDir := t.TempDir()
 	const authName = "xai-expired.json"
@@ -205,6 +298,91 @@ func TestManagementProxyXAIQuotaRefreshesExpiredCredential(t *testing.T) {
 	expiresAt, err := time.Parse(time.RFC3339, updated["expired"].(string))
 	if err != nil || !expiresAt.After(time.Now()) {
 		t.Fatalf("refreshed expiry = %#v, err = %v", updated["expired"], err)
+	}
+}
+
+func TestManagementProxyXAIQuotaRefreshesCredentialWithoutAccessToken(t *testing.T) {
+	authDir := t.TempDir()
+	const authName = "xai-refresh-only.json"
+	authPath := filepath.Join(authDir, authName)
+	credential := map[string]interface{}{
+		"type":           "xai",
+		"refresh_token":  "refresh-only",
+		"sub":            "subject-refresh-only",
+		"expired":        time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
+		"token_endpoint": "https://auth.x.ai/oauth2/token",
+	}
+	credentialBody, err := json.Marshal(credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(authPath, credentialBody, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var forwarded capturedAPICall
+	refreshCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v0/management/auth-files":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"files": []map[string]interface{}{{
+					"name": authName, "provider": "xai", "auth_index": "refresh-only-index",
+				}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v0/management/api-call":
+			body, readErr := io.ReadAll(r.Body)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			var call capturedAPICall
+			if err := json.Unmarshal(body, &call); err != nil {
+				t.Fatal(err)
+			}
+			if call.URL == "https://auth.x.ai/oauth2/token" {
+				refreshCalls++
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"status_code": http.StatusOK,
+					"body": map[string]interface{}{
+						"access_token": "fresh-refresh-only", "refresh_token": "fresh-refresh-token",
+						"id_token": "fresh-refresh-id", "token_type": "Bearer", "expires_in": 3600,
+					},
+				})
+				return
+			}
+			forwarded = call
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"status_code": http.StatusOK,
+				"body":        map[string]interface{}{"id": "resp-2"},
+			})
+		default:
+			t.Fatalf("unexpected upstream request %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer upstream.Close()
+
+	target, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := NewManagementProxy(
+		&fakeLeaseProvider{target: target, password: "runtime-secret"},
+		&xaiQuotaTestStore{authDir: authDir},
+		nil,
+	)
+	payload := `{"authIndex":"refresh-only-index","method":"GET","url":"https://cli-chat-proxy.grok.com/v1/billing","header":{"Authorization":"Bearer $TOKEN$"}}`
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/api-call", strings.NewReader(payload))
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if refreshCalls != 1 {
+		t.Fatalf("refresh calls = %d, want 1", refreshCalls)
+	}
+	if got := forwarded.Header["Authorization"]; got != "Bearer fresh-refresh-only" {
+		t.Fatalf("Authorization = %q, want fresh token", got)
 	}
 }
 

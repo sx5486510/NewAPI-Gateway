@@ -344,6 +344,46 @@ describe('CPA quota shared contract', () => {
     });
   });
 
+  test('Grok fills monthly quota from the plain billing endpoint response', async () => {
+    const billingPayload = {
+      config: {
+        monthlyLimit: { val: 0 },
+        used: { val: 3 },
+        onDemandCap: { val: 0 },
+        billingPeriodStart: '2026-07-01T00:00:00+00:00',
+        billingPeriodEnd: '2026-08-01T00:00:00+00:00',
+        history: [
+          {
+            billingCycle: { year: 2026, month: 6 },
+            includedUsed: { val: 0 },
+            onDemandUsed: { val: 0 },
+            totalUsed: { val: 0 },
+          },
+        ],
+      },
+    };
+    const post = jest.fn((path, request) =>
+      request.url === 'https://cli-chat-proxy.grok.com/v1/billing'
+        ? ok(JSON.stringify(billingPayload))
+        : ok({ config: {} })
+    );
+
+    const quota = await fetchCPAQuota({ type: 'xai', auth_index: 6 }, { post });
+
+    expect(post.mock.calls.map((call) => call[1].url)).toEqual([
+      'https://cli-chat-proxy.grok.com/v1/billing?format=credits',
+      'https://cli-chat-proxy.grok.com/v1/billing',
+    ]);
+    expect(quota.groups[0].items).toEqual([
+      expect.objectContaining({
+        id: 'monthly-credits',
+        detail: '已用 $0.03',
+        remainingPercent: 0,
+        resetAt: '2026-08-01T00:00:00+00:00',
+      }),
+    ]);
+  });
+
   test('Grok loads x-userid from the credential when the auth list omits it', async () => {
     const post = jest.fn((path, request) =>
       request.url.includes('format=credits')

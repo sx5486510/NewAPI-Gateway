@@ -195,7 +195,7 @@ const parseTokenPayload = (value) => {
   }
 };
 
-const extractCodexAccountId = (file) => {
+export const extractCodexAccountId = (file) => {
   const metadata = objectValue(file?.metadata);
   const attributes = objectValue(file?.attributes);
   for (const candidate of [
@@ -768,15 +768,18 @@ const mergeGrokSummaries = (primary, fallback) => {
     productUsage: primary.productUsage.length
       ? primary.productUsage
       : fallback.productUsage,
-    monthlyLimitCents: primary.monthlyLimitCents ?? fallback.monthlyLimitCents,
-    usedCents: primary.usedCents ?? fallback.usedCents,
-    includedUsedCents: primary.includedUsedCents ?? fallback.includedUsedCents,
-    onDemandCapCents: primary.onDemandCapCents ?? fallback.onDemandCapCents,
-    onDemandUsedCents: primary.onDemandUsedCents ?? fallback.onDemandUsedCents,
+    // Prefer the plain /v1/billing response for monthly money fields so the
+    // credits-format payload cannot mask monthlyLimit/used/onDemand values.
+    monthlyLimitCents: fallback.monthlyLimitCents ?? primary.monthlyLimitCents,
+    usedCents: fallback.usedCents ?? primary.usedCents,
+    includedUsedCents:
+      fallback.includedUsedCents ?? primary.includedUsedCents,
+    onDemandCapCents: fallback.onDemandCapCents ?? primary.onDemandCapCents,
+    onDemandUsedCents: fallback.onDemandUsedCents ?? primary.onDemandUsedCents,
     onDemandUsedPercent:
-      primary.onDemandUsedPercent ?? fallback.onDemandUsedPercent,
-    billingPeriodEnd: primary.billingPeriodEnd ?? fallback.billingPeriodEnd,
-    usedPercent: primary.usedPercent ?? fallback.usedPercent,
+      fallback.onDemandUsedPercent ?? primary.onDemandUsedPercent,
+    billingPeriodEnd: fallback.billingPeriodEnd ?? primary.billingPeriodEnd,
+    usedPercent: fallback.usedPercent ?? primary.usedPercent,
   };
 };
 
@@ -812,7 +815,7 @@ const extractGrokUserId = (file) => {
   return null;
 };
 
-const resolveGrokUserId = async (file, downloadText) => {
+export const resolveGrokUserId = async (file, downloadText) => {
   const direct = extractGrokUserId(file);
   if (direct || typeof downloadText !== 'function' || !file?.name) return direct;
   try {
@@ -898,16 +901,20 @@ const fetchGrokQuota = async ({ file, authIndex, post, downloadText }) => {
     summary.billingPeriodEnd
   ) {
     const limitCents = summary.monthlyLimitCents ?? 0;
-    const usedCents = summary.includedUsedCents ?? 0;
+    const usedCents = summary.includedUsedCents ?? summary.usedCents ?? 0;
     items.push(
       quotaItem({
         id: 'monthly-credits',
         label: '月度积分',
-        remainingPercent: remainingFromUsed(summary.usedPercent),
+        remainingPercent:
+          remainingFromUsed(summary.usedPercent) ??
+          (limitCents === 0 && usedCents > 0 ? 0 : null),
         resetAt: summary.billingPeriodEnd,
         detail:
           limitCents === 0
-            ? '无配额'
+            ? usedCents > 0
+              ? `已用 ${formatUsd(usedCents)}`
+              : '无配额'
             : `${formatUsd(
                 Math.max(0, limitCents - usedCents)
               )} / ${formatUsd(limitCents)}`,

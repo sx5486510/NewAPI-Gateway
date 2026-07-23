@@ -58,11 +58,23 @@ type xaiTokenResponse struct {
 	ExpiresIn    int    `json:"expires_in"`
 }
 
-func isXAIQuotaURL(raw string) bool {
+// isXAIManagedURL reports whether an api-call target is an xAI endpoint whose
+// request should receive a freshly refreshed access token. This covers both the
+// billing/quota endpoint and the Grok CLI chat endpoint used by the connectivity
+// test, all served from cli-chat-proxy.grok.com. Without this, the api-call would
+// forward a stale (possibly expired) $TOKEN$ and the request would fail spuriously.
+func isXAIManagedURL(raw string) bool {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
-	return err == nil && parsed.Scheme == "https" &&
-		strings.EqualFold(parsed.Hostname(), "cli-chat-proxy.grok.com") &&
-		parsed.Path == "/v1/billing"
+	if err != nil || parsed.Scheme != "https" ||
+		!strings.EqualFold(parsed.Hostname(), "cli-chat-proxy.grok.com") {
+		return false
+	}
+	switch parsed.Path {
+	case "/v1/billing", "/v1/responses", "/v1/responses/compact", "/v1/chat/completions":
+		return true
+	default:
+		return false
+	}
 }
 
 func secureAuthFilePath(authDir, name string) (string, error) {
@@ -122,7 +134,7 @@ func (p *ManagementProxy) prepareXAIQuotaAPICall(ctx context.Context, body []byt
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return body, nil
 	}
-	if !isXAIQuotaURL(rawJSONString(payload, "url", "URL")) {
+	if !isXAIManagedURL(rawJSONString(payload, "url", "URL")) {
 		return body, nil
 	}
 	authIndex := rawJSONString(payload, "auth_index", "authIndex", "AuthIndex")
@@ -188,14 +200,14 @@ func (p *ManagementProxy) loadXAIQuotaCredential(ctx context.Context, lease *Man
 		return nil, errors.New("parse xAI credential")
 	}
 	accessToken := strings.TrimSpace(credential.AccessToken)
-	if accessToken == "" {
-		return nil, errors.New("xAI credential access token is missing")
-	}
 	expired, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(credential.Expired))
-	if parseErr != nil || expired.After(time.Now().Add(xaiRefreshSkew)) {
+	if accessToken != "" && (parseErr != nil || expired.After(time.Now().Add(xaiRefreshSkew))) {
 		return &xaiQuotaCredential{AccessToken: accessToken, Subject: strings.TrimSpace(credential.Subject)}, nil
 	}
 	if strings.TrimSpace(credential.RefreshToken) == "" {
+		if accessToken == "" {
+			return nil, errors.New("xAI credential access token and refresh token are missing")
+		}
 		return nil, errors.New("xAI credential refresh token is missing")
 	}
 	endpoint := strings.TrimSpace(credential.TokenEndpoint)

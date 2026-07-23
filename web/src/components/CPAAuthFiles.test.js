@@ -222,7 +222,7 @@ describe('CPAAuthFiles', () => {
     const claudePageSize = claudeGroup.querySelector('select');
     expect(
       Array.from(claudePageSize.options).map((option) => option.value)
-    ).toEqual(['20', '50', '100']);
+    ).toEqual(['20', '50', '100', '500', '1000', 'Infinity']);
 
     await act(async () => {
       findButton(claudeGroup, '2').click();

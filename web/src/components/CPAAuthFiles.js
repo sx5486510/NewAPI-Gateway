@@ -20,6 +20,9 @@ import {
   Trash2,
   RefreshCw,
   AlertCircle,
+  Send,
+  XCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   fetchCPAQuota,
@@ -27,6 +30,7 @@ import {
   getQuotaProvider,
   isAuthFileDisabled,
 } from './cpaQuota';
+import { sendCPATestMessage } from './cpaTest';
 import {
   getRefreshTokenStatus,
   parseAuthCredentialMetadata,
@@ -155,6 +159,7 @@ const CPAAuthFiles = () => {
   const [editNote, setEditNote] = useState('');
   const [editPriority, setEditPriority] = useState('');
   const [quotaStates, setQuotaStates] = useState({});
+  const [testStates, setTestStates] = useState({});
   const [credentialStates, setCredentialStates] = useState({});
   const [fetchingAllQuotas, setFetchingAllQuotas] = useState(false);
   const [fetchingGroupQuotas, setFetchingGroupQuotas] = useState({});
@@ -167,6 +172,7 @@ const CPAAuthFiles = () => {
   const [deletingGroups, setDeletingGroups] = useState({});
   const uploadInFlightRef = useRef(false);
   const quotaInFlightRef = useRef(new Set());
+  const testInFlightRef = useRef(new Set());
   const cooldownResetInFlightRef = useRef(new Set());
   const bulkDeleteInFlightRef = useRef(new Set());
   const credentialLoadGenerationRef = useRef(0);
@@ -462,6 +468,42 @@ const CPAAuthFiles = () => {
         }));
       } finally {
         quotaInFlightRef.current.delete(key);
+      }
+    },
+    [downloadAuthFileText, postCPA, quotaKey]
+  );
+
+  const handleTestAuth = useCallback(
+    async (file) => {
+      const key = quotaKey(file);
+      if (!key || testInFlightRef.current.has(key)) return;
+
+      testInFlightRef.current.add(key);
+      setTestStates((current) => ({
+        ...current,
+        [key]: { status: 'loading' },
+      }));
+
+      try {
+        const result = await sendCPATestMessage(file, {
+          post: postCPA,
+          downloadText: downloadAuthFileText,
+        });
+        setTestStates((current) => ({
+          ...current,
+          [key]: { status: 'success', result },
+        }));
+      } catch (error) {
+        setTestStates((current) => ({
+          ...current,
+          [key]: {
+            status: 'error',
+            error: error instanceof Error ? error.message : '未知错误',
+            statusCode: error instanceof Error ? error.status : undefined,
+          },
+        }));
+      } finally {
+        testInFlightRef.current.delete(key);
       }
     },
     [downloadAuthFileText, postCPA, quotaKey]
@@ -801,6 +843,58 @@ const CPAAuthFiles = () => {
         </span>
         <span style={itemStyle}>Access Token: {accessText}</span>
         <span style={itemStyle}>Refresh Token: {refreshText}</span>
+      </div>
+    );
+  };
+
+  const renderTestInfo = (file) => {
+    const state = testStates[quotaKey(file)];
+    if (!state) return null;
+    if (state.status === 'loading') {
+      return (
+        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+          正在测试...
+        </div>
+      );
+    }
+    if (state.status === 'error') {
+      return (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            color: '#991B1B',
+            fontSize: '0.875rem',
+          }}
+        >
+          <XCircle size={16} style={{ color: '#DC2626', flexShrink: 0 }} />
+          <span>测试失败: {state.error}</span>
+        </div>
+      );
+    }
+
+    const { result } = state;
+    const latency =
+      typeof result.latencyMs === 'number' ? ` (${result.latencyMs}ms)` : '';
+    const summary =
+      result.mode === 'probe'
+        ? result.detail || '鉴权校验通过'
+        : `测试成功${latency}${result.reply ? `：${result.reply}` : ''}`;
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          color: '#166534',
+          fontSize: '0.875rem',
+        }}
+      >
+        <CheckCircle2 size={16} style={{ color: '#16A34A', flexShrink: 0 }} />
+        <span>
+          {result.mode === 'probe' ? `${summary}${latency}` : summary}
+        </span>
       </div>
     );
   };
@@ -1427,6 +1521,9 @@ const CPAAuthFiles = () => {
 
                               {/* 配额信息 */}
                               {renderQuotaInfo(file)}
+
+                              {/* 测试结果 */}
+                              {renderTestInfo(file)}
                             </div>
 
                             {/* 右侧：状态和操作按钮 */}
@@ -1473,6 +1570,23 @@ const CPAAuthFiles = () => {
                                     重置冷却
                                   </Button>
                                 )}
+                                {getQuotaProvider(file) &&
+                                  !isAuthFileDisabled(file) && (
+                                    <Button
+                                      variant='ghost'
+                                      size='sm'
+                                      onClick={() => handleTestAuth(file)}
+                                      disabled={
+                                        testStates[quotaKey(file)]?.status ===
+                                          'loading' || Boolean(deletingGroups[key])
+                                      }
+                                      title='用此认证向服务商发一条测试消息'
+                                      aria-label={`测试 ${file.name}`}
+                                    >
+                                      <Send size={16} />
+                                      测试
+                                    </Button>
+                                  )}
                                 {getQuotaProvider(file) &&
                                   !isAuthFileDisabled(file) && (
                                     <Button
