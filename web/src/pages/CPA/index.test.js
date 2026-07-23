@@ -20,7 +20,24 @@ jest.mock('../../helpers', () => ({
   },
 }));
 
+jest.mock('../../components/CPAAuthFiles', () => () => (
+  <div data-testid="cpa-auth-files-mock">CPAAuthFiles</div>
+));
+
 global.IS_REACT_ACT_ENVIRONMENT = true;
+
+const openOverviewTab = async (container) => {
+  const overviewTab =
+    container.querySelector('#cpa-tab-overview') ||
+    Array.from(container.querySelectorAll('button')).find((btn) =>
+      btn.textContent.includes('概览')
+    );
+  expect(overviewTab).not.toBeNull();
+  await act(async () => {
+    overviewTab.click();
+    await Promise.resolve();
+  });
+};
 
 describe('CPA', () => {
   let container;
@@ -103,6 +120,8 @@ describe('CPA', () => {
     expect(container.textContent).not.toContain('http://127.0.0.1:29000');
     expect(container.textContent).toContain('v7.2.80');
     expect(container.querySelector('iframe')).toBeNull();
+
+    await openOverviewTab(container);
 
     const openBtn = container.querySelector('.cpa-btn-open-panel');
     expect(openBtn).not.toBeNull();
@@ -233,6 +252,13 @@ describe('CPA', () => {
       await Promise.resolve();
     });
 
+    // CPAAuthFiles is mocked; only the status poll should hit API.get.
+    expect(API.get).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(2000);
+    });
+
     expect(API.get).toHaveBeenCalledTimes(2);
 
     await act(async () => {
@@ -240,12 +266,6 @@ describe('CPA', () => {
     });
 
     expect(API.get).toHaveBeenCalledTimes(3);
-
-    await act(async () => {
-      jest.advanceTimersByTime(2000);
-    });
-
-    expect(API.get).toHaveBeenCalledTimes(4);
   });
 
   it('cleans up poll timer on unmount', async () => {
@@ -303,6 +323,8 @@ describe('CPA', () => {
     // Nothing should be seeded until the user clicks.
     expect(setItemSpy).not.toHaveBeenCalledWith('managementKey', 'gateway-managed');
 
+    await openOverviewTab(container);
+
     const openBtn = container.querySelector('.cpa-btn-open-panel');
     await act(async () => {
       openBtn.click();
@@ -347,6 +369,8 @@ describe('CPA', () => {
       await Promise.resolve();
     });
 
+    await openOverviewTab(container);
+
     const openBtn = container.querySelector('.cpa-btn-open-panel');
     await act(async () => {
       openBtn.click();
@@ -384,6 +408,7 @@ describe('CPA', () => {
       await Promise.resolve();
     });
 
+    await openOverviewTab(container);
     expect(container.querySelector('.cpa-btn-open-panel')).not.toBeNull();
   });
 
@@ -440,6 +465,7 @@ describe('CPA', () => {
     });
 
     expect(container.textContent).toContain('运行中');
+    await openOverviewTab(container);
     expect(container.querySelector('.cpa-btn-open-panel')).not.toBeNull();
   });
 
@@ -458,6 +484,8 @@ describe('CPA', () => {
     await act(async () => {
       await Promise.resolve();
     });
+
+    await openOverviewTab(container);
 
     API.post.mockReturnValue(new Promise(() => {}));
 
@@ -500,6 +528,8 @@ describe('CPA', () => {
       await Promise.resolve();
     });
 
+    await openOverviewTab(container);
+
     await act(async () => {
       await Promise.resolve();
     });
@@ -532,6 +562,8 @@ describe('CPA', () => {
       root.render(<CPA />);
       await Promise.resolve();
     });
+
+    await openOverviewTab(container);
 
     const input = container.querySelector('input[name="cpa-proxy-url"]');
     await act(async () => {
@@ -570,6 +602,8 @@ describe('CPA', () => {
       await Promise.resolve();
     });
 
+    await openOverviewTab(container);
+
     await act(async () => {
       container.querySelector('.cpa-btn-save-proxy').click();
       await Promise.resolve();
@@ -597,6 +631,8 @@ describe('CPA', () => {
       root.render(<CPA />);
       await Promise.resolve();
     });
+
+    await openOverviewTab(container);
 
     const input = container.querySelector('input[name="cpa-proxy-url"]');
     await act(async () => {
@@ -637,6 +673,8 @@ describe('CPA', () => {
       await Promise.resolve();
     });
 
+    await openOverviewTab(container);
+
     await act(async () => {
       container.querySelector('.cpa-btn-clear-proxy').click();
       await Promise.resolve();
@@ -664,6 +702,8 @@ describe('CPA', () => {
       root.render(<CPA />);
       await Promise.resolve();
     });
+
+    await openOverviewTab(container);
 
     const input = container.querySelector('input[name="cpa-proxy-url"]');
     await act(async () => {
@@ -697,6 +737,8 @@ describe('CPA', () => {
       root.render(<CPA />);
       await Promise.resolve();
     });
+
+    await openOverviewTab(container);
 
     const input = container.querySelector('input[name="cpa-proxy-url"]');
     await act(async () => {

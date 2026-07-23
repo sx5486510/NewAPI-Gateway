@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
 
-const Modal = ({ isOpen, onClose, title, children, actions }) => {
+const Modal = ({ isOpen, onClose, title, children, actions, id }) => {
     useEffect(() => {
         if (isOpen) {
             document.body.style.overflow = 'hidden';
@@ -17,6 +17,7 @@ const Modal = ({ isOpen, onClose, title, children, actions }) => {
 
     return (
         <div
+            id={id ? `${id}-overlay` : undefined}
             style={{
                 position: 'fixed',
                 top: 0,
@@ -33,6 +34,7 @@ const Modal = ({ isOpen, onClose, title, children, actions }) => {
             onClick={onClose}
         >
             <div
+                id={id}
                 className="modal-content"
                 style={{
                     backgroundColor: 'var(--bg-primary)',
@@ -48,6 +50,7 @@ const Modal = ({ isOpen, onClose, title, children, actions }) => {
                 onClick={(e) => e.stopPropagation()}
             >
                 <div
+                    id={id ? `${id}-header` : undefined}
                     style={{
                         padding: '1.25rem',
                         borderBottom: '1px solid var(--border-color)',
@@ -56,8 +59,9 @@ const Modal = ({ isOpen, onClose, title, children, actions }) => {
                         alignItems: 'center',
                     }}
                 >
-                    <h3 style={{ fontSize: '1.125rem', fontWeight: '600' }}>{title}</h3>
+                    <h3 id={id ? `${id}-title` : undefined} style={{ fontSize: '1.125rem', fontWeight: '600' }}>{title}</h3>
                     <button
+                        id={id ? `${id}-close` : undefined}
                         onClick={onClose}
                         style={{
                             background: 'none',
@@ -71,12 +75,13 @@ const Modal = ({ isOpen, onClose, title, children, actions }) => {
                     </button>
                 </div>
 
-                <div style={{ padding: '1.5rem', overflowY: 'auto' }}>
+                <div id={id ? `${id}-body` : undefined} style={{ padding: '1.5rem', overflowY: 'auto' }}>
                     {children}
                 </div>
 
                 {actions && (
                     <div
+                        id={id ? `${id}-actions` : undefined}
                         style={{
                             padding: '1rem 1.5rem',
                             backgroundColor: 'var(--gray-50)',

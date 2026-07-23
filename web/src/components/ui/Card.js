@@ -1,8 +1,9 @@
 import React from 'react';
 
-const Card = ({ children, className = '', title, padding = '1.5rem' }) => {
+const Card = ({ children, className = '', title, padding = '1.5rem', id, ...rest }) => {
     return (
         <div
+            id={id}
             style={{
                 backgroundColor: 'var(--bg-primary)',
                 borderRadius: 'var(--radius-lg)',
@@ -12,6 +13,7 @@ const Card = ({ children, className = '', title, padding = '1.5rem' }) => {
                 marginBottom: '1rem',
             }}
             className={className}
+            {...rest}
         >
             {title && (
                 <div

@@ -39,6 +39,15 @@ import {
 const AUTH_FILE_PAGE_SIZES = [20, 50, 100, 500, 1000, Infinity];
 const DEFAULT_AUTH_FILE_PAGE_SIZE = 50;
 
+/** Build a stable DOM id from a prefix + raw value (file names, group keys, etc.). */
+const toElementId = (prefix, value = '') => {
+  const safe = String(value)
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+  return safe ? `${prefix}-${safe}` : prefix;
+};
+
 const typeLabels = {
   antigravity: { name: 'Antigravity', color: '#006064' },
   claude: { name: 'Claude', color: '#C4612F' },
@@ -798,24 +807,26 @@ const CPAAuthFiles = () => {
       gap: '0.35rem 1rem',
     };
 
+    const credentialId = toElementId('cpa-auth-file-credential', file.name);
+
     if (!detail || detail.status === 'loading') {
       return (
-        <div data-credential-status={file.name} style={containerStyle}>
-          <span style={itemStyle}>
+        <div id={credentialId} data-credential-status={file.name} style={containerStyle}>
+          <span id={`${credentialId}-last-refresh`} style={itemStyle}>
             最近刷新: {formatCredentialTime(file.last_refresh)}
           </span>
-          <span style={itemStyle}>Access Token: 读取中</span>
-          <span style={itemStyle}>Refresh Token: 读取中</span>
+          <span id={`${credentialId}-access-token`} style={itemStyle}>Access Token: 读取中</span>
+          <span id={`${credentialId}-refresh-token`} style={itemStyle}>Refresh Token: 读取中</span>
         </div>
       );
     }
     if (detail.status === 'error') {
       return (
-        <div data-credential-status={file.name} style={containerStyle}>
-          <span style={itemStyle}>
+        <div id={credentialId} data-credential-status={file.name} style={containerStyle}>
+          <span id={`${credentialId}-last-refresh`} style={itemStyle}>
             最近刷新: {formatCredentialTime(file.last_refresh)}
           </span>
-          <span style={itemStyle}>{detail.error}</span>
+          <span id={`${credentialId}-error`} style={itemStyle}>{detail.error}</span>
         </div>
       );
     }
@@ -837,22 +848,23 @@ const CPAAuthFiles = () => {
     }[refreshStatus];
 
     return (
-      <div data-credential-status={file.name} style={containerStyle}>
-        <span style={itemStyle}>
+      <div id={credentialId} data-credential-status={file.name} style={containerStyle}>
+        <span id={`${credentialId}-last-refresh`} style={itemStyle}>
           最近刷新: {formatCredentialTime(file.last_refresh)}
         </span>
-        <span style={itemStyle}>Access Token: {accessText}</span>
-        <span style={itemStyle}>Refresh Token: {refreshText}</span>
+        <span id={`${credentialId}-access-token`} style={itemStyle}>Access Token: {accessText}</span>
+        <span id={`${credentialId}-refresh-token`} style={itemStyle}>Refresh Token: {refreshText}</span>
       </div>
     );
   };
 
   const renderTestInfo = (file) => {
     const state = testStates[quotaKey(file)];
+    const testId = toElementId('cpa-auth-file-test', file.name);
     if (!state) return null;
     if (state.status === 'loading') {
       return (
-        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+        <div id={testId} style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
           正在测试...
         </div>
       );
@@ -860,6 +872,7 @@ const CPAAuthFiles = () => {
     if (state.status === 'error') {
       return (
         <div
+          id={testId}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -869,7 +882,7 @@ const CPAAuthFiles = () => {
           }}
         >
           <XCircle size={16} style={{ color: '#DC2626', flexShrink: 0 }} />
-          <span>测试失败: {state.error}</span>
+          <span id={`${testId}-error`}>测试失败: {state.error}</span>
         </div>
       );
     }
@@ -883,6 +896,7 @@ const CPAAuthFiles = () => {
         : `测试成功${latency}${result.reply ? `：${result.reply}` : ''}`;
     return (
       <div
+        id={testId}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -892,7 +906,7 @@ const CPAAuthFiles = () => {
         }}
       >
         <CheckCircle2 size={16} style={{ color: '#16A34A', flexShrink: 0 }} />
-        <span>
+        <span id={`${testId}-summary`}>
           {result.mode === 'probe' ? `${summary}${latency}` : summary}
         </span>
       </div>
@@ -901,16 +915,17 @@ const CPAAuthFiles = () => {
 
   const renderQuotaInfo = (file) => {
     const state = quotaStates[quotaKey(file)];
+    const quotaId = toElementId('cpa-auth-file-quota', file.name);
     if (!state || state.status === 'idle') {
       return (
-        <div style={{ fontSize: '0.875rem', color: 'var(--text-tertiary)' }}>
+        <div id={quotaId} style={{ fontSize: '0.875rem', color: 'var(--text-tertiary)' }}>
           点击刷新额度
         </div>
       );
     }
     if (state.status === 'loading') {
       return (
-        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+        <div id={quotaId} style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
           正在加载额度...
         </div>
       );
@@ -918,6 +933,7 @@ const CPAAuthFiles = () => {
     if (state.status === 'error') {
       return (
         <div
+          id={quotaId}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -927,7 +943,7 @@ const CPAAuthFiles = () => {
           }}
         >
           <AlertCircle size={16} style={{ color: '#DC2626', flexShrink: 0 }} />
-          <span>{state.error}</span>
+          <span id={`${quotaId}-error`}>{state.error}</span>
         </div>
       );
     }
@@ -941,14 +957,15 @@ const CPAAuthFiles = () => {
         : date.toLocaleString('zh-CN');
     };
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div id={quotaId} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
         {quota.plan && (
-          <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+          <div id={`${quotaId}-plan`} style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
             套餐: {quota.plan}
           </div>
         )}
         {quota.meta?.map((item, index) => (
           <div
+            id={`${quotaId}-meta-${index}`}
             key={`${item.label}-${index}`}
             style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}
           >
@@ -957,18 +974,21 @@ const CPAAuthFiles = () => {
         ))}
         {quota.groups?.map((group) => (
           <div
+            id={`${quotaId}-group-${group.id}`}
             key={group.id}
             style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
           >
-            <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+            <div id={`${quotaId}-group-${group.id}-label`} style={{ fontSize: '0.875rem', fontWeight: 600 }}>
               {group.label}
             </div>
             {group.items?.map((item) => (
               <div
+                id={`${quotaId}-item-${item.id}`}
                 key={item.id}
                 style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}
               >
                 <div
+                  id={`${quotaId}-item-${item.id}-header`}
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -977,19 +997,19 @@ const CPAAuthFiles = () => {
                     marginBottom: '0.2rem',
                   }}
                 >
-                  <span>{item.label}</span>
-                  <span style={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                  <span id={`${quotaId}-item-${item.id}-label`}>{item.label}</span>
+                  <span id={`${quotaId}-item-${item.id}-percent`} style={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                     {item.remainingPercent === null
                       ? '--'
                       : `${Math.round(item.remainingPercent)}%`}
                   </span>
                 </div>
-                <ProgressBar percent={item.remainingPercent} />
+                <ProgressBar id={`${quotaId}-item-${item.id}-progress`} percent={item.remainingPercent} />
                 {item.detail && (
-                  <div style={{ marginTop: '0.15rem' }}>{item.detail}</div>
+                  <div id={`${quotaId}-item-${item.id}-detail`} style={{ marginTop: '0.15rem' }}>{item.detail}</div>
                 )}
                 {item.resetAt && (
-                  <div style={{ marginTop: '0.1rem' }}>
+                  <div id={`${quotaId}-item-${item.id}-reset`} style={{ marginTop: '0.1rem' }}>
                     重置: {formatReset(item.resetAt)}
                   </div>
                 )}
@@ -999,6 +1019,7 @@ const CPAAuthFiles = () => {
         ))}
         {quota.warnings?.map((warning, index) => (
           <div
+            id={`${quotaId}-warning-${index}`}
             key={`warning-${index}`}
             style={{ fontSize: '0.8rem', color: '#92400E' }}
           >
@@ -1012,6 +1033,7 @@ const CPAAuthFiles = () => {
   if (loading) {
     return (
       <div
+        id='cpa-auth-files-loading'
         style={{
           maxWidth: '1200px',
           margin: '0 auto',
@@ -1019,13 +1041,14 @@ const CPAAuthFiles = () => {
           textAlign: 'center',
         }}
       >
-        <p style={{ color: 'var(--text-secondary)' }}>加载中...</p>
+        <p id='cpa-auth-files-loading-text' style={{ color: 'var(--text-secondary)' }}>加载中...</p>
       </div>
     );
   }
 
   return (
     <div
+      id='cpa-auth-files'
       style={{
         maxWidth: '1200px',
         margin: '0 auto',
@@ -1035,8 +1058,9 @@ const CPAAuthFiles = () => {
       }}
     >
       {/* 认证文件列表区 */}
-      <Card padding='1.5rem'>
+      <Card id='cpa-auth-files-card' padding='1.5rem'>
         <div
+          id='cpa-auth-files-header'
           style={{
             display: 'flex',
             justifyContent: 'space-between',
@@ -1044,8 +1068,9 @@ const CPAAuthFiles = () => {
             marginBottom: '1.5rem',
           }}
         >
-          <div>
+          <div id='cpa-auth-files-header-text'>
             <h3
+              id='cpa-auth-files-title'
               style={{
                 fontSize: '1.1rem',
                 fontWeight: 'bold',
@@ -1054,12 +1079,13 @@ const CPAAuthFiles = () => {
             >
               认证文件
             </h3>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+            <p id='cpa-auth-files-description' style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
               管理 CLI 认证凭证文件(Claude/Codex/Grok 等)
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div id='cpa-auth-files-header-actions' style={{ display: 'flex', gap: '0.5rem' }}>
             <Button
+              id='cpa-auth-files-refresh-btn'
               variant='outline'
               onClick={handleRefresh}
               disabled={refreshing}
@@ -1074,6 +1100,7 @@ const CPAAuthFiles = () => {
               刷新列表
             </Button>
             <Button
+              id='cpa-auth-files-refresh-all-quotas-btn'
               variant='outline'
               onClick={handleRefreshAllQuotas}
               disabled={fetchingAllQuotas}
@@ -1090,6 +1117,7 @@ const CPAAuthFiles = () => {
               获取全部真实额度
             </Button>
             <Button
+              id='cpa-auth-files-upload-btn'
               onClick={() => setUploadModalOpen(true)}
               style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
             >
@@ -1101,14 +1129,16 @@ const CPAAuthFiles = () => {
 
         {authFiles.length === 0 ? (
           <div
+            id='cpa-auth-files-empty'
             style={{
               textAlign: 'center',
               padding: '3rem 1rem',
               color: 'var(--text-secondary)',
             }}
           >
-            <p>暂无认证文件</p>
+            <p id='cpa-auth-files-empty-text'>暂无认证文件</p>
             <Button
+              id='cpa-auth-files-empty-upload-btn'
               onClick={() => setUploadModalOpen(true)}
               style={{ marginTop: '1rem' }}
             >
@@ -1119,6 +1149,7 @@ const CPAAuthFiles = () => {
           <>
             {/* 筛选工具栏 */}
             <div
+              id='cpa-auth-files-filters'
               data-auth-filters
               style={{
                 display: 'flex',
@@ -1129,6 +1160,7 @@ const CPAAuthFiles = () => {
               }}
             >
               <input
+                id='cpa-auth-files-filter-search'
                 type='search'
                 aria-label='搜索认证文件'
                 placeholder='搜索文件名 / 邮箱 / 备注'
@@ -1145,6 +1177,7 @@ const CPAAuthFiles = () => {
                 }}
               />
               <select
+                id='cpa-auth-files-filter-type'
                 aria-label='按类型筛选'
                 value={filters.type}
                 onChange={(event) =>
@@ -1156,14 +1189,15 @@ const CPAAuthFiles = () => {
                   borderRadius: '0.375rem',
                 }}
               >
-                <option value='all'>全部类型</option>
+                <option id='cpa-auth-files-filter-type-all' value='all'>全部类型</option>
                 {Object.entries(typeLabels).map(([key, { name }]) => (
-                  <option key={key} value={key}>
+                  <option id={`cpa-auth-files-filter-type-${key}`} key={key} value={key}>
                     {name}
                   </option>
                 ))}
               </select>
               <select
+                id='cpa-auth-files-filter-status'
                 aria-label='按状态筛选'
                 value={filters.status}
                 onChange={(event) =>
@@ -1175,12 +1209,13 @@ const CPAAuthFiles = () => {
                   borderRadius: '0.375rem',
                 }}
               >
-                <option value='all'>全部状态</option>
-                <option value='enabled'>已启用</option>
-                <option value='disabled'>已禁用</option>
-                <option value='quota_401'>额度返回 401</option>
+                <option id='cpa-auth-files-filter-status-all' value='all'>全部状态</option>
+                <option id='cpa-auth-files-filter-status-enabled' value='enabled'>已启用</option>
+                <option id='cpa-auth-files-filter-status-disabled' value='disabled'>已禁用</option>
+                <option id='cpa-auth-files-filter-status-quota-401' value='quota_401'>额度返回 401</option>
               </select>
               <label
+                id='cpa-auth-files-filter-hide-zero-quota-label'
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1192,6 +1227,7 @@ const CPAAuthFiles = () => {
                 }}
               >
                 <input
+                  id='cpa-auth-files-filter-hide-zero-quota'
                   type='checkbox'
                   checked={filters.hideZeroQuota}
                   onChange={(event) =>
@@ -1201,6 +1237,7 @@ const CPAAuthFiles = () => {
                 隐藏 0 额度
               </label>
               <span
+                id='cpa-auth-files-filter-count'
                 style={{
                   color: 'var(--text-secondary)',
                   fontSize: '0.875rem',
@@ -1212,7 +1249,7 @@ const CPAAuthFiles = () => {
                 filters.type !== 'all' ||
                 filters.status !== 'all' ||
                 filters.hideZeroQuota) && (
-                <Button variant='ghost' size='sm' onClick={handleClearFilters}>
+                <Button id='cpa-auth-files-filter-clear-btn' variant='ghost' size='sm' onClick={handleClearFilters}>
                   清除筛选
                 </Button>
               )}
@@ -1220,16 +1257,18 @@ const CPAAuthFiles = () => {
 
             {filteredFiles.length === 0 ? (
               <div
+                id='cpa-auth-files-filter-empty'
                 style={{
                   textAlign: 'center',
                   padding: '3rem 1rem',
                   color: 'var(--text-secondary)',
                 }}
               >
-                <p>没有符合筛选条件的认证文件</p>
+                <p id='cpa-auth-files-filter-empty-text'>没有符合筛选条件的认证文件</p>
               </div>
             ) : (
               <div
+                id='cpa-auth-files-groups'
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
@@ -1256,10 +1295,13 @@ const CPAAuthFiles = () => {
                   const someVisibleSelected =
                     selectedVisibleCount > 0 && !allVisibleSelected;
 
+                  const groupId = toElementId('cpa-auth-group', key);
+
                   return (
-                    <div key={key} data-auth-group={key}>
+                    <div id={groupId} key={key} data-auth-group={key}>
                       {/* 类型标题栏 */}
                       <div
+                        id={`${groupId}-header`}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -1270,6 +1312,7 @@ const CPAAuthFiles = () => {
                         }}
                       >
                         <h4
+                          id={`${groupId}-title`}
                           style={{
                             fontSize: '1rem',
                             fontWeight: 'bold',
@@ -1280,6 +1323,7 @@ const CPAAuthFiles = () => {
                           {name}
                         </h4>
                         <span
+                          id={`${groupId}-count`}
                           style={{
                             fontSize: '0.75rem',
                             fontWeight: 'bold',
@@ -1292,6 +1336,7 @@ const CPAAuthFiles = () => {
                           {files.length}
                         </span>
                         <label
+                          id={`${groupId}-select-page-label`}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -1301,6 +1346,7 @@ const CPAAuthFiles = () => {
                           }}
                         >
                           <input
+                            id={`${groupId}-select-page`}
                             type='checkbox'
                             aria-label={`选择 ${name} 当前页认证文件`}
                             checked={allVisibleSelected}
@@ -1320,6 +1366,7 @@ const CPAAuthFiles = () => {
                           选择当前页
                         </label>
                         <Button
+                          id={`${groupId}-bulk-delete-btn`}
                           variant='danger'
                           size='sm'
                           onClick={() => handleBulkDelete(key, name)}
@@ -1337,8 +1384,9 @@ const CPAAuthFiles = () => {
                           )}
                           删除已选 ({selectedNames.length})
                         </Button>
-                        <span style={{ flex: 1 }} />
+                        <span id={`${groupId}-header-spacer`} style={{ flex: 1 }} />
                         <Button
+                          id={`${groupId}-refresh-quotas-btn`}
                           variant='ghost'
                           size='sm'
                           onClick={() => handleRefreshGroupQuotas(key)}
@@ -1369,6 +1417,7 @@ const CPAAuthFiles = () => {
                       {/* 进度条 */}
                       {groupQuotaProgress[key] && (
                         <div
+                          id={`${groupId}-quota-progress`}
                           style={{
                             marginBottom: '0.75rem',
                             padding: '0.5rem 0.75rem',
@@ -1377,6 +1426,7 @@ const CPAAuthFiles = () => {
                           }}
                         >
                           <div
+                            id={`${groupId}-quota-progress-header`}
                             style={{
                               display: 'flex',
                               justifyContent: 'space-between',
@@ -1386,13 +1436,14 @@ const CPAAuthFiles = () => {
                               color: 'var(--text-secondary)',
                             }}
                           >
-                            <span>正在获取 {name} 组额度...</span>
-                            <span>
+                            <span id={`${groupId}-quota-progress-label`}>正在获取 {name} 组额度...</span>
+                            <span id={`${groupId}-quota-progress-count`}>
                               {groupQuotaProgress[key].completed} /{' '}
                               {groupQuotaProgress[key].total}
                             </span>
                           </div>
                           <div
+                            id={`${groupId}-quota-progress-track`}
                             style={{
                               width: '100%',
                               height: '6px',
@@ -1402,6 +1453,7 @@ const CPAAuthFiles = () => {
                             }}
                           >
                             <div
+                              id={`${groupId}-quota-progress-fill`}
                               style={{
                                 width: `${
                                   (groupQuotaProgress[key].completed /
@@ -1419,14 +1471,18 @@ const CPAAuthFiles = () => {
 
                       {/* 文件列表 */}
                       <div
+                        id={`${groupId}-file-list`}
                         style={{
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '0.5rem',
                         }}
                       >
-                        {visibleFiles.map((file) => (
+                        {visibleFiles.map((file) => {
+                          const fileId = toElementId('cpa-auth-file', file.name);
+                          return (
                           <div
+                            id={fileId}
                             key={file.name}
                             data-auth-file={file.name}
                             style={{
@@ -1452,6 +1508,7 @@ const CPAAuthFiles = () => {
                           >
                             {/* 选择复选框 */}
                             <input
+                              id={`${fileId}-select`}
                               type='checkbox'
                               aria-label={`选择认证文件 ${file.name}`}
                               checked={selectedNameSet.has(file.name)}
@@ -1470,6 +1527,7 @@ const CPAAuthFiles = () => {
                             />
                             {/* 左侧：文件信息 */}
                             <div
+                              id={`${fileId}-info`}
                               style={{
                                 flex: 1,
                                 display: 'flex',
@@ -1478,6 +1536,7 @@ const CPAAuthFiles = () => {
                               }}
                             >
                               <div
+                                id={`${fileId}-meta`}
                                 style={{
                                   display: 'flex',
                                   alignItems: 'center',
@@ -1486,6 +1545,7 @@ const CPAAuthFiles = () => {
                                 }}
                               >
                                 <span
+                                  id={`${fileId}-name`}
                                   style={{
                                     fontWeight: 600,
                                     fontSize: '0.95rem',
@@ -1495,6 +1555,7 @@ const CPAAuthFiles = () => {
                                 </span>
                                 {file.email && (
                                   <span
+                                    id={`${fileId}-email`}
                                     style={{
                                       fontSize: '0.875rem',
                                       color: 'var(--text-secondary)',
@@ -1505,6 +1566,7 @@ const CPAAuthFiles = () => {
                                 )}
                                 {file.note && (
                                   <span
+                                    id={`${fileId}-note`}
                                     style={{
                                       fontSize: '0.875rem',
                                       color: 'var(--text-secondary)',
@@ -1528,6 +1590,7 @@ const CPAAuthFiles = () => {
 
                             {/* 右侧：状态和操作按钮 */}
                             <div
+                              id={`${fileId}-actions`}
                               style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -1537,6 +1600,7 @@ const CPAAuthFiles = () => {
                             >
                               {/* 状态徽章 */}
                               <span
+                                id={`${fileId}-status-badge`}
                                 style={{
                                   padding: '0.25rem 0.75rem',
                                   borderRadius: '999px',
@@ -1553,9 +1617,10 @@ const CPAAuthFiles = () => {
                               </span>
 
                               {/* 操作按钮 */}
-                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <div id={`${fileId}-action-buttons`} style={{ display: 'flex', gap: '0.5rem' }}>
                                 {getAuthIndex(file) && (
                                   <Button
+                                    id={`${fileId}-reset-cooldown-btn`}
                                     variant='ghost'
                                     size='sm'
                                     onClick={() => handleResetCooldown(file)}
@@ -1573,6 +1638,7 @@ const CPAAuthFiles = () => {
                                 {getQuotaProvider(file) &&
                                   !isAuthFileDisabled(file) && (
                                     <Button
+                                      id={`${fileId}-test-btn`}
                                       variant='ghost'
                                       size='sm'
                                       onClick={() => handleTestAuth(file)}
@@ -1590,6 +1656,7 @@ const CPAAuthFiles = () => {
                                 {getQuotaProvider(file) &&
                                   !isAuthFileDisabled(file) && (
                                     <Button
+                                      id={`${fileId}-refresh-quota-btn`}
                                       variant='ghost'
                                       size='sm'
                                       onClick={() => handleRefreshQuota(file)}
@@ -1605,6 +1672,7 @@ const CPAAuthFiles = () => {
                                     </Button>
                                   )}
                                 <Button
+                                  id={`${fileId}-toggle-status-btn`}
                                   variant='ghost'
                                   size='sm'
                                   onClick={() => handleToggleStatus(file)}
@@ -1614,6 +1682,7 @@ const CPAAuthFiles = () => {
                                   {file.disabled ? '启用' : '禁用'}
                                 </Button>
                                 <Button
+                                  id={`${fileId}-edit-btn`}
                                   variant='ghost'
                                   size='sm'
                                   onClick={() => handleOpenEdit(file)}
@@ -1623,6 +1692,7 @@ const CPAAuthFiles = () => {
                                   <Edit size={16} />
                                 </Button>
                                 <Button
+                                  id={`${fileId}-download-btn`}
                                   variant='ghost'
                                   size='sm'
                                   onClick={() => handleDownload(file.name)}
@@ -1631,6 +1701,7 @@ const CPAAuthFiles = () => {
                                   <Download size={16} />
                                 </Button>
                                 <Button
+                                  id={`${fileId}-delete-btn`}
                                   variant='ghost'
                                   size='sm'
                                   onClick={() => handleDelete(file.name)}
@@ -1643,9 +1714,11 @@ const CPAAuthFiles = () => {
                               </div>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                       <div
+                        id={`${groupId}-pagination-bar`}
                         style={{
                           display: 'flex',
                           justifyContent: 'space-between',
@@ -1656,6 +1729,7 @@ const CPAAuthFiles = () => {
                         }}
                       >
                         <span
+                          id={`${groupId}-total-count`}
                           style={{
                             color: 'var(--text-secondary)',
                             fontSize: '0.875rem',
@@ -1664,6 +1738,7 @@ const CPAAuthFiles = () => {
                           共 {files.length} 条
                         </span>
                         <label
+                          id={`${groupId}-page-size-label`}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -1671,6 +1746,7 @@ const CPAAuthFiles = () => {
                           }}
                         >
                           <span
+                            id={`${groupId}-page-size-prefix`}
                             style={{
                               color: 'var(--text-secondary)',
                               fontSize: '0.875rem',
@@ -1679,6 +1755,7 @@ const CPAAuthFiles = () => {
                             每页
                           </span>
                           <select
+                            id={`${groupId}-page-size`}
                             aria-label={`${name} 每页条数`}
                             value={group.pageSize}
                             onChange={(event) => {
@@ -1694,12 +1771,17 @@ const CPAAuthFiles = () => {
                             }}
                           >
                             {AUTH_FILE_PAGE_SIZES.map((pageSize) => (
-                              <option key={pageSize} value={pageSize}>
+                              <option
+                                id={`${groupId}-page-size-option-${pageSize === Infinity ? 'all' : pageSize}`}
+                                key={pageSize}
+                                value={pageSize}
+                              >
                                 {pageSize === Infinity ? '全部' : pageSize}
                               </option>
                             ))}
                           </select>
                           <span
+                            id={`${groupId}-page-size-suffix`}
                             style={{
                               color: 'var(--text-secondary)',
                               fontSize: '0.875rem',
@@ -1709,6 +1791,7 @@ const CPAAuthFiles = () => {
                           </span>
                         </label>
                         <Pagination
+                          id={`${groupId}-pagination`}
                           activePage={group.page}
                           totalPages={group.totalPages}
                           onPageChange={(_, { activePage }) =>
@@ -1730,6 +1813,7 @@ const CPAAuthFiles = () => {
 
       {/* 上传认证文件 Modal */}
       <Modal
+        id='cpa-auth-upload-modal'
         isOpen={uploadModalOpen}
         onClose={() => {
           setUploadModalOpen(false);
@@ -1737,9 +1821,10 @@ const CPAAuthFiles = () => {
         }}
         title='上传认证文件'
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div>
+        <div id='cpa-auth-upload-modal-content' style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div id='cpa-auth-upload-file-field'>
             <input
+              id='cpa-auth-upload-file-input'
               type='file'
               multiple
               accept='.json,.zip,application/json,application/zip'
@@ -1747,6 +1832,7 @@ const CPAAuthFiles = () => {
               style={{ width: '100%' }}
             />
             <p
+              id='cpa-auth-upload-file-hint'
               style={{
                 marginTop: '0.5rem',
                 fontSize: '0.875rem',
@@ -1759,6 +1845,7 @@ const CPAAuthFiles = () => {
 
           {uploadFiles.length > 0 && (
             <div
+              id='cpa-auth-upload-selected-files'
               style={{
                 padding: '0.75rem',
                 backgroundColor: 'var(--bg-secondary)',
@@ -1766,18 +1853,19 @@ const CPAAuthFiles = () => {
                 fontSize: '0.875rem',
               }}
             >
-              <p style={{ fontWeight: 500, marginBottom: '0.5rem' }}>
+              <p id='cpa-auth-upload-selected-count' style={{ fontWeight: 500, marginBottom: '0.5rem' }}>
                 已选择 {uploadFiles.length} 个文件:
               </p>
-              <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+              <ul id='cpa-auth-upload-selected-list' style={{ margin: 0, paddingLeft: '1.5rem' }}>
                 {uploadFiles.map((file, idx) => (
-                  <li key={idx}>{file.name}</li>
+                  <li id={`cpa-auth-upload-selected-item-${idx}`} key={idx}>{file.name}</li>
                 ))}
               </ul>
             </div>
           )}
 
           <div
+            id='cpa-auth-upload-modal-actions'
             style={{
               display: 'flex',
               gap: '0.5rem',
@@ -1785,6 +1873,7 @@ const CPAAuthFiles = () => {
             }}
           >
             <Button
+              id='cpa-auth-upload-cancel-btn'
               variant='outline'
               onClick={() => {
                 setUploadModalOpen(false);
@@ -1794,6 +1883,7 @@ const CPAAuthFiles = () => {
               取消
             </Button>
             <Button
+              id='cpa-auth-upload-confirm-btn'
               onClick={handleUpload}
               disabled={uploading || uploadFiles.length === 0}
             >
@@ -1805,6 +1895,7 @@ const CPAAuthFiles = () => {
 
       {/* 编辑认证文件 Modal */}
       <Modal
+        id='cpa-auth-edit-modal'
         isOpen={editModalOpen}
         onClose={() => {
           setEditModalOpen(false);
@@ -1812,9 +1903,11 @@ const CPAAuthFiles = () => {
         }}
         title='编辑认证文件'
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div>
+        <div id='cpa-auth-edit-modal-content' style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div id='cpa-auth-edit-name-field'>
             <label
+              id='cpa-auth-edit-name-label'
+              htmlFor='cpa-auth-edit-name'
               style={{
                 display: 'block',
                 marginBottom: '0.5rem',
@@ -1824,6 +1917,7 @@ const CPAAuthFiles = () => {
               文件名
             </label>
             <input
+              id='cpa-auth-edit-name'
               type='text'
               value={selectedFile?.name || ''}
               disabled
@@ -1838,8 +1932,10 @@ const CPAAuthFiles = () => {
             />
           </div>
 
-          <div>
+          <div id='cpa-auth-edit-note-field'>
             <label
+              id='cpa-auth-edit-note-label'
+              htmlFor='cpa-auth-edit-note'
               style={{
                 display: 'block',
                 marginBottom: '0.5rem',
@@ -1849,6 +1945,7 @@ const CPAAuthFiles = () => {
               备注
             </label>
             <textarea
+              id='cpa-auth-edit-note'
               value={editNote}
               onChange={(e) => setEditNote(e.target.value)}
               placeholder='可选'
@@ -1863,8 +1960,10 @@ const CPAAuthFiles = () => {
             />
           </div>
 
-          <div>
+          <div id='cpa-auth-edit-priority-field'>
             <label
+              id='cpa-auth-edit-priority-label'
+              htmlFor='cpa-auth-edit-priority'
               style={{
                 display: 'block',
                 marginBottom: '0.5rem',
@@ -1874,6 +1973,7 @@ const CPAAuthFiles = () => {
               优先级
             </label>
             <input
+              id='cpa-auth-edit-priority'
               type='number'
               value={editPriority}
               onChange={(e) => setEditPriority(e.target.value)}
@@ -1888,6 +1988,7 @@ const CPAAuthFiles = () => {
           </div>
 
           <div
+            id='cpa-auth-edit-modal-actions'
             style={{
               display: 'flex',
               gap: '0.5rem',
@@ -1895,6 +1996,7 @@ const CPAAuthFiles = () => {
             }}
           >
             <Button
+              id='cpa-auth-edit-cancel-btn'
               variant='outline'
               onClick={() => {
                 setEditModalOpen(false);
@@ -1903,7 +2005,7 @@ const CPAAuthFiles = () => {
             >
               取消
             </Button>
-            <Button onClick={handleSaveEdit}>保存</Button>
+            <Button id='cpa-auth-edit-save-btn' onClick={handleSaveEdit}>保存</Button>
           </div>
         </div>
       </Modal>

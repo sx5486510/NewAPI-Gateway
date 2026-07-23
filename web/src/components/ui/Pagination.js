@@ -2,7 +2,7 @@ import React from 'react';
 import Button from './Button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-const Pagination = ({ activePage, totalPages, onPageChange }) => {
+const Pagination = ({ activePage, totalPages, onPageChange, id }) => {
     if (totalPages <= 1) return null;
 
     const pages = [];
@@ -27,8 +27,9 @@ const Pagination = ({ activePage, totalPages, onPageChange }) => {
     }
 
     return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+        <div id={id} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
             <Button
+                id={id ? `${id}-prev` : undefined}
                 variant="secondary"
                 size="sm"
                 disabled={activePage === 1}
@@ -42,6 +43,7 @@ const Pagination = ({ activePage, totalPages, onPageChange }) => {
                         <span style={{ padding: '0 0.5rem', color: 'var(--text-secondary)' }}>...</span>
                     ) : (
                         <Button
+                            id={id ? `${id}-page-${p}` : undefined}
                             variant={p === activePage ? 'primary' : 'secondary'}
                             size="sm"
                             onClick={() => onPageChange(null, { activePage: p })}
@@ -53,6 +55,7 @@ const Pagination = ({ activePage, totalPages, onPageChange }) => {
             ))}
 
             <Button
+                id={id ? `${id}-next` : undefined}
                 variant="secondary"
                 size="sm"
                 disabled={activePage === totalPages}

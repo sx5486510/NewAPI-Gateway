@@ -86,16 +86,16 @@ const CPAProxySettings = ({ disabled = false }) => {
   };
 
   return (
-    <section className='cpa-proxy-settings' aria-labelledby='cpa-proxy-title'>
-      <div className='cpa-proxy-header'>
-        <div>
+    <section id='cpa-proxy-settings' className='cpa-proxy-settings' aria-labelledby='cpa-proxy-title'>
+      <div id='cpa-proxy-header' className='cpa-proxy-header'>
+        <div id='cpa-proxy-header-text'>
           <h2 id='cpa-proxy-title'>CPA 出站代理</h2>
-          <p>配置 CPA 访问上游服务时使用的全局代理。</p>
+          <p id='cpa-proxy-description'>配置 CPA 访问上游服务时使用的全局代理。</p>
         </div>
-        {loading && <Loader2 className='cpa-proxy-spinner' size={18} aria-label='加载中' />}
+        {loading && <Loader2 id='cpa-proxy-spinner' className='cpa-proxy-spinner' size={18} aria-label='加载中' />}
       </div>
-      <div className='cpa-proxy-form'>
-        <label htmlFor='cpa-proxy-url'>代理地址</label>
+      <div id='cpa-proxy-form' className='cpa-proxy-form'>
+        <label id='cpa-proxy-url-label' htmlFor='cpa-proxy-url'>代理地址</label>
         <input
           id='cpa-proxy-url'
           name='cpa-proxy-url'
@@ -106,8 +106,9 @@ const CPAProxySettings = ({ disabled = false }) => {
           disabled={disabled || loading || saving}
           autoComplete='off'
         />
-        <div className='cpa-proxy-actions'>
+        <div id='cpa-proxy-actions' className='cpa-proxy-actions'>
           <button
+            id='cpa-proxy-save-btn'
             type='button'
             className='cpa-btn cpa-btn-save-proxy'
             onClick={handleSave}
@@ -116,6 +117,7 @@ const CPAProxySettings = ({ disabled = false }) => {
             保存代理
           </button>
           <button
+            id='cpa-proxy-clear-btn'
             type='button'
             className='cpa-btn cpa-btn-clear-proxy'
             onClick={handleClear}
@@ -240,24 +242,24 @@ const CPA = () => {
 
   if (loading) {
     return (
-      <div className='cpa-page'>
-        <div className='cpa-loading'>
-          <Loader2 className='cpa-spinner' size={32} />
-          <p>加载中...</p>
+      <div id='cpa-page' className='cpa-page'>
+        <div id='cpa-loading' className='cpa-loading'>
+          <Loader2 id='cpa-loading-spinner' className='cpa-spinner' size={32} />
+          <p id='cpa-loading-text'>加载中...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className='cpa-page'>
-      <div className='cpa-header'>
-        <h1 className='cpa-title'>CLI Proxy API 管理</h1>
-        <div className='cpa-status-bar'>
-          <div className='cpa-status-row'>
-            <span className='cpa-status-label'>状态：</span>
-            <span className={`cpa-status-badge cpa-status-${state}`}>
-              {isTransitioning && <Loader2 className='cpa-status-spinner' size={14} />}
+    <div id='cpa-page' className='cpa-page'>
+      <div id='cpa-header' className='cpa-header'>
+        <h1 id='cpa-title' className='cpa-title'>CLI Proxy API 管理</h1>
+        <div id='cpa-status-bar' className='cpa-status-bar'>
+          <div id='cpa-status-row-state' className='cpa-status-row'>
+            <span id='cpa-status-label-state' className='cpa-status-label'>状态：</span>
+            <span id='cpa-status-badge' className={`cpa-status-badge cpa-status-${state}`}>
+              {isTransitioning && <Loader2 id='cpa-status-spinner' className='cpa-status-spinner' size={14} />}
               {state === 'stopped' && '已停止'}
               {state === 'running' && (ready ? '运行中' : '启动中')}
               {state === 'starting' && '启动中'}
@@ -267,15 +269,16 @@ const CPA = () => {
             </span>
           </div>
           {status?.version && (
-            <div className='cpa-status-row'>
-              <span className='cpa-status-label'>版本：</span>
-              <span className='cpa-status-value'>{status.version}</span>
+            <div id='cpa-status-row-version' className='cpa-status-row'>
+              <span id='cpa-status-label-version' className='cpa-status-label'>版本：</span>
+              <span id='cpa-status-version' className='cpa-status-value'>{status.version}</span>
             </div>
           )}
         </div>
 
-        <div className='cpa-actions'>
+        <div id='cpa-actions' className='cpa-actions'>
           <button
+            id='cpa-btn-start'
             onClick={() => handleAction('start')}
             disabled={!canStart || isTransitioning}
             className='cpa-btn cpa-btn-start'
@@ -285,6 +288,7 @@ const CPA = () => {
             启动
           </button>
           <button
+            id='cpa-btn-stop'
             onClick={() => handleAction('stop')}
             disabled={!canStop || isTransitioning}
             className='cpa-btn cpa-btn-stop'
@@ -294,6 +298,7 @@ const CPA = () => {
             停止
           </button>
           <button
+            id='cpa-btn-restart'
             onClick={() => handleAction('restart')}
             disabled={!canRestart || isTransitioning}
             className='cpa-btn cpa-btn-restart'
@@ -305,16 +310,18 @@ const CPA = () => {
         </div>
 
         {lastError && (
-          <div className='cpa-error-banner'>
-            <strong>错误：</strong> {lastError}
+          <div id='cpa-error-banner' className='cpa-error-banner'>
+            <strong id='cpa-error-banner-label'>错误：</strong>
+            <span id='cpa-error-banner-message'>{lastError}</span>
           </div>
         )}
       </div>
 
       {isRunning ? (
         <>
-          <div className='cpa-tabs'>
+          <div id='cpa-tabs' className='cpa-tabs'>
             <button
+              id='cpa-tab-overview'
               onClick={() => setActiveTab('overview')}
               disabled={actionInFlight}
               className={`cpa-tab ${activeTab === 'overview' ? 'cpa-tab-active' : ''}`}
@@ -323,6 +330,7 @@ const CPA = () => {
               概览
             </button>
             <button
+              id='cpa-tab-auth-files'
               onClick={() => setActiveTab('auth-files')}
               disabled={actionInFlight}
               className={`cpa-tab ${activeTab === 'auth-files' ? 'cpa-tab-active' : ''}`}
@@ -333,12 +341,13 @@ const CPA = () => {
           </div>
 
           {activeTab === 'overview' ? (
-            <div className='cpa-overview'>
-              <div className='cpa-panel-launch'>
-              <p className='cpa-panel-launch-hint'>
+            <div id='cpa-overview' className='cpa-overview'>
+              <div id='cpa-panel-launch' className='cpa-panel-launch'>
+              <p id='cpa-panel-launch-hint' className='cpa-panel-launch-hint'>
                 CPA 正在运行，点击下方按钮进入完整管理中心（将在当前窗口打开）。
               </p>
               <button
+                id='cpa-btn-open-panel'
                 onClick={openPanel}
                 disabled={actionInFlight}
                 className='cpa-btn cpa-btn-open-panel'
@@ -351,14 +360,14 @@ const CPA = () => {
               <CPAProxySettings disabled={actionInFlight} />
             </div>
           ) : (
-            <div className='cpa-tab-content'>
+            <div id='cpa-tab-content-auth-files' className='cpa-tab-content'>
               <CPAAuthFiles />
             </div>
           )}
         </>
       ) : (
-        <div className='cpa-placeholder'>
-          <p>CPA 未运行。请先启动 CPA 以访问管理面板。</p>
+        <div id='cpa-placeholder' className='cpa-placeholder'>
+          <p id='cpa-placeholder-text'>CPA 未运行。请先启动 CPA 以访问管理面板。</p>
         </div>
       )}
     </div>
