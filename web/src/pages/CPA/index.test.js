@@ -297,13 +297,13 @@ describe('CPA', () => {
     expect(API.get).toHaveBeenCalledTimes(callCountBeforeUnmount);
   });
 
-  it('bootstraps panel session and navigates when opening the panel', async () => {
+  it('bootstraps panel session and opens the panel in a new tab', async () => {
     const removeItemSpy = jest.spyOn(Storage.prototype, 'removeItem');
     const setItemSpy = jest.spyOn(Storage.prototype, 'setItem');
-    const assignSpy = jest.fn();
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
     const originalLocation = window.location;
     delete window.location;
-    window.location = { origin: 'http://localhost', assign: assignSpy };
+    window.location = { origin: 'http://localhost' };
 
     API.get.mockResolvedValue({
       data: {
@@ -336,23 +336,25 @@ describe('CPA', () => {
     expect(setItemSpy).toHaveBeenCalledWith('isLoggedIn', 'true');
     expect(setItemSpy).toHaveBeenCalledWith('apiBase', expect.any(String));
     expect(setItemSpy).not.toHaveBeenCalledWith('apiEndpoint', expect.any(String));
-    expect(assignSpy).toHaveBeenCalledWith('/api/cpa/panel');
+    expect(openSpy).toHaveBeenCalledWith('/api/cpa/panel', '_blank', 'noopener,noreferrer');
 
     removeItemSpy.mockRestore();
     setItemSpy.mockRestore();
+    openSpy.mockRestore();
     window.location = originalLocation;
   });
 
-  it('seeds the session before navigating away', async () => {
+  it('seeds the session before opening the new tab', async () => {
     const originalSetItem = Storage.prototype.setItem;
     const originalLocation = window.location;
     let sessionSeededBeforeNavigation = false;
-    const assignSpy = jest.fn(() => {
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {
       sessionSeededBeforeNavigation =
         window.localStorage.getItem('managementKey') === 'gateway-managed';
+      return null;
     });
     delete window.location;
-    window.location = { origin: 'http://localhost', assign: assignSpy };
+    window.location = { origin: 'http://localhost' };
 
     API.get.mockResolvedValue({
       data: {
@@ -376,9 +378,10 @@ describe('CPA', () => {
       openBtn.click();
     });
 
-    expect(assignSpy).toHaveBeenCalledWith('/api/cpa/panel');
+    expect(openSpy).toHaveBeenCalledWith('/api/cpa/panel', '_blank', 'noopener,noreferrer');
     expect(sessionSeededBeforeNavigation).toBe(true);
 
+    openSpy.mockRestore();
     Storage.prototype.setItem = originalSetItem;
     window.location = originalLocation;
   });

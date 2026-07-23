@@ -221,10 +221,10 @@ const CPA = () => {
 
   const openPanel = useCallback(() => {
     // The management panel is a self-contained SPA served same-origin. It reads
-    // its session from localStorage, so we seed it before navigating the whole
-    // window there (no iframe nesting).
+    // its session from localStorage (shared across same-origin tabs), so we seed
+    // it before opening the panel in a new tab (no iframe nesting).
     bootstrapPanelSession();
-    window.location.assign(PANEL_URL);
+    window.open(PANEL_URL, '_blank', 'noopener,noreferrer');
   }, [bootstrapPanelSession]);
 
   const state = status?.state || 'unknown';
@@ -344,7 +344,7 @@ const CPA = () => {
             <div id='cpa-overview' className='cpa-overview'>
               <div id='cpa-panel-launch' className='cpa-panel-launch'>
               <p id='cpa-panel-launch-hint' className='cpa-panel-launch-hint'>
-                CPA 正在运行，点击下方按钮进入完整管理中心（将在当前窗口打开）。
+                CPA 正在运行，点击下方按钮进入完整管理中心（将在新标签页打开）。
               </p>
               <button
                 id='cpa-btn-open-panel'
