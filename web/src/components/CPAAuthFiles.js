@@ -230,6 +230,7 @@ const CPAAuthFiles = () => {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [selectedNamesByGroup, setSelectedNamesByGroup] = useState({});
   const [deletingGroups, setDeletingGroups] = useState({});
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState({});
   const uploadInFlightRef = useRef(false);
   const quotaInFlightRef = useRef(new Set());
   const testInFlightRef = useRef(new Set());
@@ -347,12 +348,32 @@ const CPAAuthFiles = () => {
 
     bulkDeleteInFlightRef.current.add(groupKey);
     setDeletingGroups((current) => ({ ...current, [groupKey]: true }));
+    setBulkDeleteProgress((current) => ({
+      ...current,
+      [groupKey]: { completed: 0, total: names.length },
+    }));
+
     try {
+      let completed = 0;
       const results = await mapWithConcurrency(names, 4, async (name) => {
-        requireCPASuccess(
-          await API.delete('/v0/management/auth-files', { params: { name } })
-        );
-        return name;
+        try {
+          requireCPASuccess(
+            await API.delete('/v0/management/auth-files', { params: { name } })
+          );
+          completed += 1;
+          setBulkDeleteProgress((current) => ({
+            ...current,
+            [groupKey]: { completed, total: names.length },
+          }));
+          return name;
+        } catch (error) {
+          completed += 1;
+          setBulkDeleteProgress((current) => ({
+            ...current,
+            [groupKey]: { completed, total: names.length },
+          }));
+          throw error;
+        }
       });
       const failedNames = results.flatMap((result, index) =>
         result.status === 'rejected' ? [names[index]] : []
@@ -375,6 +396,11 @@ const CPAAuthFiles = () => {
     } finally {
       bulkDeleteInFlightRef.current.delete(groupKey);
       setDeletingGroups((current) => ({ ...current, [groupKey]: false }));
+      setBulkDeleteProgress((current) => {
+        const next = { ...current };
+        delete next[groupKey];
+        return next;
+      });
     }
   };
 
@@ -1554,7 +1580,7 @@ const CPAAuthFiles = () => {
                         </Button>
                       </div>
 
-                      {/* 进度条 */}
+                      {/* 额度获取进度条 */}
                       {groupQuotaProgress[key] && (
                         <div
                           id={`${groupId}-quota-progress`}
@@ -1602,6 +1628,61 @@ const CPAAuthFiles = () => {
                                 }%`,
                                 height: '100%',
                                 backgroundColor: color,
+                                transition: 'width 0.3s ease',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 批量删除进度条 */}
+                      {bulkDeleteProgress[key] && (
+                        <div
+                          id={`${groupId}-delete-progress`}
+                          style={{
+                            marginBottom: '0.75rem',
+                            padding: '0.5rem 0.75rem',
+                            backgroundColor: '#FEE2E2',
+                            borderRadius: '0.375rem',
+                          }}
+                        >
+                          <div
+                            id={`${groupId}-delete-progress-header`}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              marginBottom: '0.5rem',
+                              fontSize: '0.875rem',
+                              color: '#991B1B',
+                            }}
+                          >
+                            <span id={`${groupId}-delete-progress-label`}>正在删除 {name} 组认证文件...</span>
+                            <span id={`${groupId}-delete-progress-count`}>
+                              {bulkDeleteProgress[key].completed} /{' '}
+                              {bulkDeleteProgress[key].total}
+                            </span>
+                          </div>
+                          <div
+                            id={`${groupId}-delete-progress-track`}
+                            style={{
+                              width: '100%',
+                              height: '6px',
+                              backgroundColor: '#FECACA',
+                              borderRadius: '999px',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <div
+                              id={`${groupId}-delete-progress-fill`}
+                              style={{
+                                width: `${
+                                  (bulkDeleteProgress[key].completed /
+                                    bulkDeleteProgress[key].total) *
+                                  100
+                                }%`,
+                                height: '100%',
+                                backgroundColor: '#DC2626',
                                 transition: 'width 0.3s ease',
                               }}
                             />
