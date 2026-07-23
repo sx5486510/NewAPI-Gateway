@@ -62,21 +62,21 @@ export const parseApiCallPayload = (payload) => {
   const statusCode = Number(payload?.status_code ?? 0);
   const body = parseBody(payload?.body);
 
-  // CPA 管理接口可能返回 {success: false, code: "...", message: "..."} 格式的错误
-  // 这种情况下没有 status_code 字段，需要特殊处理
-  if (statusCode === 0 && payload?.success === false && payload?.message) {
-    const error = new Error(payload.message);
-    error.code = payload.code;
-    // 根据错误类型推断 HTTP 状态码
-    if (payload.code === 'auth_token_refresh_failed') {
-      error.status = 401; // 认证刷新失败视为 401 Unauthorized
-    } else {
-      error.status = 500; // 其他 CPA 内部错误视为 500
-    }
-    throw error;
-  }
-
   if (statusCode < 200 || statusCode >= 300) {
+    // 检查 body 中是否有 CPA 管理接口的结构化错误
+    // 格式：{success: false, code: "auth_token_refresh_failed", message: "..."}
+    if (body?.success === false && body?.message) {
+      const error = new Error(body.message);
+      error.code = body.code;
+      // 根据错误类型映射更精确的状态码（用于前端筛选）
+      if (body.code === 'auth_token_refresh_failed') {
+        error.status = 401; // 认证刷新失败 → 401 Unauthorized
+      } else {
+        error.status = statusCode; // 保留原始状态码
+      }
+      throw error;
+    }
+    // 否则使用通用错误消息
     const error = new Error(responseMessage(statusCode, body));
     error.status = statusCode;
     throw error;
