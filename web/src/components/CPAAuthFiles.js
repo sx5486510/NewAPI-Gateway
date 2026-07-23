@@ -140,6 +140,42 @@ const filterAuthFiles = (
       matchesQuota(file, hideZeroQuota, quotaStates, quotaKeyFn)
   );
 
+// 健康度指示器颜色与文案（对应 CPA recent_requests 的成功率评估）
+const HEALTH_COLORS = {
+  healthy: '#10B981',
+  warning: '#F59E0B',
+  error: '#DC2626',
+  idle: '#9CA3AF',
+  unknown: '#D1D5DB',
+};
+
+const HEALTH_LABELS = {
+  healthy: '健康',
+  warning: '波动',
+  error: '异常',
+  idle: '空闲',
+  unknown: '无数据',
+};
+
+// 根据最近 5 个时间桶（约 50 分钟）的成功率评估近期健康度。
+// recent_requests 由 CPA 返回，形如 [{ time, success, failed }, ...]（旧→新）。
+const getRecentHealth = (recentRequests) => {
+  if (!Array.isArray(recentRequests) || recentRequests.length === 0) {
+    return 'unknown';
+  }
+  const recent = recentRequests.slice(-5);
+  const total = recent.reduce(
+    (sum, bucket) => sum + (bucket.success || 0) + (bucket.failed || 0),
+    0
+  );
+  if (total === 0) return 'idle';
+  const successRate =
+    recent.reduce((sum, bucket) => sum + (bucket.success || 0), 0) / total;
+  if (successRate >= 0.95) return 'healthy';
+  if (successRate >= 0.7) return 'warning';
+  return 'error';
+};
+
 const normalizePageSize = (value) =>
   AUTH_FILE_PAGE_SIZES.includes(value) ? value : DEFAULT_AUTH_FILE_PAGE_SIZE;
 
@@ -854,6 +890,48 @@ const CPAAuthFiles = () => {
         </span>
         <span id={`${credentialId}-access-token`} style={itemStyle}>Access Token: {accessText}</span>
         <span id={`${credentialId}-refresh-token`} style={itemStyle}>Refresh Token: {refreshText}</span>
+      </div>
+    );
+  };
+
+  // 健康度：彩色圆点（近 50 分钟成功率）+ 累计成功/失败与总成功率。
+  const renderHealthInfo = (file) => {
+    const healthId = toElementId('cpa-auth-file-health', file.name);
+    const success = Number(file.success) || 0;
+    const failed = Number(file.failed) || 0;
+    const total = success + failed;
+    const health = getRecentHealth(file.recent_requests);
+    const overallRate =
+      total > 0 ? `${Math.round((success / total) * 100)}%` : 'N/A';
+
+    return (
+      <div
+        id={healthId}
+        data-health-status={file.name}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          fontSize: '0.8rem',
+          color: 'var(--text-secondary)',
+        }}
+      >
+        <span
+          id={`${healthId}-dot`}
+          title={`近期健康度: ${HEALTH_LABELS[health]}`}
+          aria-label={`近期健康度: ${HEALTH_LABELS[health]}`}
+          style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: HEALTH_COLORS[health],
+            flexShrink: 0,
+          }}
+        />
+        <span id={`${healthId}-counts`}>
+          成功 {success} / 失败 {failed}
+        </span>
+        <span id={`${healthId}-rate`}>成功率 {overallRate}</span>
       </div>
     );
   };
@@ -1580,6 +1658,9 @@ const CPAAuthFiles = () => {
 
                               {/* 认证状态 */}
                               {renderCredentialInfo(file)}
+
+                              {/* 健康度 */}
+                              {renderHealthInfo(file)}
 
                               {/* 配额信息 */}
                               {renderQuotaInfo(file)}
