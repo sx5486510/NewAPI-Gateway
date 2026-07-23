@@ -29,11 +29,39 @@ func TestRuntimeInvariantsForceGatewayOwnedFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Host != loopbackHost || cfg.RemoteManagement.AllowRemote || !cfg.RemoteManagement.DisableControlPanel || !cfg.RemoteManagement.DisableAutoUpdatePanel {
-		t.Fatalf("runtime invariants not applied: %+v", cfg)
+	if cfg.Host != loopbackHost {
+		t.Fatalf("host = %q, want %q", cfg.Host, loopbackHost)
 	}
-	if strings.Contains(string(normalized), "user-selected-management-key") {
-		t.Fatalf("user management key survived normalization:\n%s", normalized)
+	if !cfg.RemoteManagement.AllowRemote {
+		t.Fatalf("allow-remote was forced false; operator setting must be preserved: %+v", cfg.RemoteManagement)
+	}
+	if cfg.RemoteManagement.DisableControlPanel || cfg.RemoteManagement.DisableAutoUpdatePanel {
+		t.Fatalf("panel disable flags were forced instead of preserved: %+v", cfg.RemoteManagement)
+	}
+	if !strings.Contains(string(normalized), "user-selected-management-key") {
+		t.Fatalf("user management key was not preserved:\n%s", normalized)
+	}
+	if !strings.Contains(string(normalized), "allow-remote: true") {
+		t.Fatalf("allow-remote:true was not preserved in normalized YAML:\n%s", normalized)
+	}
+}
+
+func TestRuntimeInvariantsPreserveAllowRemoteFalse(t *testing.T) {
+	invariants, err := NewRuntimeInvariants(bytes.NewReader(bytes.Repeat([]byte{0x2b}, 64)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte("host: 127.0.0.1\nport: 29005\nauth-dir: auth\napi-keys: [key]\nremote-management:\n  allow-remote: false\n  secret-key: user-key\n")
+
+	normalized, cfg, err := invariants.ApplyYAML(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RemoteManagement.AllowRemote {
+		t.Fatalf("allow-remote=false was not preserved: %+v", cfg.RemoteManagement)
+	}
+	if !strings.Contains(string(normalized), "allow-remote: false") {
+		t.Fatalf("allow-remote:false missing from normalized YAML:\n%s", normalized)
 	}
 }
 
@@ -56,34 +84,10 @@ func TestStartEmbeddedAcceptsOnlyRuntimeManagementPassword(t *testing.T) {
 	}
 }
 
-func TestStartEmbeddedRejectsMissingManagementSentinel(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	raw := fmt.Sprintf("host: 127.0.0.1\nport: %d\nauth-dir: %q\napi-keys: [key]\nremote-management:\n  secret-key: ''\n", freePort(t), filepath.Join(dir, "auth"))
-	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := StartEmbedded(path, "runtime-secret"); err == nil || !strings.Contains(err.Error(), "sentinel") {
-		t.Fatalf("expected missing sentinel error, got %v", err)
-	}
-}
-
 func TestStartEmbeddedRejectsEmptyRuntimeManagementPassword(t *testing.T) {
 	configPath, _ := writeManagedCPAConfig(t)
 	if _, err := StartEmbedded(configPath, "  "); err == nil || !strings.Contains(err.Error(), "management password") {
 		t.Fatalf("expected empty management password error, got %v", err)
-	}
-}
-
-func TestStartEmbeddedRejectsInvalidManagementSentinel(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	raw := fmt.Sprintf("host: 127.0.0.1\nport: %d\nauth-dir: %q\napi-keys: [key]\nremote-management:\n  secret-key: not-bcrypt\n", freePort(t), filepath.Join(dir, "auth"))
-	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := StartEmbedded(path, "runtime-secret"); err == nil || !strings.Contains(err.Error(), "sentinel") {
-		t.Fatalf("expected invalid sentinel error, got %v", err)
 	}
 }
 

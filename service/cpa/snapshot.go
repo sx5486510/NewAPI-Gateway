@@ -65,6 +65,10 @@ func NewRuntimeInvariants(randomSource io.Reader) (*RuntimeInvariants, error) {
 }
 
 func (i *RuntimeInvariants) ApplyYAML(raw []byte) ([]byte, *cpaconfig.Config, error) {
+	return i.applyYAML(raw, 0)
+}
+
+func (i *RuntimeInvariants) applyYAML(raw []byte, fixedPort int) ([]byte, *cpaconfig.Config, error) {
 	if i == nil || strings.TrimSpace(i.managementSentinelHash) == "" {
 		return nil, nil, fmt.Errorf("cpa: runtime invariants are not initialized")
 	}
@@ -73,14 +77,18 @@ func (i *RuntimeInvariants) ApplyYAML(raw []byte) ([]byte, *cpaconfig.Config, er
 		return nil, nil, err
 	}
 	setScalar(root, "host", "!!str", loopbackHost)
+	if fixedPort > 0 {
+		setScalar(root, "port", "!!int", strconv.Itoa(fixedPort))
+	}
 	remote, err := ensureMapping(root, "remote-management")
 	if err != nil {
 		return nil, nil, err
 	}
-	setScalar(remote, "allow-remote", "!!bool", "false")
-	setScalar(remote, "secret-key", "!!str", i.managementSentinelHash)
-	setScalar(remote, "disable-control-panel", "!!bool", "true")
-	setScalar(remote, "disable-auto-update-panel", "!!bool", "true")
+	// All remote-management fields are operator-controlled. The gateway only
+	// constrains the bind host and (after startup) the internal port.
+	if _, ok := mappingValue(remote, "secret-key"); !ok {
+		setScalar(remote, "secret-key", "!!str", i.managementSentinelHash)
+	}
 
 	normalized, err := encodeYAMLDocument(document)
 	if err != nil {
@@ -101,6 +109,7 @@ type SnapshotStore struct {
 	options    optionStore
 	runtimeDir string
 	invariants *RuntimeInvariants
+	fixedPort  int
 	renameFile func(oldPath, newPath string) error
 }
 
@@ -123,6 +132,14 @@ func (s *SnapshotStore) Path() string {
 	return filepath.Join(s.runtimeDir, "config.yaml")
 }
 
+func (s *SnapshotStore) applyYAML(raw []byte) ([]byte, *cpaconfig.Config, error) {
+	normalized, cfg, err := s.invariants.applyYAML(raw, s.fixedPort)
+	if err == nil && s.fixedPort == 0 {
+		s.fixedPort = cfg.Port
+	}
+	return normalized, cfg, err
+}
+
 func (s *SnapshotStore) LoadOrMigrate() ([]byte, *cpaconfig.Config, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -139,7 +156,7 @@ func (s *SnapshotStore) loadOrMigrateLocked() ([]byte, *cpaconfig.Config, error)
 
 	var invalidDisk error
 	if diskExists {
-		normalized, cfg, err := s.invariants.ApplyYAML(diskRaw)
+		normalized, cfg, err := s.applyYAML(diskRaw)
 		if err == nil {
 			if err := s.writeAtomic(normalized); err != nil {
 				return nil, nil, err
@@ -155,7 +172,7 @@ func (s *SnapshotStore) loadOrMigrateLocked() ([]byte, *cpaconfig.Config, error)
 	}
 
 	if len(bytes.TrimSpace(databaseRaw)) > 0 {
-		normalized, cfg, err := s.invariants.ApplyYAML(databaseRaw)
+		normalized, cfg, err := s.applyYAML(databaseRaw)
 		if err == nil {
 			if err := s.writeAtomic(normalized); err != nil {
 				return nil, nil, err
@@ -190,7 +207,7 @@ func (s *SnapshotStore) loadOrMigrateLocked() ([]byte, *cpaconfig.Config, error)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cpa: marshal legacy config: %w", err)
 	}
-	normalized, cfg, err := s.invariants.ApplyYAML(seed)
+	normalized, cfg, err := s.applyYAML(seed)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -210,7 +227,7 @@ func (s *SnapshotStore) PersistRuntime() error {
 	if err != nil {
 		return fmt.Errorf("cpa: read runtime config for persistence: %w", err)
 	}
-	normalized, _, err := s.invariants.ApplyYAML(raw)
+	normalized, _, err := s.applyYAML(raw)
 	if err != nil {
 		return err
 	}
@@ -244,7 +261,7 @@ func (s *SnapshotStore) PatchBasic(next CPAConfig) error {
 	if err != nil {
 		return err
 	}
-	normalized, _, err := s.invariants.ApplyYAML(patched)
+	normalized, _, err := s.applyYAML(patched)
 	if err != nil {
 		return err
 	}

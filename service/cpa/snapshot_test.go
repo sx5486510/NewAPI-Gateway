@@ -72,8 +72,8 @@ func TestSnapshotStoreMigratesLegacyOptions(t *testing.T) {
 	if len(cfg.APIKeys) != 2 || cfg.APIKeys[0] != "key-a" || cfg.AuthDir != authDir {
 		t.Fatalf("migrated config = %+v", cfg)
 	}
-	if cfg.RemoteManagement.AllowRemote || !cfg.RemoteManagement.DisableControlPanel || !cfg.RemoteManagement.DisableAutoUpdatePanel {
-		t.Fatalf("runtime invariants missing: %+v", cfg.RemoteManagement)
+	if cfg.RemoteManagement.AllowRemote {
+		t.Fatalf("default migrated config should keep allow-remote false: %+v", cfg.RemoteManagement)
 	}
 	if cfg.RemoteManagement.SecretKey == "" || !strings.HasPrefix(cfg.RemoteManagement.SecretKey, "$2") {
 		t.Fatalf("management sentinel is not bcrypt: %q", cfg.RemoteManagement.SecretKey)
@@ -150,13 +150,48 @@ func TestPatchBasicPreservesUnknownAndPluginConfiguration(t *testing.T) {
 		t.Fatalf("PatchBasic: %v", err)
 	}
 	got := options.Get(snapshotOptionKey)
-	for _, want := range []string{"# retained comment", "custom-field: keep-me", "unknown-future-field: 42", "port: 29003", "new-auth", "- new"} {
+	for _, want := range []string{"# retained comment", "custom-field: keep-me", "unknown-future-field: 42", "port: 18317", "new-auth", "- new"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("snapshot lost %q:\n%s", want, got)
 		}
 	}
 	if options.Get("CPAEnabled") != "false" {
 		t.Fatalf("CPAEnabled = %q", options.Get("CPAEnabled"))
+	}
+}
+
+func TestPersistRuntimePreservesAllFieldsExceptHostAndPort(t *testing.T) {
+	raw := "host: 127.0.0.1\nport: 29007\napi-keys: [key]\nauth-dir: auth\nremote-management:\n  allow-remote: false\n  secret-key: initial-secret\n  disable-control-panel: true\n"
+	options := newMemoryOptions(map[string]string{snapshotOptionKey: raw})
+	store := newTestSnapshotStore(t, options)
+	if _, _, err := store.LoadOrMigrate(); err != nil {
+		t.Fatalf("LoadOrMigrate: %v", err)
+	}
+
+	// Simulate CPA writing a full config mutation before Gateway persists the
+	// snapshot. Only host and port should be restored to their pinned values.
+	mutated := "host: 0.0.0.0\nport: 39007\napi-keys: [new-key]\nauth-dir: new-auth\nremote-management:\n  allow-remote: true\n  secret-key: user-mutated\n  disable-control-panel: false\nunknown-future-field: changed\n"
+	if err := os.WriteFile(store.Path(), []byte(mutated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PersistRuntime(); err != nil {
+		t.Fatalf("PersistRuntime: %v", err)
+	}
+
+	got := options.Get(snapshotOptionKey)
+	if !strings.Contains(got, "allow-remote: true") {
+		t.Fatalf("allow-remote:true was not preserved:\n%s", got)
+	}
+	if !strings.Contains(got, "host: 127.0.0.1") {
+		t.Fatalf("host was not forced to loopback:\n%s", got)
+	}
+	if !strings.Contains(got, "port: 29007") || strings.Contains(got, "port: 39007") {
+		t.Fatalf("port modification was not ignored:\n%s", got)
+	}
+	for _, want := range []string{"api-keys: [new-key]", "auth-dir: new-auth", "secret-key: user-mutated", "disable-control-panel: false", "unknown-future-field: changed"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("editable field %q was not preserved:\n%s", want, got)
+		}
 	}
 }
 

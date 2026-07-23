@@ -255,7 +255,7 @@ func TestManagerStartFromDBDisabled(t *testing.T) {
 	}
 }
 
-func TestManagerRestartReadsChangedTargetPort(t *testing.T) {
+func TestManagerRestartIgnoresChangedTargetPort(t *testing.T) {
 	m, fake := newRunningFakeManager(t)
 	before := m.Status().Endpoint
 	beforePassword := fake.lastPasswordValue()
@@ -271,8 +271,8 @@ func TestManagerRestartReadsChangedTargetPort(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := m.Status().Endpoint
-	if before == after || after != fake.baseURLValue() {
-		t.Fatalf("endpoints before=%q after=%q fake=%q", before, after, fake.baseURLValue())
+	if before != after || after != fake.baseURLValue() {
+		t.Fatalf("endpoints changed despite immutable port: before=%q after=%q fake=%q", before, after, fake.baseURLValue())
 	}
 	if fake.startCountValue() != 2 {
 		t.Fatalf("start count = %d", fake.startCountValue())

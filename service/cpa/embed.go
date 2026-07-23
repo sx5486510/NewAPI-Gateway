@@ -5,15 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"NewAPI-Gateway/common"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy"
 	cpaconfig "github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
-	"golang.org/x/crypto/bcrypt"
-	"gopkg.in/yaml.v3"
 )
 
 // loopbackHost is the only interface CPA is allowed to bind to when embedded.
@@ -52,26 +49,6 @@ func StartEmbedded(configPath, managementPassword string) (*EmbedResult, error) 
 	if strings.TrimSpace(managementPassword) == "" {
 		return nil, fmt.Errorf("cpa: runtime management password is empty")
 	}
-	raw, err := os.ReadFile(trimmedPath)
-	if err != nil {
-		return nil, fmt.Errorf("cpa: read config %q failed: %w", trimmedPath, err)
-	}
-	_, root, err := parseYAMLDocument(raw)
-	if err != nil {
-		return nil, err
-	}
-	remoteManagement, ok := mappingValue(root, "remote-management")
-	if !ok || remoteManagement.Kind != yaml.MappingNode {
-		return nil, fmt.Errorf("cpa: management sentinel is empty")
-	}
-	secretKey, ok := mappingValue(remoteManagement, "secret-key")
-	if !ok || secretKey.Kind != yaml.ScalarNode || strings.TrimSpace(secretKey.Value) == "" {
-		return nil, fmt.Errorf("cpa: management sentinel is empty")
-	}
-	if _, err := bcrypt.Cost([]byte(strings.TrimSpace(secretKey.Value))); err != nil {
-		return nil, fmt.Errorf("cpa: management sentinel is not a valid bcrypt hash")
-	}
-
 	cfg, err := cpaconfig.LoadConfig(trimmedPath)
 	if err != nil {
 		return nil, fmt.Errorf("cpa: load config %q failed: %w", trimmedPath, err)
@@ -84,19 +61,9 @@ func StartEmbedded(configPath, managementPassword string) (*EmbedResult, error) 
 	if port <= 0 || port > 65535 {
 		return nil, fmt.Errorf("cpa: invalid internal port %d", port)
 	}
-	sentinel := strings.TrimSpace(cfg.RemoteManagement.SecretKey)
-	if sentinel == "" {
-		return nil, fmt.Errorf("cpa: management sentinel is empty")
-	}
-	if _, err := bcrypt.Cost([]byte(sentinel)); err != nil {
-		return nil, fmt.Errorf("cpa: management sentinel is not a valid bcrypt hash")
-	}
-
-	// Reassert Gateway-owned values after parsing, immediately before building.
+	// Reassert the only Gateway-owned value after parsing. All other CPA
+	// configuration fields are read from the validated YAML snapshot as-is.
 	cfg.Host = loopbackHost
-	cfg.RemoteManagement.AllowRemote = false
-	cfg.RemoteManagement.DisableControlPanel = true
-	cfg.RemoteManagement.DisableAutoUpdatePanel = true
 
 	// Expand a leading "~" in the auth dir. CPA's own entrypoint
 	// (cmd/server/main.go) resolves this via util.ResolveAuthDir, but the SDK
