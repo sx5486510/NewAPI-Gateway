@@ -227,6 +227,8 @@ const CPAAuthFiles = () => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadFiles, setUploadFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
+  // 上传进度：{ completed, total, currentName }，null 表示未在上传
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [editNote, setEditNote] = useState('');
   const [editPriority, setEditPriority] = useState('');
   const [quotaStates, setQuotaStates] = useState({});
@@ -773,6 +775,13 @@ const CPAAuthFiles = () => {
     [fetchingGroupQuotas, groupedFiles, handleRefreshQuota]
   );
 
+  const closeUploadModal = useCallback(() => {
+    if (uploadInFlightRef.current) return;
+    setUploadModalOpen(false);
+    setUploadFiles([]);
+    setUploadProgress(null);
+  }, []);
+
   const handleUpload = async () => {
     if (uploadInFlightRef.current) {
       return;
@@ -819,47 +828,113 @@ const CPAAuthFiles = () => {
       return;
     }
 
-    const formData = new FormData();
-    filesToUpload.forEach((file) => formData.append('file', file));
-
     uploadInFlightRef.current = true;
     setUploading(true);
+    setUploadProgress({
+      completed: 0,
+      total: filesToUpload.length,
+      currentName: filesToUpload[0]?.name || '',
+    });
+
+    // 逐个上传以便展示进度；ZIP 在服务端展开后仍计为 1 个源文件
+    const allUploaded = [];
+    const allDuplicates = [];
+    const failed = [];
+
     try {
-      const res = requireCPASuccess(
-        await API.post('/v0/management/auth-files', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        })
-      );
-      if (
-        Array.isArray(res.data?.duplicates) &&
-        res.data.duplicates.length > 0
-      ) {
-        showError(
-          `认证文件已存在: ${[...new Set(res.data.duplicates)].join(', ')}`
-        );
+      for (let i = 0; i < filesToUpload.length; i += 1) {
+        const file = filesToUpload[i];
+        setUploadProgress({
+          completed: i,
+          total: filesToUpload.length,
+          currentName: file.name,
+        });
+
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await API.post('/v0/management/auth-files', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+
+          // success === false 通常表示本批全部为重复（无实际上传）
+          if (res?.data?.success === false) {
+            if (
+              Array.isArray(res.data?.duplicates) &&
+              res.data.duplicates.length > 0
+            ) {
+              allDuplicates.push(...res.data.duplicates);
+            } else {
+              failed.push({
+                name: file.name,
+                error: res.data?.message || '上传失败',
+              });
+            }
+          } else {
+            if (Array.isArray(res.data?.duplicates)) {
+              allDuplicates.push(...res.data.duplicates);
+            }
+            if (Array.isArray(res.data?.uploaded)) {
+              allUploaded.push(...res.data.uploaded);
+            } else {
+              // 兼容未返回 uploaded 列表的上游
+              allUploaded.push(file.name);
+            }
+          }
+        } catch (error) {
+          const status = error.response?.status;
+          const code = error.response?.data?.code || error.code;
+          const msg =
+            error.response?.data?.message || error.message || '未知错误';
+          if (
+            status === 409 ||
+            code === 'auth_file_exists' ||
+            /已存在/.test(msg)
+          ) {
+            allDuplicates.push(file.name);
+          } else {
+            failed.push({ name: file.name, error: msg });
+          }
+        }
+
+        setUploadProgress({
+          completed: i + 1,
+          total: filesToUpload.length,
+          currentName: file.name,
+        });
       }
-      const uploadedCount = Array.isArray(res.data?.uploaded)
-        ? res.data.uploaded.length
-        : filesToUpload.length;
-      if (uploadedCount > 0) {
+
+      const uniqueDuplicates = [...new Set(allDuplicates)];
+      if (uniqueDuplicates.length > 0) {
+        showError(`认证文件已存在: ${uniqueDuplicates.join(', ')}`);
+      }
+      if (allUploaded.length > 0) {
         showSuccess(
-          uploadedCount > 1
-            ? `认证文件上传成功: ${uploadedCount}`
+          allUploaded.length > 1
+            ? `认证文件上传成功: ${allUploaded.length}`
             : '认证文件上传成功'
         );
       }
-      setUploadModalOpen(false);
-      setUploadFiles([]);
-      await fetchAuthFiles(false);
-    } catch (error) {
-      showError(
-        '上传失败: ' + (error.response?.data?.message || error.message)
-      );
-      // 即使失败也刷新列表，保证 UI 与 CPA 实际状态同步
+      if (failed.length > 0) {
+        const preview = failed
+          .slice(0, 3)
+          .map((item) => `${item.name}: ${item.error}`)
+          .join('；');
+        const more =
+          failed.length > 3 ? ` 等 ${failed.length} 个文件` : '';
+        showError(`上传失败: ${preview}${more}`);
+      }
+
+      // 全部成功（允许仅有重复跳过）时关闭弹窗
+      if (failed.length === 0) {
+        setUploadModalOpen(false);
+        setUploadFiles([]);
+      }
       await fetchAuthFiles(false);
     } finally {
       uploadInFlightRef.current = false;
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -2236,10 +2311,7 @@ const CPAAuthFiles = () => {
       <Modal
         id='cpa-auth-upload-modal'
         isOpen={uploadModalOpen}
-        onClose={() => {
-          setUploadModalOpen(false);
-          setUploadFiles([]);
-        }}
+        onClose={closeUploadModal}
         title='上传认证文件'
       >
         <div id='cpa-auth-upload-modal-content' style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -2249,6 +2321,7 @@ const CPAAuthFiles = () => {
               type='file'
               multiple
               accept='.json,.zip,application/json,application/zip'
+              disabled={uploading}
               onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
               style={{ width: '100%' }}
             />
@@ -2285,6 +2358,98 @@ const CPAAuthFiles = () => {
             </div>
           )}
 
+          {uploadProgress && (
+            <div
+              id='cpa-auth-upload-progress'
+              style={{
+                padding: '0.75rem',
+                backgroundColor: 'var(--bg-secondary)',
+                borderRadius: '0.375rem',
+              }}
+            >
+              <div
+                id='cpa-auth-upload-progress-header'
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '0.5rem',
+                  fontSize: '0.875rem',
+                  color: 'var(--text-secondary)',
+                  gap: '0.75rem',
+                }}
+              >
+                <span
+                  id='cpa-auth-upload-progress-label'
+                  style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    minWidth: 0,
+                  }}
+                  title={
+                    uploadProgress.currentName
+                      ? `正在上传 ${uploadProgress.currentName}`
+                      : '正在上传...'
+                  }
+                >
+                  {uploadProgress.completed >= uploadProgress.total
+                    ? '上传完成，正在同步列表...'
+                    : uploadProgress.currentName
+                      ? `正在上传 ${uploadProgress.currentName}`
+                      : '正在上传...'}
+                </span>
+                <span
+                  id='cpa-auth-upload-progress-count'
+                  style={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {uploadProgress.completed} / {uploadProgress.total}
+                </span>
+              </div>
+              <div
+                id='cpa-auth-upload-progress-track'
+                style={{
+                  width: '100%',
+                  height: '8px',
+                  backgroundColor: 'var(--border-color)',
+                  borderRadius: '999px',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  id='cpa-auth-upload-progress-fill'
+                  style={{
+                    width: `${
+                      uploadProgress.total > 0
+                        ? (uploadProgress.completed / uploadProgress.total) * 100
+                        : 0
+                    }%`,
+                    height: '100%',
+                    backgroundColor: '#3B82F6',
+                    transition: 'width 0.25s ease',
+                  }}
+                />
+              </div>
+              <p
+                id='cpa-auth-upload-progress-percent'
+                style={{
+                  marginTop: '0.4rem',
+                  marginBottom: 0,
+                  fontSize: '0.75rem',
+                  color: 'var(--text-secondary)',
+                  textAlign: 'right',
+                }}
+              >
+                {uploadProgress.total > 0
+                  ? Math.round(
+                      (uploadProgress.completed / uploadProgress.total) * 100
+                    )
+                  : 0}
+                %
+              </p>
+            </div>
+          )}
+
           <div
             id='cpa-auth-upload-modal-actions'
             style={{
@@ -2296,10 +2461,8 @@ const CPAAuthFiles = () => {
             <Button
               id='cpa-auth-upload-cancel-btn'
               variant='outline'
-              onClick={() => {
-                setUploadModalOpen(false);
-                setUploadFiles([]);
-              }}
+              onClick={closeUploadModal}
+              disabled={uploading}
             >
               取消
             </Button>
@@ -2308,7 +2471,11 @@ const CPAAuthFiles = () => {
               onClick={handleUpload}
               disabled={uploading || uploadFiles.length === 0}
             >
-              {uploading ? '上传中...' : '确认上传'}
+              {uploading
+                ? uploadProgress
+                  ? `上传中 ${uploadProgress.completed}/${uploadProgress.total}`
+                  : '上传中...'
+                : '确认上传'}
             </Button>
           </div>
         </div>

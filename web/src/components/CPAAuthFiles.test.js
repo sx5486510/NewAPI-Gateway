@@ -1196,6 +1196,88 @@ describe('CPAAuthFiles', () => {
     ]);
   });
 
+  test('shows upload progress while importing multiple auth files', async () => {
+    mockCPAAuthGet();
+    let resolveFirst;
+    let resolveSecond;
+    helpers.API.post
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSecond = resolve;
+          })
+      );
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    await act(async () => {
+      findButton(container, '上传认证文件').click();
+    });
+
+    const fileInput = container.querySelector('input[type="file"]');
+    const fileA = new File(['{"type":"codex"}'], 'a-new.json', {
+      type: 'application/json',
+    });
+    const fileB = new File(['{"type":"codex"}'], 'b-new.json', {
+      type: 'application/json',
+    });
+
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        value: [fileA, fileB],
+        configurable: true,
+      });
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    await act(async () => {
+      findButton(container, '确认上传').click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(container.querySelector('#cpa-auth-upload-progress')).not.toBeNull();
+    expect(container.textContent).toMatch(/正在上传 a-new\.json/);
+    expect(container.textContent).toMatch(/0 \/ 2|上传中 0\/2/);
+
+    await act(async () => {
+      resolveFirst({
+        data: { success: true, uploaded: ['a-new.json'], duplicates: [] },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(container.textContent).toMatch(/正在上传 b-new\.json/);
+    expect(container.textContent).toMatch(/1 \/ 2|上传中 1\/2/);
+    expect(
+      container.querySelector('#cpa-auth-upload-progress-fill').style.width
+    ).toBe('50%');
+
+    await act(async () => {
+      resolveSecond({
+        data: { success: true, uploaded: ['b-new.json'], duplicates: [] },
+      });
+      await waitForUI();
+    });
+
+    expect(helpers.API.post).toHaveBeenCalledTimes(2);
+    expect(
+      helpers.API.post.mock.calls.map(([, formData]) =>
+        formData.getAll('file').map((file) => file.name)
+      )
+    ).toEqual([['a-new.json'], ['b-new.json']]);
+    expect(helpers.showSuccess).toHaveBeenCalledWith('认证文件上传成功: 2');
+    expect(container.querySelector('#cpa-auth-upload-progress')).toBeNull();
+  });
+
   test('toggles file status', async () => {
     mockCPAAuthGet();
     helpers.API.patch.mockResolvedValueOnce({ data: { success: true } });
