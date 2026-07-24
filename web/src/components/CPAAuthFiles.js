@@ -100,6 +100,17 @@ const isInvalidAuthQuotaState = (state) => {
   return INVALID_AUTH_ERROR_PATTERN.test(state.error || '');
 };
 
+// 兼容 bool / 数字 / 字符串 "true" 等后端序列化形态
+const isTruthyFlag = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  return typeof value === 'string' && value.trim().toLowerCase() === 'true';
+};
+
+// 内存列表有记录但磁盘文件已不存在（非 runtime_only 的 API Key 类内存项）
+const isGhostAuthFile = (file) =>
+  file?.source === 'memory' && !isTruthyFlag(file?.runtime_only);
+
 const matchesStatus = (file, status, quotaStates, quotaKeyFn) => {
   if (status === 'enabled') return !isAuthFileDisabled(file);
   if (status === 'disabled') return isAuthFileDisabled(file);
@@ -246,12 +257,15 @@ const CPAAuthFiles = () => {
   const [bulkDeleteProgress, setBulkDeleteProgress] = useState({});
   const [deletingInvalidAuths, setDeletingInvalidAuths] = useState(false);
   const [invalidDeleteProgress, setInvalidDeleteProgress] = useState(null);
+  const [deletingGhostAuths, setDeletingGhostAuths] = useState(false);
+  const [ghostDeleteProgress, setGhostDeleteProgress] = useState(null);
   const uploadInFlightRef = useRef(false);
   const quotaInFlightRef = useRef(new Set());
   const testInFlightRef = useRef(new Set());
   const cooldownResetInFlightRef = useRef(new Set());
   const bulkDeleteInFlightRef = useRef(new Set());
   const invalidDeleteInFlightRef = useRef(false);
+  const ghostDeleteInFlightRef = useRef(false);
   const credentialLoadGenerationRef = useRef(0);
   const credentialCacheRef = useRef({});
 
@@ -268,6 +282,12 @@ const CPAAuthFiles = () => {
           file.name && isInvalidAuthQuotaState(quotaStates[quotaKey(file)])
       ),
     [authFiles, quotaStates, quotaKey]
+  );
+
+  // 磁盘缺失的 ghost 认证（内存残留，与 401 失效清理分离）
+  const ghostAuthFiles = useMemo(
+    () => authFiles.filter(isGhostAuthFile),
+    [authFiles]
   );
 
   const filteredFiles = useMemo(
@@ -492,6 +512,59 @@ const CPAAuthFiles = () => {
       invalidDeleteInFlightRef.current = false;
       setDeletingInvalidAuths(false);
       setInvalidDeleteProgress(null);
+    }
+  };
+
+  // 一键清理：磁盘缺失的 ghost 认证（与 401 失效清理分离）
+  const handleDeleteGhostAuths = async () => {
+    const names = ghostAuthFiles.map((file) => file.name).filter(Boolean);
+    if (!names.length || ghostDeleteInFlightRef.current) return;
+    if (
+      !window.confirm(
+        `确定要清理 ${names.length} 个磁盘缺失的认证吗？\n（内存残留，磁盘文件已不存在）`
+      )
+    ) {
+      return;
+    }
+
+    ghostDeleteInFlightRef.current = true;
+    setDeletingGhostAuths(true);
+    setGhostDeleteProgress({ completed: 0, total: names.length });
+
+    try {
+      let completed = 0;
+      const results = await mapWithConcurrency(names, 4, async (name) => {
+        try {
+          requireCPASuccess(
+            await API.delete('/v0/management/auth-files', { params: { name } })
+          );
+          completed += 1;
+          setGhostDeleteProgress({ completed, total: names.length });
+          return name;
+        } catch (error) {
+          completed += 1;
+          setGhostDeleteProgress({ completed, total: names.length });
+          throw error;
+        }
+      });
+      const failedNames = results.flatMap((result, index) =>
+        result.status === 'rejected' ? [names[index]] : []
+      );
+      const successCount = names.length - failedNames.length;
+
+      await fetchAuthFiles(false);
+
+      if (failedNames.length === 0) {
+        showSuccess(`已清理 ${successCount} 个磁盘缺失认证`);
+      } else {
+        showError(
+          `磁盘缺失清理完成：成功 ${successCount}，失败 ${failedNames.length}：${failedNames.join(', ')}`
+        );
+      }
+    } finally {
+      ghostDeleteInFlightRef.current = false;
+      setDeletingGhostAuths(false);
+      setGhostDeleteProgress(null);
     }
   };
 
@@ -1613,6 +1686,25 @@ const CPAAuthFiles = () => {
                     }`
                   : `一键删除失效 (${invalidAuthFiles.length})`}
               </Button>
+              <Button
+                id='cpa-auth-files-delete-ghost-btn'
+                variant='danger'
+                size='sm'
+                onClick={handleDeleteGhostAuths}
+                disabled={ghostAuthFiles.length === 0 || deletingGhostAuths}
+                loading={deletingGhostAuths}
+                title='一键清理内存残留、磁盘文件已不存在的认证'
+                data-delete-ghost-count={ghostAuthFiles.length}
+              >
+                {!deletingGhostAuths && (
+                  <Trash2 size={14} style={{ marginRight: '0.375rem' }} />
+                )}
+                {deletingGhostAuths
+                  ? `清理中 ${ghostDeleteProgress?.completed || 0}/${
+                      ghostDeleteProgress?.total || 0
+                    }`
+                  : `清理磁盘缺失 (${ghostAuthFiles.length})`}
+              </Button>
               <span
                 id='cpa-auth-files-filter-count'
                 style={{
@@ -1623,6 +1715,9 @@ const CPAAuthFiles = () => {
                 匹配 {filteredFiles.length} / {authFiles.length} 条
                 {invalidAuthFiles.length > 0
                   ? ` · 失效 ${invalidAuthFiles.length}`
+                  : ''}
+                {ghostAuthFiles.length > 0
+                  ? ` · 磁盘缺失 ${ghostAuthFiles.length}`
                   : ''}
               </span>
               {(filters.search ||
@@ -1686,6 +1781,64 @@ const CPAAuthFiles = () => {
                       }%`,
                       height: '100%',
                       backgroundColor: '#DC2626',
+                      transition: 'width 0.2s ease',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {ghostDeleteProgress && (
+              <div
+                id='cpa-auth-files-ghost-delete-progress'
+                style={{
+                  marginBottom: '1rem',
+                  padding: '0.5rem 0.75rem',
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderRadius: '0.375rem',
+                }}
+              >
+                <div
+                  id='cpa-auth-files-ghost-delete-progress-header'
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '0.5rem',
+                    fontSize: '0.875rem',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  <span id='cpa-auth-files-ghost-delete-progress-label'>
+                    正在清理磁盘缺失认证...
+                  </span>
+                  <span id='cpa-auth-files-ghost-delete-progress-count'>
+                    {ghostDeleteProgress.completed} /{' '}
+                    {ghostDeleteProgress.total}
+                  </span>
+                </div>
+                <div
+                  id='cpa-auth-files-ghost-delete-progress-track'
+                  style={{
+                    width: '100%',
+                    height: '6px',
+                    backgroundColor: 'var(--border-color)',
+                    borderRadius: '999px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    id='cpa-auth-files-ghost-delete-progress-fill'
+                    style={{
+                      width: `${
+                        ghostDeleteProgress.total > 0
+                          ? (ghostDeleteProgress.completed /
+                              ghostDeleteProgress.total) *
+                            100
+                          : 0
+                      }%`,
+                      height: '100%',
+                      backgroundColor: '#EA580C',
                       transition: 'width 0.2s ease',
                     }}
                   />
@@ -1973,6 +2126,8 @@ const CPAAuthFiles = () => {
                       >
                         {visibleFiles.map((file) => {
                           const fileId = toElementId('cpa-auth-file', file.name);
+                          const isGhost = isGhostAuthFile(file);
+                          const rowBg = isGhost ? '#FFF7ED' : 'transparent';
                           return (
                           <div
                             id={fileId}
@@ -1987,6 +2142,7 @@ const CPAAuthFiles = () => {
                               borderRadius: '0.5rem',
                               transition: 'all 0.2s',
                               cursor: 'default',
+                              backgroundColor: rowBg,
                             }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.borderColor = color;
@@ -1995,8 +2151,7 @@ const CPAAuthFiles = () => {
                             onMouseLeave={(e) => {
                               e.currentTarget.style.borderColor =
                                 'var(--border-color)';
-                              e.currentTarget.style.backgroundColor =
-                                'transparent';
+                              e.currentTarget.style.backgroundColor = rowBg;
                             }}
                           >
                             {/* 选择复选框 */}
@@ -2111,6 +2266,23 @@ const CPAAuthFiles = () => {
                               >
                                 {file.disabled ? '已禁用' : '已启用'}
                               </span>
+                              {isGhost && (
+                                <span
+                                  id={`${fileId}-ghost-badge`}
+                                  style={{
+                                    padding: '0.25rem 0.75rem',
+                                    borderRadius: '999px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 500,
+                                    backgroundColor: '#FFEDD5',
+                                    color: '#9A3412',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                  title='内存残留，磁盘文件已不存在'
+                                >
+                                  磁盘缺失
+                                </span>
+                              )}
 
                               {/* 操作按钮 */}
                               <div id={`${fileId}-action-buttons`} style={{ display: 'flex', gap: '0.5rem' }}>
