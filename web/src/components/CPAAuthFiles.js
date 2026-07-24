@@ -93,12 +93,14 @@ const matchesStatus = (file, status, quotaStates, quotaKeyFn) => {
     const key = quotaKeyFn(file);
     const state = quotaStates[key];
     if (!state || state.status !== 'error') return false;
-    // 优先检查 statusCode，fallback 到错误消息字符串匹配
+    // 优先检查 statusCode / Gateway 结构化 code；fallback 到错误消息字符串匹配
     if (state.statusCode === 401) return true;
+    if (state.errorCode === 'auth_token_refresh_failed') return true;
     const errorMsg = state.error || '';
     return (
       errorMsg.includes('401') ||
-      errorMsg.toLowerCase().includes('unauthorized')
+      errorMsg.toLowerCase().includes('unauthorized') ||
+      errorMsg.toLowerCase().includes('token refresh failed')
     );
   }
   return true;
@@ -550,6 +552,7 @@ const CPAAuthFiles = () => {
             status: 'error',
             error: error instanceof Error ? error.message : '未知错误',
             statusCode: error instanceof Error ? error.status : undefined,
+            errorCode: error instanceof Error ? error.code : undefined,
           },
         }));
       } finally {

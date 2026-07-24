@@ -181,4 +181,74 @@ describe('CPAAuthFiles - 401 Filter Bug', () => {
     expect(container.textContent).not.toContain('claude-ok.json');
     expect(container.textContent).toContain('匹配 1 / 2 条');
   });
+
+  test('filters auth files when Gateway returns auth_token_refresh_failed (HTTP 502 path)', async () => {
+    const files = [
+      { name: 'xai-refresh-fail.json', type: 'xai', auth_index: '6a1a50a5ec282f9c', disabled: false },
+      { name: 'xai-ok.json', type: 'xai', auth_index: 7, disabled: false },
+    ];
+
+    helpers.API.get.mockImplementation((path) => {
+      if (path === '/v0/management/auth-files') {
+        return Promise.resolve({ data: { files } });
+      }
+      if (path === '/v0/management/auth-files/download') {
+        return Promise.resolve({ data: defaultCredential });
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+
+    // 模拟 axios 拦截器吞掉 502 后保留的结构化错误（见 helpers/api.js）
+    helpers.API.post.mockImplementation((path, data) => {
+      if (path === '/v0/management/api-call') {
+        if (data.authIndex === '6a1a50a5ec282f9c') {
+          return Promise.resolve({
+            data: {
+              success: false,
+              code: 'auth_token_refresh_failed',
+              message: 'xAI token refresh failed',
+            },
+          });
+        }
+        return Promise.resolve({
+          data: {
+            status_code: 200,
+            body: JSON.stringify({
+              remainingCredits: 100,
+              totalCredits: 200,
+            }),
+          },
+        });
+      }
+      return Promise.reject(new Error(`unexpected POST ${path}`));
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const fetchAllButton = Array.from(container.querySelectorAll('button')).find(
+      (btn) => btn.textContent.includes('获取全部真实额度')
+    );
+    await act(async () => {
+      fetchAllButton?.click();
+      // xAI 可能发起 credits + billing 两次调用，多等一会儿
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    const statusSelect = Array.from(container.querySelectorAll('select')).find(
+      (select) =>
+        Array.from(select.options).some((opt) => opt.value === 'quota_401')
+    );
+    await act(async () => {
+      statusSelect.value = 'quota_401';
+      statusSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('xai-refresh-fail.json');
+    expect(container.textContent).not.toContain('xai-ok.json');
+    expect(container.textContent).toContain('匹配 1 / 2 条');
+    expect(container.textContent).toMatch(/token refresh failed/i);
+  });
 });

@@ -1,4 +1,5 @@
-const UNAUTHORIZED_PATTERN = /(^|\D)401(\D|$)|unauthori[sz]ed|未授权/i;
+const UNAUTHORIZED_PATTERN =
+  /(^|\D)401(\D|$)|unauthori[sz]ed|未授权|token refresh failed|auth_token_refresh_failed/i;
 
 const isRecord = (value) =>
   value !== null && typeof value === 'object' && !Array.isArray(value);

@@ -305,7 +305,7 @@ func (p *ManagementProxy) handleAuthFileQuota(w http.ResponseWriter, r *http.Req
 	}
 	forwardBody, err := p.prepareXAIQuotaAPICall(r.Context(), bodyBytes, lease)
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, "auth_token_refresh_failed", "Failed to prepare xAI credentials")
+		writeJSONError(w, http.StatusBadGateway, "auth_token_refresh_failed", xaiCredentialPreparationMessage(err))
 		return true
 	}
 

@@ -43,6 +43,41 @@ describe('CPA quota shared contract', () => {
     ).toThrow('403 denied');
   });
 
+  test('maps top-level auth_token_refresh_failed to status 401', () => {
+    let thrown;
+    try {
+      parseApiCallPayload({
+        success: false,
+        code: 'auth_token_refresh_failed',
+        message: 'xAI token refresh failed',
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown.message).toBe('xAI token refresh failed');
+    expect(thrown.code).toBe('auth_token_refresh_failed');
+    expect(thrown.status).toBe(401);
+  });
+
+  test('maps nested body auth_token_refresh_failed to status 401', () => {
+    let thrown;
+    try {
+      parseApiCallPayload({
+        status_code: 502,
+        body: {
+          success: false,
+          code: 'auth_token_refresh_failed',
+          message: 'xAI token refresh failed',
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown.status).toBe(401);
+    expect(thrown.code).toBe('auth_token_refresh_failed');
+  });
+
   test('Claude uses the OAuth usage and profile endpoints', async () => {
     const post = jest.fn((path, request) => {
       if (request.url.endsWith('/usage')) {

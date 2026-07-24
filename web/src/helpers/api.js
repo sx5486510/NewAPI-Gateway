@@ -36,11 +36,16 @@ API.interceptors.response.use(
     }
     // Return a fake response so that `const res = await API.get(...)` doesn't get undefined
     // and `res.data` won't crash the frontend.
-    return Promise.resolve({
-      data: {
-        success: false,
-        message: errorMessage,
-      }
-    });
+    // Preserve structured Gateway error codes (e.g. auth_token_refresh_failed)
+    // so callers can map them for filtering / status badges.
+    const data = {
+      success: false,
+      message: errorMessage,
+    };
+    const code = error?.response?.data?.code;
+    if (typeof code === 'string' && code.trim()) {
+      data.code = code.trim();
+    }
+    return Promise.resolve({ data });
   }
 );

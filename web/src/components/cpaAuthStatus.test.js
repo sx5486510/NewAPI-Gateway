@@ -62,6 +62,8 @@ describe('CPA auth credential status', () => {
     'Unauthorized',
     'unauthorised',
     '未授权',
+    'xAI token refresh failed',
+    'auth_token_refresh_failed',
   ])(
     'marks explicit unauthorized evidence as suspected invalid: %s',
     (evidence) => {

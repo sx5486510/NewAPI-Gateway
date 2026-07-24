@@ -433,6 +433,9 @@ func TestManagementProxyXAIQuotaRefreshFailureLeavesCredentialUntouched(t *testi
 	if !strings.Contains(rec.Body.String(), `"code":"auth_token_refresh_failed"`) {
 		t.Fatalf("response does not contain stable error code: %s", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), `"message":"xAI token refresh failed"`) {
+		t.Fatalf("response does not contain refresh failure message: %s", rec.Body.String())
+	}
 	if strings.Contains(rec.Body.String(), "expired-secret") || strings.Contains(rec.Body.String(), "refresh-secret") {
 		t.Fatalf("response leaked credential values: %s", rec.Body.String())
 	}

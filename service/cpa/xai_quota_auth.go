@@ -190,6 +190,32 @@ func (p *ManagementProxy) prepareXAIQuotaAPICall(ctx context.Context, body []byt
 	return json.Marshal(payload)
 }
 
+func xaiCredentialPreparationMessage(err error) string {
+	const fallback = "Failed to prepare xAI credentials"
+	if err == nil {
+		return fallback
+	}
+	message := strings.TrimSpace(err.Error())
+	switch message {
+	case "CPA auth directory is unavailable",
+		"invalid xAI credential preparation result",
+		"parse xAI credential",
+		"xAI credential access token and refresh token are missing",
+		"xAI credential refresh token is missing",
+		"xAI token endpoint must use https",
+		"xAI token endpoint must be on x.ai",
+		"xAI OpenID discovery failed",
+		"xAI OpenID discovery returned an invalid response",
+		"xAI token refresh failed",
+		"xAI token refresh returned an invalid response",
+		"parse xAI credential for persistence",
+		"xAI auth index was not found":
+		return message
+	default:
+		return fallback
+	}
+}
+
 func (p *ManagementProxy) loadXAIQuotaCredential(ctx context.Context, lease *ManagementLease, authIndex, authPath string) (*xaiQuotaCredential, error) {
 	body, err := os.ReadFile(authPath)
 	if err != nil {

@@ -58,7 +58,30 @@ const responseMessage = (statusCode, body) => {
   return `${statusCode || ''} ${message}`.trim();
 };
 
+const throwStructuredGatewayError = (payload, fallbackStatus) => {
+  const error = new Error(payload.message || 'Request failed');
+  if (typeof payload.code === 'string' && payload.code.trim()) {
+    error.code = payload.code.trim();
+  }
+  // 认证刷新失败统一映射为 401，便于「额度返回 401」筛选
+  if (error.code === 'auth_token_refresh_failed') {
+    error.status = 401;
+  } else {
+    error.status = fallbackStatus;
+  }
+  throw error;
+};
+
 export const parseApiCallPayload = (payload) => {
+  // axios 拦截器吞掉 HTTP 502 后的顶层错误：
+  // {success:false, code:"auth_token_refresh_failed", message:"..."}
+  if (payload?.success === false && payload?.message) {
+    throwStructuredGatewayError(
+      payload,
+      Number(payload?.status_code ?? 0) || 502
+    );
+  }
+
   const statusCode = Number(payload?.status_code ?? 0);
   const body = parseBody(payload?.body);
 
@@ -66,15 +89,7 @@ export const parseApiCallPayload = (payload) => {
     // 检查 body 中是否有 CPA 管理接口的结构化错误
     // 格式：{success: false, code: "auth_token_refresh_failed", message: "..."}
     if (body?.success === false && body?.message) {
-      const error = new Error(body.message);
-      error.code = body.code;
-      // 根据错误类型映射更精确的状态码（用于前端筛选）
-      if (body.code === 'auth_token_refresh_failed') {
-        error.status = 401; // 认证刷新失败 → 401 Unauthorized
-      } else {
-        error.status = statusCode; // 保留原始状态码
-      }
-      throw error;
+      throwStructuredGatewayError(body, statusCode);
     }
     // 否则使用通用错误消息
     const error = new Error(responseMessage(statusCode, body));
