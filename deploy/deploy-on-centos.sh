@@ -34,6 +34,10 @@ REPO_URL="https://github.com/sx5486510/NewAPI-Gateway.git"
 BRANCH="main"
 ENABLE_HTTPS=false
 BRANCH_SET=false
+# go.mod requires go 1.26.0; yum/dnf golang packages are usually too old.
+GO_REQUIRED_VERSION="1.26.0"
+GO_INSTALL_VERSION="1.26.1"
+GO_INSTALL_DIR="/usr/local/go"
 
 usage() {
     echo "Usage: sudo bash deploy-on-centos.sh [branch] [--http|--https]"
@@ -104,8 +108,122 @@ fi
 echo -e "${BLUE}Using branch: ${BRANCH}${NC}"
 echo ""
 
+version_ge() {
+    # Return 0 if $1 >= $2 (semver major.minor.patch)
+    local IFS=.
+    local i a=($1) b=($2)
+    for ((i = 0; i < 3; i++)); do
+        local ai="${a[i]:-0}"
+        local bi="${b[i]:-0}"
+        if ((10#${ai} > 10#${bi})); then
+            return 0
+        fi
+        if ((10#${ai} < 10#${bi})); then
+            return 1
+        fi
+    done
+    return 0
+}
+
+detect_go_arch() {
+    case "$(uname -m)" in
+        x86_64|amd64)
+            echo "amd64"
+            ;;
+        aarch64|arm64)
+            echo "arm64"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
+current_go_version() {
+    if ! command -v go >/dev/null 2>&1; then
+        return 1
+    fi
+    go version 2>/dev/null | sed -n 's/.*go\([0-9][0-9]*\.[0-9][0-9]*\(\.[0-9][0-9]*\)*\).*/\1/p' | head -n1
+}
+
+ensure_go_path() {
+    # Official toolchain first so yum/dnf's older /usr/bin/go cannot shadow it.
+    export PATH="${GO_INSTALL_DIR}/bin:/usr/local/bin:${PATH}"
+    if [ -x "${GO_INSTALL_DIR}/bin/go" ]; then
+        ln -sf "${GO_INSTALL_DIR}/bin/go" /usr/local/bin/go
+        ln -sf "${GO_INSTALL_DIR}/bin/gofmt" /usr/local/bin/gofmt 2>/dev/null || true
+    fi
+    # Persist PATH for interactive shells on next login.
+    cat > /etc/profile.d/golang.sh <<'EOF'
+export PATH=/usr/local/go/bin:$PATH
+EOF
+    chmod 644 /etc/profile.d/golang.sh
+}
+
+install_official_go() {
+    local arch tarball url tmp_dir
+    arch="$(detect_go_arch)"
+    if [ -z "${arch}" ]; then
+        echo -e "${RED}Error: unsupported architecture for official Go install: $(uname -m)${NC}"
+        exit 1
+    fi
+
+    tarball="go${GO_INSTALL_VERSION}.linux-${arch}.tar.gz"
+    url="https://go.dev/dl/${tarball}"
+    tmp_dir="$(mktemp -d)"
+
+    echo -e "${YELLOW}Downloading official Go ${GO_INSTALL_VERSION} (${arch})...${NC}"
+    if ! curl -fsSL "${url}" -o "${tmp_dir}/${tarball}"; then
+        echo -e "${YELLOW}Primary download failed, retry with Chinese mirror...${NC}"
+        if ! curl -fsSL "https://mirrors.aliyun.com/golang/${tarball}" -o "${tmp_dir}/${tarball}"; then
+            rm -rf "${tmp_dir}"
+            echo -e "${RED}Error: failed to download Go ${GO_INSTALL_VERSION}.${NC}"
+            exit 1
+        fi
+    fi
+
+    echo "Installing Go to ${GO_INSTALL_DIR}..."
+    rm -rf "${GO_INSTALL_DIR}"
+    tar -C /usr/local -xzf "${tmp_dir}/${tarball}"
+    rm -rf "${tmp_dir}"
+    ensure_go_path
+
+    if ! command -v go >/dev/null 2>&1; then
+        echo -e "${RED}Error: Go binary not found after install.${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}Go installed: $(go version)${NC}"
+}
+
+ensure_go() {
+    ensure_go_path
+    local installed
+    installed="$(current_go_version || true)"
+    if [ -n "${installed}" ] && version_ge "${installed}" "${GO_REQUIRED_VERSION}"; then
+        echo -e "${GREEN}Go installed: $(go version) (required >= ${GO_REQUIRED_VERSION})${NC}"
+        return
+    fi
+
+    if [ -n "${installed}" ]; then
+        echo -e "${YELLOW}Go ${installed} is too old for go.mod (need >= ${GO_REQUIRED_VERSION}).${NC}"
+        echo -e "${YELLOW}yum/dnf golang packages are not used; installing official toolchain...${NC}"
+    else
+        echo -e "${YELLOW}Go not found, installing official Go ${GO_INSTALL_VERSION}...${NC}"
+    fi
+    install_official_go
+}
+
 # Install dependencies
 echo -e "${YELLOW}[1/9] Check and install dependencies...${NC}"
+
+# curl (needed for Go download + public IP detection)
+if ! command -v curl &> /dev/null; then
+    echo -e "${YELLOW}curl not found, installing...${NC}"
+    yum install -y curl
+    echo -e "${GREEN}curl installed.${NC}"
+else
+    echo -e "${GREEN}curl installed.${NC}"
+fi
 
 # Git
 if ! command -v git &> /dev/null; then
@@ -116,15 +234,8 @@ else
     echo -e "${GREEN}Git installed: $(git --version)${NC}"
 fi
 
-# Go
-if ! command -v go &> /dev/null; then
-    echo -e "${YELLOW}Go not found, installing...${NC}"
-    yum install -y epel-release
-    yum install -y golang
-    echo -e "${GREEN}Go installed.${NC}"
-else
-    echo -e "${GREEN}Go installed: $(go version)${NC}"
-fi
+# Go (>= 1.26 required by go.mod / embedded CPA)
+ensure_go
 
 # Node.js
 if ! command -v node &> /dev/null; then
@@ -206,6 +317,10 @@ echo ""
 
 # Build Go program
 echo -e "${YELLOW}[5/9] Build backend...${NC}"
+# Prefer official Go over any older package from yum/dnf.
+ensure_go_path
+echo "Using $(go version) at $(command -v go)"
+
 echo "Downloading Go modules..."
 if ! go mod download; then
     echo -e "${RED}go mod download failed, retry with proxy...${NC}"
