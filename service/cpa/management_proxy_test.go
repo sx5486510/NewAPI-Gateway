@@ -118,6 +118,63 @@ func TestManagementProxySanitizesAndForwards(t *testing.T) {
 	}
 }
 
+func TestManagementProxyStripsClientIdentityHeaders(t *testing.T) {
+	var capturedRequest *http.Request
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedRequest = r
+		_, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"files":[]}`)
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	provider := &fakeLeaseProvider{
+		target:   upstreamURL,
+		password: "runtime-secret",
+	}
+	proxy := NewManagementProxy(provider, nil, func() {})
+
+	// Simulate browser -> Caddy -> Gateway with public client identity headers.
+	// Without stripping them, embedded CPA (allow-remote=false) returns
+	// "remote management disabled" because ClientIP is no longer loopback.
+	req := httptest.NewRequest(http.MethodGet, "/v0/management/auth-files", nil)
+	req.RemoteAddr = "203.0.113.10:54321"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	req.Header.Set("X-Real-IP", "203.0.113.10")
+	req.Header.Set("X-Forwarded-Host", "gateway.example:3031")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("Forwarded", "for=203.0.113.10;proto=https;host=gateway.example:3031")
+	req.Header.Set("Authorization", "Bearer "+panelManagementKeyPlaceholder)
+
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if capturedRequest == nil {
+		t.Fatal("upstream request was not captured")
+	}
+	for _, name := range []string{
+		"X-Forwarded-For",
+		"X-Real-IP",
+		"X-Forwarded-Host",
+		"X-Forwarded-Proto",
+		"Forwarded",
+	} {
+		if got := capturedRequest.Header.Get(name); got != "" {
+			t.Fatalf("forwarded client identity header %s = %q, want empty", name, got)
+		}
+	}
+	if _, ok := capturedRequest.Header["X-Forwarded-For"]; ok {
+		t.Fatalf("X-Forwarded-For map entry should be nil so ReverseProxy does not re-inject client IP, got %v", capturedRequest.Header["X-Forwarded-For"])
+	}
+	if got := capturedRequest.Header.Get("Authorization"); got != "Bearer runtime-secret" {
+		t.Fatalf("auth = %q, want Bearer runtime-secret", got)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
+	}
+}
 
 func TestManagementProxyPreservesRealExternalManagementKey(t *testing.T) {
 	var capturedRequest *http.Request

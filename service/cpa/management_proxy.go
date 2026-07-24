@@ -740,6 +740,11 @@ func sanitizeHeaders(req *http.Request) {
 	req.Header.Del("Trailer")
 	req.Header.Del("Transfer-Encoding")
 	req.Header.Del("Upgrade")
+
+	// Embedded CPA only allows localhost management when allow-remote=false.
+	// Browser/reverse-proxy client identity headers must not leak through,
+	// or CPA treats the request as remote and returns "remote management disabled".
+	stripClientIdentityHeaders(req)
 }
 
 // sanitizeHeadersExceptManagementKey removes sensitive headers but preserves X-Management-Key
@@ -776,6 +781,23 @@ func sanitizeHeadersExceptManagementKey(req *http.Request) {
 	req.Header.Del("Trailer")
 	req.Header.Del("Transfer-Encoding")
 	req.Header.Del("Upgrade")
+
+	stripClientIdentityHeaders(req)
+}
+
+// stripClientIdentityHeaders removes reverse-proxy client identity headers so the
+// embedded CPA only sees the loopback connection from Gateway. Setting
+// X-Forwarded-For to nil also prevents httputil.ReverseProxy from re-adding it.
+func stripClientIdentityHeaders(req *http.Request) {
+	if req == nil {
+		return
+	}
+	req.Header.Del("X-Real-IP")
+	req.Header.Del("X-Forwarded-Host")
+	req.Header.Del("X-Forwarded-Proto")
+	req.Header.Del("Forwarded")
+	// nil (not Del) is required so ReverseProxy does not re-inject the browser IP.
+	req.Header["X-Forwarded-For"] = nil
 }
 
 // extractManagementKey extracts a real external management key from the
