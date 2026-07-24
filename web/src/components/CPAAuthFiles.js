@@ -86,22 +86,25 @@ const matchesSearch = (file, search) => {
     .some((field) => String(field).toLowerCase().includes(query));
 };
 
+// 判定额度刷新后的 auth 是否失效，可一键清理：
+// - HTTP 401 / unauthorized
+// - Gateway 结构化 auth_token_refresh_failed（含 xAI token 刷新失败）
+// - Failed to prepare xAI credentials 及同类 xAI 凭证准备失败文案
+const INVALID_AUTH_ERROR_PATTERN =
+  /(^|\D)401(\D|$)|unauthori[sz]ed|token refresh failed|auth_token_refresh_failed|failed to prepare xai credentials|prepare xai credential|xai credential (access token and )?refresh token is missing|xai credential access token and refresh token are missing|xai token refresh failed/i;
+
+const isInvalidAuthQuotaState = (state) => {
+  if (!state || state.status !== 'error') return false;
+  if (state.statusCode === 401) return true;
+  if (state.errorCode === 'auth_token_refresh_failed') return true;
+  return INVALID_AUTH_ERROR_PATTERN.test(state.error || '');
+};
+
 const matchesStatus = (file, status, quotaStates, quotaKeyFn) => {
   if (status === 'enabled') return !isAuthFileDisabled(file);
   if (status === 'disabled') return isAuthFileDisabled(file);
   if (status === 'quota_401') {
-    const key = quotaKeyFn(file);
-    const state = quotaStates[key];
-    if (!state || state.status !== 'error') return false;
-    // 优先检查 statusCode / Gateway 结构化 code；fallback 到错误消息字符串匹配
-    if (state.statusCode === 401) return true;
-    if (state.errorCode === 'auth_token_refresh_failed') return true;
-    const errorMsg = state.error || '';
-    return (
-      errorMsg.includes('401') ||
-      errorMsg.toLowerCase().includes('unauthorized') ||
-      errorMsg.toLowerCase().includes('token refresh failed')
-    );
+    return isInvalidAuthQuotaState(quotaStates[quotaKeyFn(file)]);
   }
   return true;
 };
@@ -239,17 +242,30 @@ const CPAAuthFiles = () => {
   const [selectedNamesByGroup, setSelectedNamesByGroup] = useState({});
   const [deletingGroups, setDeletingGroups] = useState({});
   const [bulkDeleteProgress, setBulkDeleteProgress] = useState({});
+  const [deletingInvalidAuths, setDeletingInvalidAuths] = useState(false);
+  const [invalidDeleteProgress, setInvalidDeleteProgress] = useState(null);
   const uploadInFlightRef = useRef(false);
   const quotaInFlightRef = useRef(new Set());
   const testInFlightRef = useRef(new Set());
   const cooldownResetInFlightRef = useRef(new Set());
   const bulkDeleteInFlightRef = useRef(new Set());
+  const invalidDeleteInFlightRef = useRef(false);
   const credentialLoadGenerationRef = useRef(0);
   const credentialCacheRef = useRef({});
 
   const quotaKey = useCallback(
     (file) => file.name || String(file.auth_index ?? file.authIndex ?? ''),
     []
+  );
+
+  // 已拉取额度后判定为 401 / xAI 凭证失败的认证（跨分组，用于一键删除）
+  const invalidAuthFiles = useMemo(
+    () =>
+      authFiles.filter(
+        (file) =>
+          file.name && isInvalidAuthQuotaState(quotaStates[quotaKey(file)])
+      ),
+    [authFiles, quotaStates, quotaKey]
   );
 
   const filteredFiles = useMemo(
@@ -409,6 +425,71 @@ const CPAAuthFiles = () => {
         delete next[groupKey];
         return next;
       });
+    }
+  };
+
+  // 一键删除：额度 401 + Failed to prepare xAI credentials 等失效认证
+  const handleDeleteInvalidAuths = async () => {
+    const names = invalidAuthFiles.map((file) => file.name).filter(Boolean);
+    if (!names.length || invalidDeleteInFlightRef.current) return;
+    if (
+      !window.confirm(
+        `确定要删除 ${names.length} 个失效认证吗？\n（额度 401 / Failed to prepare xAI credentials 等）`
+      )
+    ) {
+      return;
+    }
+
+    invalidDeleteInFlightRef.current = true;
+    setDeletingInvalidAuths(true);
+    setInvalidDeleteProgress({ completed: 0, total: names.length });
+
+    try {
+      let completed = 0;
+      const results = await mapWithConcurrency(names, 4, async (name) => {
+        try {
+          requireCPASuccess(
+            await API.delete('/v0/management/auth-files', { params: { name } })
+          );
+          completed += 1;
+          setInvalidDeleteProgress({ completed, total: names.length });
+          return name;
+        } catch (error) {
+          completed += 1;
+          setInvalidDeleteProgress({ completed, total: names.length });
+          throw error;
+        }
+      });
+      const failedNames = results.flatMap((result, index) =>
+        result.status === 'rejected' ? [names[index]] : []
+      );
+      const successCount = names.length - failedNames.length;
+
+      // 清掉已成功删除的额度错误状态，避免按钮计数短暂残留
+      if (successCount > 0) {
+        const failedSet = new Set(failedNames);
+        setQuotaStates((current) => {
+          const next = { ...current };
+          names.forEach((name) => {
+            if (!failedSet.has(name)) delete next[name];
+          });
+          return next;
+        });
+      }
+
+      await fetchAuthFiles(false);
+
+      if (failedNames.length === 0) {
+        showSuccess(`已一键删除 ${successCount} 个失效认证`);
+      } else {
+        showError(
+          `一键删除完成：成功 ${successCount}，失败 ${failedNames.length}：${failedNames.join(', ')}`
+        );
+      }
+    } finally {
+      invalidDeleteInFlightRef.current = false;
+      setDeletingInvalidAuths(false);
+      setInvalidDeleteProgress(null);
     }
   };
 
@@ -1410,7 +1491,9 @@ const CPAAuthFiles = () => {
                 <option id='cpa-auth-files-filter-status-all' value='all'>全部状态</option>
                 <option id='cpa-auth-files-filter-status-enabled' value='enabled'>已启用</option>
                 <option id='cpa-auth-files-filter-status-disabled' value='disabled'>已禁用</option>
-                <option id='cpa-auth-files-filter-status-quota-401' value='quota_401'>额度返回 401</option>
+                <option id='cpa-auth-files-filter-status-quota-401' value='quota_401'>
+                  401 / xAI 凭证失败
+                </option>
               </select>
               <label
                 id='cpa-auth-files-filter-hide-zero-quota-label'
@@ -1434,6 +1517,27 @@ const CPAAuthFiles = () => {
                 />
                 隐藏 0 额度
               </label>
+              <Button
+                id='cpa-auth-files-delete-invalid-btn'
+                variant='danger'
+                size='sm'
+                onClick={handleDeleteInvalidAuths}
+                disabled={
+                  invalidAuthFiles.length === 0 || deletingInvalidAuths
+                }
+                loading={deletingInvalidAuths}
+                title='一键删除额度 401 与 Failed to prepare xAI credentials 的认证'
+                data-delete-invalid-count={invalidAuthFiles.length}
+              >
+                {!deletingInvalidAuths && (
+                  <Trash2 size={14} style={{ marginRight: '0.375rem' }} />
+                )}
+                {deletingInvalidAuths
+                  ? `删除中 ${invalidDeleteProgress?.completed || 0}/${
+                      invalidDeleteProgress?.total || 0
+                    }`
+                  : `一键删除失效 (${invalidAuthFiles.length})`}
+              </Button>
               <span
                 id='cpa-auth-files-filter-count'
                 style={{
@@ -1442,6 +1546,9 @@ const CPAAuthFiles = () => {
                 }}
               >
                 匹配 {filteredFiles.length} / {authFiles.length} 条
+                {invalidAuthFiles.length > 0
+                  ? ` · 失效 ${invalidAuthFiles.length}`
+                  : ''}
               </span>
               {(filters.search ||
                 filters.type !== 'all' ||
@@ -1452,6 +1559,64 @@ const CPAAuthFiles = () => {
                 </Button>
               )}
             </div>
+
+            {invalidDeleteProgress && (
+              <div
+                id='cpa-auth-files-invalid-delete-progress'
+                style={{
+                  marginBottom: '1rem',
+                  padding: '0.5rem 0.75rem',
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderRadius: '0.375rem',
+                }}
+              >
+                <div
+                  id='cpa-auth-files-invalid-delete-progress-header'
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '0.5rem',
+                    fontSize: '0.875rem',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  <span id='cpa-auth-files-invalid-delete-progress-label'>
+                    正在删除失效认证...
+                  </span>
+                  <span id='cpa-auth-files-invalid-delete-progress-count'>
+                    {invalidDeleteProgress.completed} /{' '}
+                    {invalidDeleteProgress.total}
+                  </span>
+                </div>
+                <div
+                  id='cpa-auth-files-invalid-delete-progress-track'
+                  style={{
+                    width: '100%',
+                    height: '6px',
+                    backgroundColor: 'var(--border-color)',
+                    borderRadius: '999px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    id='cpa-auth-files-invalid-delete-progress-fill'
+                    style={{
+                      width: `${
+                        invalidDeleteProgress.total > 0
+                          ? (invalidDeleteProgress.completed /
+                              invalidDeleteProgress.total) *
+                            100
+                          : 0
+                      }%`,
+                      height: '100%',
+                      backgroundColor: '#DC2626',
+                      transition: 'width 0.2s ease',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
 
             {filteredFiles.length === 0 ? (
               <div

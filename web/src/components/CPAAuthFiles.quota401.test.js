@@ -251,4 +251,249 @@ describe('CPAAuthFiles - 401 Filter Bug', () => {
     expect(container.textContent).toContain('匹配 1 / 2 条');
     expect(container.textContent).toMatch(/token refresh failed/i);
   });
+
+  test('filters Failed to prepare xAI credentials as invalid auth', async () => {
+    const files = [
+      {
+        name: 'xai-prepare-fail.json',
+        type: 'xai',
+        auth_index: 'prep-fail-1',
+        disabled: false,
+      },
+      {
+        name: 'xai-ok.json',
+        type: 'xai',
+        auth_index: 'ok-1',
+        disabled: false,
+      },
+    ];
+
+    helpers.API.get.mockImplementation((path) => {
+      if (path === '/v0/management/auth-files') {
+        return Promise.resolve({ data: { files } });
+      }
+      if (path === '/v0/management/auth-files/download') {
+        return Promise.resolve({ data: defaultCredential });
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+
+    helpers.API.post.mockImplementation((path, data) => {
+      if (path === '/v0/management/api-call') {
+        if (data.authIndex === 'prep-fail-1') {
+          return Promise.resolve({
+            data: {
+              success: false,
+              code: 'auth_token_refresh_failed',
+              message: 'Failed to prepare xAI credentials',
+            },
+          });
+        }
+        return Promise.resolve({
+          data: {
+            status_code: 200,
+            body: JSON.stringify({
+              remainingCredits: 100,
+              totalCredits: 200,
+            }),
+          },
+        });
+      }
+      return Promise.reject(new Error(`unexpected POST ${path}`));
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const fetchAllButton = Array.from(container.querySelectorAll('button')).find(
+      (btn) => btn.textContent.includes('获取全部真实额度')
+    );
+    await act(async () => {
+      fetchAllButton?.click();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    const deleteInvalidBtn = container.querySelector(
+      '#cpa-auth-files-delete-invalid-btn'
+    );
+    expect(deleteInvalidBtn).not.toBeNull();
+    expect(deleteInvalidBtn.getAttribute('data-delete-invalid-count')).toBe('1');
+    expect(deleteInvalidBtn.textContent).toContain('一键删除失效 (1)');
+
+    const statusSelect = Array.from(container.querySelectorAll('select')).find(
+      (select) =>
+        Array.from(select.options).some((opt) => opt.value === 'quota_401')
+    );
+    await act(async () => {
+      statusSelect.value = 'quota_401';
+      statusSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('xai-prepare-fail.json');
+    expect(container.textContent).not.toContain('xai-ok.json');
+    expect(container.textContent).toMatch(/Failed to prepare xAI credentials/i);
+  });
+
+  test('one-click deletes 401 and Failed to prepare xAI credentials auths', async () => {
+    let remainingFiles = [
+      {
+        name: 'claude-401.json',
+        type: 'claude',
+        auth_index: '1',
+        disabled: false,
+      },
+      {
+        name: 'xai-prepare-fail.json',
+        type: 'xai',
+        auth_index: '2',
+        disabled: false,
+      },
+      {
+        name: 'claude-ok.json',
+        type: 'claude',
+        auth_index: '3',
+        disabled: false,
+      },
+    ];
+    const deletedNames = [];
+
+    helpers.API.get.mockImplementation((path) => {
+      if (path === '/v0/management/auth-files') {
+        return Promise.resolve({ data: { files: remainingFiles } });
+      }
+      if (path === '/v0/management/auth-files/download') {
+        return Promise.resolve({ data: defaultCredential });
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+
+    helpers.API.post.mockImplementation((path, data) => {
+      if (path === '/v0/management/api-call') {
+        if (data.authIndex === '1') {
+          return Promise.resolve({
+            data: {
+              status_code: 401,
+              body: JSON.stringify({ error: { message: 'Unauthorized' } }),
+            },
+          });
+        }
+        if (data.authIndex === '2') {
+          return Promise.resolve({
+            data: {
+              success: false,
+              code: 'auth_token_refresh_failed',
+              message: 'Failed to prepare xAI credentials',
+            },
+          });
+        }
+        return Promise.resolve({
+          data: {
+            status_code: 200,
+            body: JSON.stringify({ five_hour: { utilization: 10 } }),
+          },
+        });
+      }
+      return Promise.reject(new Error(`unexpected POST ${path}`));
+    });
+
+    helpers.API.delete.mockImplementation((path, config) => {
+      if (path === '/v0/management/auth-files') {
+        const name = config?.params?.name;
+        deletedNames.push(name);
+        remainingFiles = remainingFiles.filter((file) => file.name !== name);
+        return Promise.resolve({ data: { success: true } });
+      }
+      return Promise.reject(new Error(`unexpected DELETE ${path}`));
+    });
+
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const fetchAllButton = Array.from(container.querySelectorAll('button')).find(
+      (btn) => btn.textContent.includes('获取全部真实额度')
+    );
+    await act(async () => {
+      fetchAllButton?.click();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+
+    const deleteInvalidBtn = container.querySelector(
+      '#cpa-auth-files-delete-invalid-btn'
+    );
+    expect(deleteInvalidBtn).not.toBeNull();
+    expect(deleteInvalidBtn.getAttribute('data-delete-invalid-count')).toBe('2');
+    expect(deleteInvalidBtn.disabled).toBe(false);
+
+    await act(async () => {
+      deleteInvalidBtn.click();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(deletedNames.sort()).toEqual(
+      ['claude-401.json', 'xai-prepare-fail.json'].sort()
+    );
+    expect(helpers.showSuccess).toHaveBeenCalledWith(
+      expect.stringContaining('已一键删除 2 个失效认证')
+    );
+    expect(container.textContent).toContain('claude-ok.json');
+    expect(container.textContent).not.toContain('claude-401.json');
+    expect(container.textContent).not.toContain('xai-prepare-fail.json');
+
+    const deleteInvalidBtnAfter = container.querySelector(
+      '#cpa-auth-files-delete-invalid-btn'
+    );
+    expect(deleteInvalidBtnAfter.getAttribute('data-delete-invalid-count')).toBe(
+      '0'
+    );
+    expect(deleteInvalidBtnAfter.disabled).toBe(true);
+
+    confirmSpy.mockRestore();
+  });
+
+  test('one-click delete is disabled when no invalid auths', async () => {
+    const files = [
+      { name: 'claude-ok.json', type: 'claude', auth_index: 1, disabled: false },
+    ];
+
+    helpers.API.get.mockImplementation((path) => {
+      if (path === '/v0/management/auth-files') {
+        return Promise.resolve({ data: { files } });
+      }
+      if (path === '/v0/management/auth-files/download') {
+        return Promise.resolve({ data: defaultCredential });
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+
+    helpers.API.post.mockImplementation((path) => {
+      if (path === '/v0/management/api-call') {
+        return Promise.resolve({
+          data: {
+            status_code: 200,
+            body: JSON.stringify({ five_hour: { utilization: 10 } }),
+          },
+        });
+      }
+      return Promise.reject(new Error(`unexpected POST ${path}`));
+    });
+
+    await act(async () => {
+      createRoot(container).render(<CPAAuthFiles />);
+      await waitForUI();
+    });
+
+    const deleteInvalidBtn = container.querySelector(
+      '#cpa-auth-files-delete-invalid-btn'
+    );
+    expect(deleteInvalidBtn).not.toBeNull();
+    expect(deleteInvalidBtn.disabled).toBe(true);
+    expect(deleteInvalidBtn.textContent).toContain('一键删除失效 (0)');
+  });
 });
