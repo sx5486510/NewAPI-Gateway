@@ -156,17 +156,7 @@ func CPAManagementAuth() gin.HandlerFunc {
 				return
 			}
 
-			gatewayScheme := "http"
-			if c.Request.TLS != nil {
-				gatewayScheme = "https"
-			} else {
-				forwarded := c.GetHeader("X-Forwarded-Proto")
-				if forwarded != "" && !strings.Contains(forwarded, ",") {
-					gatewayScheme = strings.TrimSpace(forwarded)
-				}
-			}
-
-			gatewayHost := strings.ToLower(c.Request.Host)
+			gatewayScheme, gatewayHost := resolveGatewayOrigin(c)
 			originHost := strings.ToLower(originURL.Host)
 			originScheme := strings.ToLower(originURL.Scheme)
 

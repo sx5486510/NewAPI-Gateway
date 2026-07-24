@@ -55,24 +55,9 @@ func SameOrigin() gin.HandlerFunc {
 			return
 		}
 
-		// Determine the Gateway's scheme
-		gatewayScheme := "http"
-		if c.Request.TLS != nil {
-			gatewayScheme = "https"
-		} else {
-			// Trust single X-Forwarded-Proto value
-			forwarded := c.GetHeader("X-Forwarded-Proto")
-			if forwarded != "" && !strings.Contains(forwarded, ",") {
-				gatewayScheme = strings.TrimSpace(forwarded)
-			}
-		}
-
-		// Normalize hosts (case-insensitive)
-		gatewayHost := strings.ToLower(c.Request.Host)
-		originHost := strings.ToLower(originURL.Host)
-
-		// Normalize scheme
+		gatewayScheme, gatewayHost := resolveGatewayOrigin(c)
 		originScheme := strings.ToLower(originURL.Scheme)
+		originHost := strings.ToLower(originURL.Host)
 
 		// Get effective ports
 		gatewayPort := effectivePort(gatewayHost, gatewayScheme)
@@ -97,6 +82,33 @@ func SameOrigin() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// resolveGatewayOrigin reconstructs the public Gateway origin as seen by the
+// browser. Behind reverse proxies Request.Host may be rewritten to the
+// upstream loopback address, so we prefer a single trusted
+// X-Forwarded-Host / X-Forwarded-Proto when present.
+func resolveGatewayOrigin(c *gin.Context) (scheme, host string) {
+	scheme = "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	} else if forwarded := singleForwardedValue(c.GetHeader("X-Forwarded-Proto")); forwarded != "" {
+		scheme = forwarded
+	}
+
+	host = strings.ToLower(strings.TrimSpace(c.Request.Host))
+	if forwardedHost := singleForwardedValue(c.GetHeader("X-Forwarded-Host")); forwardedHost != "" {
+		host = strings.ToLower(forwardedHost)
+	}
+	return scheme, host
+}
+
+func singleForwardedValue(header string) string {
+	value := strings.TrimSpace(header)
+	if value == "" || strings.Contains(value, ",") {
+		return ""
+	}
+	return value
 }
 
 // stripPort removes the port from a host string

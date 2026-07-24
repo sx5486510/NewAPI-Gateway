@@ -39,6 +39,7 @@ sudo bash /opt/newapi-gateway/source/deploy/deploy-with-caddy.sh \
 - 安装并启动 Caddy。
 - 写入 `/etc/caddy/Caddyfile`。
 - Caddy 对外监听 `3031`（HTTPS），反代到 `127.0.0.1:3030`。
+- 反代必须保留公网 `Host` / `X-Forwarded-Host` / `X-Forwarded-Proto`，不能改写成 `127.0.0.1:3030`；否则管理台 `POST /api/cpa/start` 会被 SameOrigin 拒绝（`origin does not match Gateway`）。
 - 开放防火墙 `3031/tcp`。
 
 访问地址：

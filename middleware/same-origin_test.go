@@ -147,3 +147,49 @@ func TestSameOriginMultipleForwardedProto(t *testing.T) {
 		t.Fatalf("should accept http origin when forwarded-proto is invalid: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestSameOriginWithRewrittenHostUsesForwardedHost(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(SameOrigin())
+	router.POST("/api/cpa/start", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	// Simulate Caddy reverse proxy that rewrites Host to the loopback upstream
+	// while preserving the public host/scheme in X-Forwarded-* headers.
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:3030/api/cpa/start", nil)
+	req.Host = "127.0.0.1:3030"
+	req.Header.Set("X-Forwarded-Host", "gateway.example:3031")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("Origin", "https://gateway.example:3031")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("forwarded host should match browser origin: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSameOriginRejectsMismatchedForwardedHost(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(SameOrigin())
+	router.POST("/api/cpa/start", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:3030/api/cpa/start", nil)
+	req.Host = "127.0.0.1:3030"
+	req.Header.Set("X-Forwarded-Host", "gateway.example:3031")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("Origin", "https://evil.example:3031")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("mismatched forwarded host should be rejected: %d %s", rec.Code, rec.Body.String())
+	}
+}

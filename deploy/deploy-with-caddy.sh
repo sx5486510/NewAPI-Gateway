@@ -183,11 +183,19 @@ install_caddy
 echo -e "${YELLOW}[3/5] Writing Caddyfile...${NC}"
 TLS_LINE="    tls ${CERT_FILE} ${KEY_FILE}"
 
+# IMPORTANT: preserve the public Host / scheme for Gateway SameOrigin checks.
+# Rewriting Host to 127.0.0.1:APP_PORT makes browser Origin (https://domain:3031)
+# disagree with Request.Host and rejects POST /api/cpa/start with
+# "origin does not match Gateway".
 cat > /etc/caddy/Caddyfile <<EOF
 ${DOMAIN}:${CADDY_PORT} {
 ${TLS_LINE}
     reverse_proxy http://127.0.0.1:${APP_PORT} {
-        header_up Host 127.0.0.1:${APP_PORT}
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
     }
 }
 EOF
