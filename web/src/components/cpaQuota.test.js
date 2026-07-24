@@ -533,6 +533,45 @@ describe('CPA quota shared contract', () => {
     ).rejects.toThrow('401 denied');
   });
 
+  test('Grok surfaces download failures instead of format-invalid', async () => {
+    const post = jest.fn();
+    const downloadText = jest.fn(() =>
+      Promise.reject(new Error('file not found'))
+    );
+
+    await expect(
+      fetchCPAQuota(
+        {
+          name: 'xai-missing.json',
+          provider: 'xai',
+          auth_index: 'runtime-index',
+        },
+        { post, downloadText }
+      )
+    ).rejects.toThrow('file not found');
+
+    expect(downloadText).toHaveBeenCalledWith('xai-missing.json');
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  test('Grok still reports invalid credential JSON as format-invalid', async () => {
+    const post = jest.fn();
+    const downloadText = jest.fn(() => Promise.resolve('not-json'));
+
+    await expect(
+      fetchCPAQuota(
+        {
+          name: 'xai-bad.json',
+          provider: 'xai',
+          auth_index: 'runtime-index',
+        },
+        { post, downloadText }
+      )
+    ).rejects.toThrow('Grok credential file format is invalid');
+
+    expect(post).not.toHaveBeenCalled();
+  });
+
   test('Antigravity downloads a missing project id and falls back quota endpoints', async () => {
     let quotaCalls = 0;
     const post = jest.fn((path, request) => {

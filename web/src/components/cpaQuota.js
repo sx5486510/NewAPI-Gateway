@@ -848,10 +848,17 @@ const extractGrokUserId = (file) => {
 export const resolveGrokUserId = async (file, downloadText) => {
   const direct = extractGrokUserId(file);
   if (direct || typeof downloadText !== 'function' || !file?.name) return direct;
+
+  let text;
   try {
-    const credential = objectValue(
-      JSON.parse(String(await downloadText(file.name)).trim())
-    );
+    text = await downloadText(file.name);
+  } catch (error) {
+    // 下载/代理失败透传（如 file not found），不要伪装成格式错误
+    throw error;
+  }
+
+  try {
+    const credential = objectValue(JSON.parse(String(text).trim()));
     return extractGrokUserId(credential);
   } catch {
     throw new Error('Grok credential file format is invalid');
