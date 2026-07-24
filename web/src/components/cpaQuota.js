@@ -868,6 +868,25 @@ export const resolveGrokUserId = async (file, downloadText) => {
 const formatUsd = (cents) =>
   cents === null ? '--' : `$${(cents / 100).toFixed(2)}`;
 
+// Free Grok：无付费月度额度、无按量封顶。额度字段多为 0，UI 仅展示 FREE。
+const isFreeGrokSummary = (summary) => {
+  if (!summary) return false;
+  const monthlyLimit = summary.monthlyLimitCents;
+  const onDemandCap = summary.onDemandCapCents;
+  if (monthlyLimit === 15000 || monthlyLimit === 150000) return false;
+  const noMonthlyAllowance = monthlyLimit === null || monthlyLimit === 0;
+  const noOnDemandCap = onDemandCap === null || onDemandCap === 0;
+  return noMonthlyAllowance && noOnDemandCap;
+};
+
+const resolveGrokPlan = (summary) => {
+  if (!summary) return null;
+  if (summary.monthlyLimitCents === 15000) return 'SuperGrok';
+  if (summary.monthlyLimitCents === 150000) return 'SuperGrok Heavy';
+  if (isFreeGrokSummary(summary)) return 'Free';
+  return null;
+};
+
 const fetchGrokQuota = async ({ file, authIndex, post, downloadText }) => {
   const header = { ...GROK_HEADERS };
   const userId = await resolveGrokUserId(file, downloadText);
@@ -890,6 +909,17 @@ const fetchGrokQuota = async ({ file, authIndex, post, downloadText }) => {
     if (weekly.status === 'rejected' && monthly.status === 'rejected')
       throw weekly.reason;
     throw new Error('Grok 额度响应为空');
+  }
+
+  // 获取成功的 free 账号：不展示全 0 的额度条，仅返回 Free 供 UI 打 FREE 标记
+  if (isFreeGrokSummary(summary)) {
+    return {
+      provider: 'xai',
+      plan: 'Free',
+      groups: [],
+      meta: [],
+      warnings: [],
+    };
   }
 
   const items = [];
@@ -958,12 +988,7 @@ const fetchGrokQuota = async ({ file, authIndex, post, downloadText }) => {
       })
     );
   }
-  const plan =
-    summary.monthlyLimitCents === 15000
-      ? 'SuperGrok'
-      : summary.monthlyLimitCents === 150000
-      ? 'SuperGrok Heavy'
-      : null;
+  const plan = resolveGrokPlan(summary);
   const meta = [];
   if (summary.monthlyLimitCents !== null && summary.monthlyLimitCents > 0) {
     meta.push({
@@ -1163,7 +1188,11 @@ export const fetchCPAQuota = async (file, { post, downloadText } = {}) => {
   const hasQuotaItems = quota.groups?.some(
     (group) => Array.isArray(group?.items) && group.items.length > 0
   );
-  if (!hasQuotaItems) {
+  // Free 套餐无实质限额，允许 groups 为空（UI 仅展示 FREE）
+  const isFree =
+    typeof quota.plan === 'string' &&
+    quota.plan.trim().toLowerCase() === 'free';
+  if (!hasQuotaItems && !isFree) {
     throw new Error(`${providerLabels[provider]} 额度响应为空`);
   }
   return quota;

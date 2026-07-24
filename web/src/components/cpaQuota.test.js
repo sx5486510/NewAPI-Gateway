@@ -379,7 +379,7 @@ describe('CPA quota shared contract', () => {
     });
   });
 
-  test('Grok fills monthly quota from the plain billing endpoint response', async () => {
+  test('Grok free accounts only expose Free plan without quota bars', async () => {
     const billingPayload = {
       config: {
         monthlyLimit: { val: 0 },
@@ -409,14 +409,9 @@ describe('CPA quota shared contract', () => {
       'https://cli-chat-proxy.grok.com/v1/billing?format=credits',
       'https://cli-chat-proxy.grok.com/v1/billing',
     ]);
-    expect(quota.groups[0].items).toEqual([
-      expect.objectContaining({
-        id: 'monthly-credits',
-        detail: '已用 $0.03',
-        remainingPercent: 0,
-        resetAt: '2026-08-01T00:00:00+00:00',
-      }),
-    ]);
+    expect(quota.plan).toBe('Free');
+    expect(quota.groups).toEqual([]);
+    expect(quota.meta).toEqual([]);
   });
 
   test('Grok loads x-userid from the credential when the auth list omits it', async () => {
@@ -458,7 +453,7 @@ describe('CPA quota shared contract', () => {
     expect(quota.groups[0].items[0].remainingPercent).toBe(100);
   });
 
-  test('Grok keeps an unused weekly period when usage fields are omitted', async () => {
+  test('Grok free weekly-only accounts only expose Free plan', async () => {
     const zeroUsageWeeklyConfig = {
       config: {
         currentPeriod: {
@@ -478,16 +473,11 @@ describe('CPA quota shared contract', () => {
 
     const quota = await fetchCPAQuota({ type: 'xai', auth_index: 6 }, { post });
 
-    expect(quota.groups[0].items).toEqual([
-      expect.objectContaining({
-        id: 'weekly',
-        remainingPercent: null,
-        resetAt: '2026-07-29T00:00:00+00:00',
-      }),
-    ]);
+    expect(quota.plan).toBe('Free');
+    expect(quota.groups).toEqual([]);
   });
 
-  test('Grok rejects an all-zero account without emitting empty quota items', async () => {
+  test('Grok all-zero paid fields map to Free without quota items', async () => {
     const zeroConfig = {
       config: {
         monthlyLimit: { val: 0 },
@@ -508,14 +498,9 @@ describe('CPA quota shared contract', () => {
     const post = jest.fn(() => ok(zeroConfig));
 
     const result = await fetchCPAQuota({ type: 'xai', auth_index: 6 }, { post });
-    expect(result.groups[0].items).toHaveLength(1);
-    expect(result.groups[0].items[0]).toMatchObject({
-      id: 'monthly-credits',
-      label: '月度积分',
-      detail: '无配额',
-      remainingPercent: null,
-      resetAt: '2026-08-01T00:00:00+00:00',
-    });
+    expect(result.plan).toBe('Free');
+    expect(result.groups).toEqual([]);
+    expect(result.meta).toEqual([]);
   });
 
   test('Grok returns the first provider error when both billing endpoints fail', async () => {
