@@ -398,8 +398,12 @@ func persistXAIToken(path string, original []byte, token *xaiTokenResponse, now 
 	return writeFileAtomic(path, body, 0o600)
 }
 
+// atomicRename is os.Rename by default; tests may override to inject failures.
+var atomicRename = os.Rename
+
 func writeFileAtomic(path string, body []byte, mode os.FileMode) (err error) {
-	temporary, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	dir := filepath.Dir(path)
+	temporary, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
@@ -422,7 +426,34 @@ func writeFileAtomic(path string, body []byte, mode os.FileMode) (err error) {
 	if err = temporary.Close(); err != nil {
 		return err
 	}
-	return os.Rename(temporaryPath, path)
+
+	// Windows cannot rename over an existing file. Move the original aside
+	// first, replace, and restore the backup if the replace fails.
+	backupPath := path + ".bak"
+	haveBackup := false
+	if _, statErr := os.Stat(path); statErr == nil {
+		_ = os.Remove(backupPath)
+		if err = atomicRename(path, backupPath); err != nil {
+			return fmt.Errorf("back up old file before replace: %w", err)
+		}
+		haveBackup = true
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf("stat old file before replace: %w", statErr)
+	}
+
+	if err = atomicRename(temporaryPath, path); err != nil {
+		if haveBackup {
+			if restoreErr := atomicRename(backupPath, path); restoreErr != nil {
+				return fmt.Errorf("replace file: %w (and restoring original failed: %v)", err, restoreErr)
+			}
+		}
+		return fmt.Errorf("replace file: %w", err)
+	}
+
+	if haveBackup {
+		_ = os.Remove(backupPath)
+	}
+	return nil
 }
 
 func (p *ManagementProxy) xaiAuthEntry(ctx context.Context, lease *ManagementLease, authIndex string) (*xaiAuthListEntry, error) {
