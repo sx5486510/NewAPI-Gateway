@@ -109,10 +109,16 @@ const matchesStatus = (file, status, quotaStates, quotaKeyFn) => {
 const matchesType = (file, type) =>
   type === 'all' || getGroupKey(file) === type;
 
+// Free 套餐无实质限额展示价值，仅打 FREE 标记
+const isFreePlan = (plan) =>
+  typeof plan === 'string' && plan.trim().toLowerCase() === 'free';
+
 // 判断某个 auth 是否已刷新出额度且额度为空（全部额度项均为无配额或剩余 0）
 const isZeroQuota = (file, quotaStates, quotaKeyFn) => {
   const state = quotaStates[quotaKeyFn(file)];
   if (!state || state.status !== 'success' || !state.quota) return false;
+  // Free 账号不展示限额，也不参与「隐藏零额度」过滤
+  if (isFreePlan(state.quota.plan)) return false;
   const items = (state.quota.groups || []).flatMap(
     (group) => group.items || []
   );
@@ -1118,6 +1124,29 @@ const CPAAuthFiles = () => {
     }
 
     const quota = state.quota;
+    // Free 账号只显示 FREE 标记，不展示限额进度/明细
+    if (isFreePlan(quota.plan)) {
+      return (
+        <div id={quotaId} style={{ display: 'flex', alignItems: 'center' }}>
+          <span
+            id={`${quotaId}-free`}
+            style={{
+              display: 'inline-block',
+              padding: '0.15rem 0.55rem',
+              borderRadius: '999px',
+              background: 'var(--bg-tertiary, #F3F4F6)',
+              color: 'var(--text-secondary, #4B5563)',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              lineHeight: 1.4,
+            }}
+          >
+            FREE
+          </span>
+        </div>
+      );
+    }
     const formatReset = (resetAt) => {
       if (!resetAt) return '';
       const date = new Date(resetAt);
