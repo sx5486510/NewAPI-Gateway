@@ -87,25 +87,17 @@ func RootAuth() func(c *gin.Context) {
 	}
 }
 
-// CPAManagementAuth allows either Root session OR X-Management-Key/Bearer token.
+// cpaPanelManagementKeyPlaceholder is seeded into the official CPA panel
+// localStorage by the Gateway /cpa page. It must never grant external access.
+const cpaPanelManagementKeyPlaceholder = "gateway-managed"
+
+// CPAManagementAuth allows either Root session OR a real X-Management-Key/Bearer token.
 // For Root sessions: enforces NoTokenAuth and SameOrigin.
-// For X-Management-Key: bypasses session checks, lets CPA validate the key.
+// For a real management key: bypasses session checks, lets CPA validate the key.
+// The panel placeholder "gateway-managed" is NOT treated as an external key.
 func CPAManagementAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Check if request has X-Management-Key or Authorization Bearer
-		hasManagementKey := c.GetHeader("X-Management-Key") != ""
-		if !hasManagementKey {
-			if auth := c.GetHeader("Authorization"); auth != "" {
-				// Only treat as management key if it's a Bearer token
-				// (session-based requests also use Authorization but go through cookie flow)
-				parts := strings.SplitN(auth, " ", 2)
-				if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
-					hasManagementKey = true
-				}
-			}
-		}
-
-		if hasManagementKey {
+		if hasExternalCPAManagementKey(c) {
 			// External API mode: allow the request, let ManagementProxy + CPA validate the key
 			c.Next()
 			return
@@ -199,6 +191,28 @@ func CPAManagementAuth() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// hasExternalCPAManagementKey reports whether the request carries a real CPA
+// management credential that should bypass the Gateway Root session. The
+// official panel placeholder is ignored so browser traffic stays on the Root
+// session path and the proxy can inject the runtime password.
+func hasExternalCPAManagementKey(c *gin.Context) bool {
+	if key := strings.TrimSpace(c.GetHeader("X-Management-Key")); key != "" {
+		return !isCPAPanelManagementKeyPlaceholder(key)
+	}
+	if auth := c.GetHeader("Authorization"); auth != "" {
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+			key := strings.TrimSpace(parts[1])
+			return key != "" && !isCPAPanelManagementKeyPlaceholder(key)
+		}
+	}
+	return false
+}
+
+func isCPAPanelManagementKeyPlaceholder(key string) bool {
+	return strings.EqualFold(strings.TrimSpace(key), cpaPanelManagementKeyPlaceholder)
 }
 
 func stripPortFromSameOrigin(host string) string {

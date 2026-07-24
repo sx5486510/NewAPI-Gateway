@@ -61,6 +61,11 @@ const managementKeyContextKey contextKey = 2
 
 const maxAPICallRequestBody int64 = 1 << 20
 
+// panelManagementKeyPlaceholder is written by the Gateway CPA page into the
+// official panel's localStorage so the SPA can skip its own login form. It has
+// no authority: the proxy must discard it and inject the runtime password.
+const panelManagementKeyPlaceholder = "gateway-managed"
+
 const (
 	maxAuthFilesFromZip      = 10_000
 	maxAuthFileFromZipBytes  = int64(8 << 20)
@@ -773,10 +778,15 @@ func sanitizeHeadersExceptManagementKey(req *http.Request) {
 	req.Header.Del("Upgrade")
 }
 
-// extractManagementKey extracts X-Management-Key or Authorization Bearer token from request
+// extractManagementKey extracts a real external management key from the
+// request. The panel placeholder "gateway-managed" is treated as absent so the
+// proxy stays in internal mode and injects the runtime password instead.
 func extractManagementKey(r *http.Request) string {
 	// Try X-Management-Key first
-	if key := r.Header.Get("X-Management-Key"); key != "" {
+	if key := strings.TrimSpace(r.Header.Get("X-Management-Key")); key != "" {
+		if isPanelManagementKeyPlaceholder(key) {
+			return ""
+		}
 		return key
 	}
 
@@ -784,11 +794,19 @@ func extractManagementKey(r *http.Request) string {
 	if auth := r.Header.Get("Authorization"); auth != "" {
 		parts := strings.SplitN(auth, " ", 2)
 		if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
-			return parts[1]
+			key := strings.TrimSpace(parts[1])
+			if key == "" || isPanelManagementKeyPlaceholder(key) {
+				return ""
+			}
+			return key
 		}
 	}
 
 	return ""
+}
+
+func isPanelManagementKeyPlaceholder(key string) bool {
+	return strings.EqualFold(strings.TrimSpace(key), panelManagementKeyPlaceholder)
 }
 
 func copyEndToEndHeaders(dst, src http.Header) {

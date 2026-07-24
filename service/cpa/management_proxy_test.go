@@ -79,14 +79,17 @@ func TestManagementProxySanitizesAndForwards(t *testing.T) {
 	proxy := NewManagementProxy(provider, nil, func() {})
 
 	req := httptest.NewRequest(http.MethodPost, "/v0/management/auth-files?name=a.json", strings.NewReader("payload"))
-	req.Header.Set("Authorization", "Bearer browser-placeholder")
-	req.Header.Set("X-Management-Key", "browser-placeholder")
+	req.Header.Set("Authorization", "Bearer "+panelManagementKeyPlaceholder)
+	req.Header.Set("X-Management-Key", panelManagementKeyPlaceholder)
 	req.Header.Set("Cookie", "session=sensitive")
 	req.Header.Set("Proxy-Authorization", "sensitive")
 
 	rec := httptest.NewRecorder()
 	proxy.ServeHTTP(rec, req)
 
+	if capturedRequest == nil {
+		t.Fatal("upstream request was not captured")
+	}
 	if capturedRequest.URL.Path != "/v0/management/auth-files" {
 		t.Fatalf("path = %s, want /v0/management/auth-files", capturedRequest.URL.Path)
 	}
@@ -112,6 +115,49 @@ func TestManagementProxySanitizesAndForwards(t *testing.T) {
 	}
 	if !provider.released.Load() {
 		t.Fatal("lease not released after response")
+	}
+}
+
+
+func TestManagementProxyPreservesRealExternalManagementKey(t *testing.T) {
+	var capturedRequest *http.Request
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedRequest = r
+		_, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer upstream.Close()
+
+	upstreamURL, _ := url.Parse(upstream.URL)
+	provider := &fakeLeaseProvider{
+		target:   upstreamURL,
+		password: "runtime-secret",
+	}
+	proxy := NewManagementProxy(provider, nil, func() {})
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/management/config", nil)
+	req.Header.Set("X-Management-Key", "real-external-secret")
+	req.Header.Set("Cookie", "session=sensitive")
+
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if capturedRequest == nil {
+		t.Fatal("upstream request was not captured")
+	}
+	if got := capturedRequest.Header.Get("X-Management-Key"); got != "real-external-secret" {
+		t.Fatalf("X-Management-Key = %q, want real-external-secret", got)
+	}
+	if got := capturedRequest.Header.Get("Authorization"); got != "" {
+		t.Fatalf("Authorization = %q, want empty for X-Management-Key external mode", got)
+	}
+	if got := capturedRequest.Header.Get("Cookie"); got != "" {
+		t.Fatalf("Cookie was forwarded: %q", got)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 }
 
@@ -147,7 +193,7 @@ func TestManagementProxyAPICallForwardsWithoutPersisting(t *testing.T) {
 
 	payload := `{"authIndex":"7","method":"GET","url":"https://example.test/usage"}`
 	req := httptest.NewRequest(http.MethodPost, "/v0/management/api-call", strings.NewReader(payload))
-	req.Header.Set("Authorization", "Bearer browser-placeholder")
+	req.Header.Set("Authorization", "Bearer "+panelManagementKeyPlaceholder)
 	rec := httptest.NewRecorder()
 	proxy.ServeHTTP(rec, req)
 
