@@ -35,6 +35,40 @@ func TestManagerHasNoPackageLevelLegacyLifecycleWrappers(t *testing.T) {
 	}
 }
 
+func TestResolveCPAVersionMatchesEmbeddedModule(t *testing.T) {
+	version := resolveCPAVersion()
+	if version == "" || version == "unknown" {
+		t.Fatalf("resolveCPAVersion() = %q, want embedded CLIProxyAPI module version", version)
+	}
+	if !strings.HasPrefix(version, "v") {
+		t.Fatalf("resolveCPAVersion() = %q, want a tagged module version", version)
+	}
+	if CPAVersion != version {
+		t.Fatalf("CPAVersion = %q, resolveCPAVersion() = %q", CPAVersion, version)
+	}
+
+	modVersion := cpaVersionFromGoMod()
+	if modVersion == "" {
+		t.Fatal("cpaVersionFromGoMod() returned empty")
+	}
+	if version != modVersion {
+		t.Fatalf("resolveCPAVersion() = %q, go.mod = %q", version, modVersion)
+	}
+}
+
+func TestParseCPAVersionFromGoMod(t *testing.T) {
+	const raw = "module example\n\ngo 1.26.0\n\nrequire (\n\tgithub.com/foo/bar v1.2.3\n\tgithub.com/router-for-me/CLIProxyAPI/v7 v7.2.102\n)\n"
+	if got := parseCPAVersionFromGoMod([]byte(raw)); got != "v7.2.102" {
+		t.Fatalf("parseCPAVersionFromGoMod() = %q, want v7.2.102", got)
+	}
+	if got := parseCPAVersionFromGoMod([]byte("require github.com/router-for-me/CLIProxyAPI/v7 v7.2.99 // indirect\n")); got != "v7.2.99" {
+		t.Fatalf("single-line require = %q, want v7.2.99", got)
+	}
+	if got := parseCPAVersionFromGoMod([]byte("module example\n")); got != "" {
+		t.Fatalf("missing require = %q, want empty", got)
+	}
+}
+
 func TestManagerLifecycleAndSecretLifetime(t *testing.T) {
 	m, fake := newFakeManager(t)
 	if got := m.Status(); got.State != StateStopped || got.Ready || got.Endpoint != "offline" || got.Version != CPAVersion {

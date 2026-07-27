@@ -104,7 +104,7 @@ func (m *mockCPAManager) Status() cpa.Status {
 		Ready:    true,
 		Enabled:  true,
 		Endpoint: "http://127.0.0.1:29000",
-		Version:  "v7.2.80",
+		Version:  cpa.CPAVersion,
 	}
 }
 

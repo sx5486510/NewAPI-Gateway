@@ -63,7 +63,7 @@ func (m *mockManager) Status() cpa.Status {
 		Ready:     m.ready,
 		Enabled:   m.enabled,
 		Endpoint:  endpoint,
-		Version:   "v7.2.80",
+		Version:   cpa.CPAVersion,
 		LastError: m.lastError,
 	}
 }

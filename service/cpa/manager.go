@@ -9,12 +9,98 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 )
 
-const CPAVersion = "v7.2.80"
+// cpaModulePath is the Go module path of the embedded CLIProxyAPI dependency.
+const cpaModulePath = "github.com/router-for-me/CLIProxyAPI/v7"
+
+// CPAVersion is the resolved module version of the embedded CLIProxyAPI
+// dependency. Prefer runtime/debug build info (keeps pace with go.mod); fall
+// back to parsing the local go.mod because `go test` binaries on this toolchain
+// often ship with an empty Deps list.
+var CPAVersion = resolveCPAVersion()
+
+func resolveCPAVersion() string {
+	if version := cpaVersionFromBuildInfo(); version != "" {
+		return version
+	}
+	if version := cpaVersionFromGoMod(); version != "" {
+		return version
+	}
+	return "unknown"
+}
+
+func cpaVersionFromBuildInfo() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info == nil {
+		return ""
+	}
+	for _, dep := range info.Deps {
+		if dep == nil || dep.Path != cpaModulePath {
+			continue
+		}
+		// Prefer the replacement version when go.mod uses a replace directive
+		// that still carries a release tag.
+		if dep.Replace != nil {
+			if version := strings.TrimSpace(dep.Replace.Version); version != "" {
+				return version
+			}
+		}
+		if version := strings.TrimSpace(dep.Version); version != "" {
+			return version
+		}
+	}
+	return ""
+}
+
+func cpaVersionFromGoMod() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	for i := 0; i < 12; i++ {
+		data, readErr := os.ReadFile(filepath.Join(dir, "go.mod"))
+		if readErr == nil {
+			if version := parseCPAVersionFromGoMod(data); version != "" {
+				return version
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
+}
+
+func parseCPAVersionFromGoMod(data []byte) string {
+	for _, rawLine := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(line, "//") {
+			continue
+		}
+		fields := strings.Fields(line)
+		idx := 0
+		if len(fields) >= 3 && fields[0] == "require" {
+			idx = 1
+		}
+		if len(fields) < idx+2 || fields[idx] != cpaModulePath {
+			continue
+		}
+		version := strings.TrimSpace(fields[idx+1])
+		if version == "" || version == "//" {
+			continue
+		}
+		return version
+	}
+	return ""
+}
 
 type State string
 
