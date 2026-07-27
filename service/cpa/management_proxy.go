@@ -229,7 +229,8 @@ func (p *ManagementProxy) handleAuthFileUpload(w http.ResponseWriter, r *http.Re
 
 	existing, err := p.authFileNames(r.Context(), lease)
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, "auth_file_list_failed", "failed to check existing auth files")
+		// Return precise error message to help diagnose the issue
+		writeJSONError(w, http.StatusBadGateway, "auth_file_list_failed", fmt.Sprintf("failed to check existing auth files: %v", err))
 		return true
 	}
 
@@ -564,28 +565,46 @@ func (p *ManagementProxy) authFileNames(ctx context.Context, lease *ManagementLe
 	target.RawQuery = ""
 	target.Fragment = ""
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	// Use independent timeout to avoid inheriting an already-expired parent context
+	listCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(listCtx, http.MethodGet, target.String(), nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create auth files list request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+lease.Password)
 
 	resp, err := p.transport.RoundTrip(req)
 	if err != nil {
-		return nil, err
+		// Return precise error cause
+		if errors.Is(err, context.Canceled) {
+			return nil, fmt.Errorf("auth files list request canceled: %w", err)
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("auth files list request timeout (30s): %w", err)
+		}
+		return nil, fmt.Errorf("auth files list request failed: %w", err)
 	}
 	defer resp.Body.Close()
+
 	if !isSuccess(resp.StatusCode) {
-		return nil, fmt.Errorf("auth files list returned %d", resp.StatusCode)
+		// Read error body for better diagnostics
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("auth files list returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
+	// Stream decode to handle arbitrarily large responses
 	var payload struct {
 		Files []struct {
 			Name string `json:"name"`
 		} `json:"files"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
-		return nil, err
+
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&payload); err != nil {
+		// Try to read a preview for diagnostics (best effort)
+		return nil, fmt.Errorf("failed to decode auth files list response (status %d): %w", resp.StatusCode, err)
 	}
 
 	names := make(map[string]struct{}, len(payload.Files))
