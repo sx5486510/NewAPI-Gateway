@@ -49,11 +49,53 @@ describe('CPA auth credential status', () => {
     expect(result).toEqual({
       accessStatus: 'expired',
       expiresAt: '2026-07-20T08:00:00.000Z',
+      lastRefresh: null,
       hasRefreshToken: true,
     });
     expect(JSON.stringify(result)).not.toMatch(
       /access-secret|refresh-secret|id-secret/
     );
+  });
+
+  test('extracts last_refresh timestamp from auth file', () => {
+    const result = parseAuthCredentialMetadata(
+      JSON.stringify({
+        expired: '2026-07-20T07:00:00Z',
+        refresh_token: 'refresh-secret',
+        last_refresh: '2026-07-20T06:30:00Z',
+      }),
+      now
+    );
+
+    expect(result).toEqual({
+      accessStatus: 'expired',
+      expiresAt: '2026-07-20T07:00:00.000Z',
+      lastRefresh: '2026-07-20T06:30:00.000Z',
+      hasRefreshToken: true,
+    });
+  });
+
+  test('handles missing or invalid last_refresh gracefully', () => {
+    expect(
+      parseAuthCredentialMetadata(
+        JSON.stringify({ refresh_token: 'token' }),
+        now
+      ).lastRefresh
+    ).toBeNull();
+
+    expect(
+      parseAuthCredentialMetadata(
+        JSON.stringify({ refresh_token: 'token', last_refresh: '' }),
+        now
+      ).lastRefresh
+    ).toBeNull();
+
+    expect(
+      parseAuthCredentialMetadata(
+        JSON.stringify({ refresh_token: 'token', last_refresh: 'invalid' }),
+        now
+      ).lastRefresh
+    ).toBeNull();
   });
 
   test.each([

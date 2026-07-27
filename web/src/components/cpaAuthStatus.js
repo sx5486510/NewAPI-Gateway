@@ -1,5 +1,5 @@
 const UNAUTHORIZED_PATTERN =
-  /(^|\D)401(\D|$)|unauthori[sz]ed|未授权|token refresh failed|auth_token_refresh_failed/i;
+  /(^|\D)401(\D|$)|unauthori[sz]ed|未授权|token refresh failed|auth_token_refresh_failed|xai refresh token (expired|invalid|unauthorized)|xai token refresh failed/i;
 
 const isRecord = (value) =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -26,9 +26,16 @@ export const parseAuthCredentialMetadata = (text, now = Date.now()) => {
     ? 'expired'
     : 'valid';
 
+  const rawLastRefresh = typeof auth.last_refresh === 'string' ? auth.last_refresh.trim() : '';
+  const lastRefreshTime = rawLastRefresh ? Date.parse(rawLastRefresh) : Number.NaN;
+  const lastRefresh = Number.isNaN(lastRefreshTime)
+    ? null
+    : new Date(lastRefreshTime).toISOString();
+
   return {
     accessStatus,
     expiresAt,
+    lastRefresh,
     hasRefreshToken:
       typeof auth.refresh_token === 'string' &&
       auth.refresh_token.trim().length > 0,

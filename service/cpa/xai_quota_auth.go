@@ -196,20 +196,24 @@ func xaiCredentialPreparationMessage(err error) string {
 		return fallback
 	}
 	message := strings.TrimSpace(err.Error())
-	switch message {
-	case "CPA auth directory is unavailable",
-		"invalid xAI credential preparation result",
-		"parse xAI credential",
-		"xAI credential access token and refresh token are missing",
-		"xAI credential refresh token is missing",
-		"xAI token endpoint must use https",
-		"xAI token endpoint must be on x.ai",
-		"xAI OpenID discovery failed",
-		"xAI OpenID discovery returned an invalid response",
-		"xAI token refresh failed",
-		"xAI token refresh returned an invalid response",
-		"parse xAI credential for persistence",
-		"xAI auth index was not found":
+	switch {
+	case message == "CPA auth directory is unavailable",
+		message == "invalid xAI credential preparation result",
+		message == "parse xAI credential",
+		message == "xAI credential access token and refresh token are missing",
+		message == "xAI credential refresh token is missing",
+		message == "xAI token endpoint must use https",
+		message == "xAI token endpoint must be on x.ai",
+		message == "xAI OpenID discovery failed",
+		message == "xAI OpenID discovery returned an invalid response",
+		message == "xAI token refresh failed",
+		message == "xAI token refresh returned an invalid response",
+		message == "parse xAI credential for persistence",
+		message == "xAI auth index was not found",
+		message == "xAI refresh token expired or invalid",
+		message == "xAI refresh token unauthorized":
+		return message
+	case strings.HasPrefix(message, "xAI token refresh failed (HTTP "):
 		return message
 	default:
 		return fallback
@@ -312,8 +316,18 @@ func (p *ManagementProxy) refreshXAIToken(ctx context.Context, lease *Management
 		return nil, err
 	}
 	result, err := p.callEmbeddedAPICall(ctx, lease, requestBody)
-	if err != nil || result.StatusCode != http.StatusOK {
+	if err != nil {
 		return nil, errors.New("xAI token refresh failed")
+	}
+	if result.StatusCode != http.StatusOK {
+		switch result.StatusCode {
+		case http.StatusBadRequest:
+			return nil, errors.New("xAI refresh token expired or invalid")
+		case http.StatusUnauthorized:
+			return nil, errors.New("xAI refresh token unauthorized")
+		default:
+			return nil, fmt.Errorf("xAI token refresh failed (HTTP %d)", result.StatusCode)
+		}
 	}
 	var token xaiTokenResponse
 	if err := decodeNestedBody(result.Body, &token); err != nil || strings.TrimSpace(token.AccessToken) == "" {

@@ -91,7 +91,7 @@ const matchesSearch = (file, search) => {
 // - Gateway 结构化 auth_token_refresh_failed（含 xAI token 刷新失败）
 // - Failed to prepare xAI credentials 及同类 xAI 凭证准备失败文案
 const INVALID_AUTH_ERROR_PATTERN =
-  /(^|\D)401(\D|$)|unauthori[sz]ed|token refresh failed|auth_token_refresh_failed|failed to prepare xai credentials|prepare xai credential|xai credential (access token and )?refresh token is missing|xai credential access token and refresh token are missing|xai token refresh failed/i;
+  /(^|\D)401(\D|$)|unauthori[sz]ed|token refresh failed|auth_token_refresh_failed|failed to prepare xai credentials|prepare xai credential|xai credential (access token and )?refresh token is missing|xai credential access token and refresh token are missing|xai token refresh failed|xai refresh token (expired|invalid|unauthorized)/i;
 
 const isInvalidAuthQuotaState = (state) => {
   if (!state || state.status !== 'error') return false;
@@ -1124,11 +1124,15 @@ const CPAAuthFiles = () => {
 
     const credentialId = toElementId('cpa-auth-file-credential', file.name);
 
+    // 优先使用文件内容中的 last_refresh（刷新成功后立即更新），
+    // 如果文件未读取或读取失败，则回退到列表接口返回的 last_refresh
+    const lastRefreshTime = detail?.metadata?.lastRefresh || file.last_refresh;
+
     if (!detail || detail.status === 'loading') {
       return (
         <div id={credentialId} data-credential-status={file.name} style={containerStyle}>
           <span id={`${credentialId}-last-refresh`} style={itemStyle}>
-            最近刷新: {formatCredentialTime(file.last_refresh)}
+            最近刷新: {formatCredentialTime(lastRefreshTime)}
           </span>
           <span id={`${credentialId}-access-token`} style={itemStyle}>Access Token: 读取中</span>
           <span id={`${credentialId}-refresh-token`} style={itemStyle}>Refresh Token: 读取中</span>
@@ -1139,7 +1143,7 @@ const CPAAuthFiles = () => {
       return (
         <div id={credentialId} data-credential-status={file.name} style={containerStyle}>
           <span id={`${credentialId}-last-refresh`} style={itemStyle}>
-            最近刷新: {formatCredentialTime(file.last_refresh)}
+            最近刷新: {formatCredentialTime(lastRefreshTime)}
           </span>
           <span id={`${credentialId}-error`} style={itemStyle}>{detail.error}</span>
         </div>
@@ -1165,7 +1169,7 @@ const CPAAuthFiles = () => {
     return (
       <div id={credentialId} data-credential-status={file.name} style={containerStyle}>
         <span id={`${credentialId}-last-refresh`} style={itemStyle}>
-          最近刷新: {formatCredentialTime(file.last_refresh)}
+          最近刷新: {formatCredentialTime(lastRefreshTime)}
         </span>
         <span id={`${credentialId}-access-token`} style={itemStyle}>Access Token: {accessText}</span>
         <span id={`${credentialId}-refresh-token`} style={itemStyle}>Refresh Token: {refreshText}</span>
