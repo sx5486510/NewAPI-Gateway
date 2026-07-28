@@ -28,3 +28,4 @@ deploy/*.zip
 
 # CPA auth credential files (contain secrets — never commit)
 xai-*.json
+/cpa/logs
