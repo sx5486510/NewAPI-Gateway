@@ -25,3 +25,6 @@ test-debug.txt
 *_files/
 deploy/*.zip
 /Jailbreak-Guide
+
+# CPA auth credential files (contain secrets — never commit)
+xai-*.json
