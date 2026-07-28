@@ -245,6 +245,7 @@ const CPAAuthFiles = () => {
   const [quotaStates, setQuotaStates] = useState({});
   const [testStates, setTestStates] = useState({});
   const [credentialStates, setCredentialStates] = useState({});
+  const [refreshTokenStates, setRefreshTokenStates] = useState({});
   const [fetchingAllQuotas, setFetchingAllQuotas] = useState(false);
   const [fetchingGroupQuotas, setFetchingGroupQuotas] = useState({});
   const [groupQuotaProgress, setGroupQuotaProgress] = useState({});
@@ -262,6 +263,7 @@ const CPAAuthFiles = () => {
   const uploadInFlightRef = useRef(false);
   const quotaInFlightRef = useRef(new Set());
   const testInFlightRef = useRef(new Set());
+  const refreshTokenInFlightRef = useRef(new Set());
   const cooldownResetInFlightRef = useRef(new Set());
   const bulkDeleteInFlightRef = useRef(new Set());
   const invalidDeleteInFlightRef = useRef(false);
@@ -1052,6 +1054,80 @@ const CPAAuthFiles = () => {
     }
   };
 
+  const handleRefreshToken = useCallback(
+    async (file) => {
+      const key = quotaKey(file);
+      if (!key || refreshTokenInFlightRef.current.has(key)) return;
+
+      refreshTokenInFlightRef.current.add(key);
+      setRefreshTokenStates((current) => ({
+        ...current,
+        [key]: { status: 'loading' },
+      }));
+
+      try {
+        const response = await API.post('/api/auth/refresh', {
+          filename: file.name,
+        });
+
+        if (response.data.success) {
+          setRefreshTokenStates((current) => ({
+            ...current,
+            [key]: {
+              status: 'success',
+              data: response.data.data,
+            },
+          }));
+          showSuccess(
+            `令牌刷新成功: ${file.name}\n新过期时间: ${response.data.data.new_expired}`
+          );
+
+          // 刷新列表和凭证详情
+          await fetchAuthFiles(false);
+
+          // 清除该文件的凭证缓存，强制重新加载
+          delete credentialCacheRef.current[file.name];
+          setCredentialStates((current) => ({
+            ...current,
+            [file.name]: { status: 'loading' },
+          }));
+
+          // 重新加载凭证详情
+          try {
+            const text = await downloadAuthFileText(file.name);
+            const nextState = {
+              status: 'success',
+              metadata: parseAuthCredentialMetadata(text),
+            };
+            credentialCacheRef.current[file.name] = nextState;
+            setCredentialStates((current) => ({
+              ...current,
+              [file.name]: nextState,
+            }));
+          } catch (err) {
+            console.error('Failed to reload credential after refresh:', err);
+          }
+        } else {
+          throw new Error(response.data.message || '刷新失败');
+        }
+      } catch (error) {
+        setRefreshTokenStates((current) => ({
+          ...current,
+          [key]: {
+            status: 'error',
+            error: error.response?.data?.message || error.message,
+          },
+        }));
+        showError(
+          `令牌刷新失败: ${file.name}\n${error.response?.data?.message || error.message}`
+        );
+      } finally {
+        refreshTokenInFlightRef.current.delete(key);
+      }
+    },
+    [quotaKey, downloadAuthFileText, fetchAuthFiles]
+  );
+
   const handleOpenEdit = (file) => {
     setSelectedFile(file);
     setEditNote(file.note || '');
@@ -1159,11 +1235,13 @@ const CPAAuthFiles = () => {
     const refreshStatus = getRefreshTokenStatus(detail.metadata, {
       file,
       quotaState: quotaStates[quotaKey(file)],
+      refreshTokenState: refreshTokenStates[quotaKey(file)],
     });
     const refreshText = {
       missing: '缺失',
       unverified: '存在但未验证',
       suspected_invalid: '疑似失效',
+      expired: '已过期',
     }[refreshStatus];
 
     return (
@@ -1172,7 +1250,15 @@ const CPAAuthFiles = () => {
           最近刷新: {formatCredentialTime(lastRefreshTime)}
         </span>
         <span id={`${credentialId}-access-token`} style={itemStyle}>Access Token: {accessText}</span>
-        <span id={`${credentialId}-refresh-token`} style={itemStyle}>Refresh Token: {refreshText}</span>
+        <span id={`${credentialId}-refresh-token`} style={{
+          ...itemStyle,
+          color: refreshStatus === 'expired' ? '#ef4444' :
+                 refreshStatus === 'suspected_invalid' ? '#f59e0b' :
+                 'var(--text-secondary)',
+          fontWeight: refreshStatus === 'expired' ? '500' : 'normal'
+        }}>
+          Refresh Token: {refreshText}
+        </span>
       </div>
     );
   };
@@ -2341,6 +2427,24 @@ const CPAAuthFiles = () => {
                                     >
                                       <RefreshCw size={16} />
                                       获取真实额度
+                                    </Button>
+                                  )}
+                                {getQuotaProvider(file) &&
+                                  !isAuthFileDisabled(file) && (
+                                    <Button
+                                      id={`${fileId}-refresh-token-btn`}
+                                      variant='ghost'
+                                      size='sm'
+                                      onClick={() => handleRefreshToken(file)}
+                                      disabled={
+                                        refreshTokenStates[quotaKey(file)]?.status ===
+                                          'loading' || Boolean(deletingGroups[key])
+                                      }
+                                      title='手动刷新访问令牌（用于已过期或即将过期的令牌）'
+                                      aria-label={`刷新 ${file.name} 的访问令牌`}
+                                    >
+                                      <RefreshCw size={16} />
+                                      刷新令牌
                                     </Button>
                                   )}
                                 <Button

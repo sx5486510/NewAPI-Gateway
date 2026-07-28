@@ -50,12 +50,24 @@ const hasUnauthorizedEvidence = (...values) =>
 
 export const getRefreshTokenStatus = (
   metadata,
-  { file = {}, quotaState } = {}
+  { file = {}, quotaState, refreshTokenState } = {}
 ) => {
   if (!metadata?.hasRefreshToken) return 'missing';
+
+  // 优先检查手动刷新的错误状态（最准确）
+  if (refreshTokenState?.status === 'error') {
+    const refreshError = refreshTokenState.error || '';
+    if (hasUnauthorizedEvidence(refreshError)) {
+      return 'expired';
+    }
+  }
+
+  // 其次检查 quota 获取时的错误
   const quotaError =
     quotaState?.status === 'error' ? quotaState.error : undefined;
-  return hasUnauthorizedEvidence(file.status, file.status_message, quotaError)
-    ? 'suspected_invalid'
-    : 'unverified';
+  if (hasUnauthorizedEvidence(file.status, file.status_message, quotaError)) {
+    return 'suspected_invalid';
+  }
+
+  return 'unverified';
 };

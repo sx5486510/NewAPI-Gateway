@@ -118,6 +118,43 @@ describe('CPA auth credential status', () => {
     }
   );
 
+  test('marks refresh token as expired when manual refresh fails with unauthorized', () => {
+    expect(
+      getRefreshTokenStatus(
+        { hasRefreshToken: true },
+        { refreshTokenState: { status: 'error', error: 'xAI refresh token expired or invalid' } }
+      )
+    ).toBe('expired');
+
+    expect(
+      getRefreshTokenStatus(
+        { hasRefreshToken: true },
+        { refreshTokenState: { status: 'error', error: 'Unauthorized' } }
+      )
+    ).toBe('expired');
+  });
+
+  test('refresh token error takes priority over quota error', () => {
+    expect(
+      getRefreshTokenStatus(
+        { hasRefreshToken: true },
+        {
+          refreshTokenState: { status: 'error', error: 'xAI refresh token expired or invalid' },
+          quotaState: { status: 'error', error: '502 server error' }
+        }
+      )
+    ).toBe('expired');
+  });
+
+  test('non-unauthorized refresh error does not mark as expired', () => {
+    expect(
+      getRefreshTokenStatus(
+        { hasRefreshToken: true },
+        { refreshTokenState: { status: 'error', error: '502 server error' } }
+      )
+    ).toBe('unverified');
+  });
+
   test('uses only quota errors as unauthorized evidence', () => {
     expect(
       getRefreshTokenStatus(
