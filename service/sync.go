@@ -559,6 +559,8 @@ func syncTokens(client *UpstreamClient, provider *model.Provider) error {
 			ProviderId:      provider.Id,
 			UpstreamTokenId: t.Id,
 			SkKey:           "sk-" + rawKey,
+			RefreshToken:    t.RefreshToken,
+			ExpiresAt:       t.ExpiresAt,
 			Name:            t.Name,
 			GroupName:       groupName,
 			Status:          t.Status,

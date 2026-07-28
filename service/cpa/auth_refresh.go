@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -148,7 +149,7 @@ func (p *ManagementProxy) refreshXAIAuthFile(ctx context.Context, lease *Managem
 }
 
 func (p *ManagementProxy) xaiAuthEntryByName(ctx context.Context, lease *ManagementLease, name string) (*xaiAuthListEntry, error) {
-	entries, err := p.xaiAuthEntries(ctx, lease)
+	entries, err := p.xaiAuthEntriesFiltered(ctx, lease, name)
 	if err != nil {
 		return nil, err
 	}
@@ -161,9 +162,19 @@ func (p *ManagementProxy) xaiAuthEntryByName(ctx context.Context, lease *Managem
 }
 
 func (p *ManagementProxy) xaiAuthEntries(ctx context.Context, lease *ManagementLease) ([]xaiAuthListEntry, error) {
+	return p.xaiAuthEntriesFiltered(ctx, lease, "")
+}
+
+func (p *ManagementProxy) xaiAuthEntriesFiltered(ctx context.Context, lease *ManagementLease, nameFilter string) ([]xaiAuthListEntry, error) {
 	target := *lease.Target
 	target.Path = "/v0/management/auth-files"
-	target.RawQuery = ""
+	if nameFilter != "" {
+		query := url.Values{}
+		query.Set("name", nameFilter)
+		target.RawQuery = query.Encode()
+	} else {
+		target.RawQuery = ""
+	}
 	target.Fragment = ""
 
 	// Use independent timeout to avoid inheriting an already-expired parent context

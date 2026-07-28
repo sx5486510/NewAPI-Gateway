@@ -37,51 +37,42 @@ func TestWriteFileAtomicOverwritesExisting(t *testing.T) {
 	}
 }
 
-func TestWriteFileAtomicLeavesOriginalWhenBackupRenameFails(t *testing.T) {
+func TestWriteFileAtomicReplacesExistingInSingleStep(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cred.json")
-	original := []byte("keep-me\n")
-	if err := os.WriteFile(path, original, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	old := atomicRename
-	atomicRename = func(string, string) error { return errors.New("rename failed") }
-	t.Cleanup(func() { atomicRename = old })
-
-	err := writeFileAtomic(path, []byte("new\n"), 0o600)
-	if err == nil || !strings.Contains(err.Error(), "rename failed") {
-		t.Fatalf("expected rename failure, got %v", err)
-	}
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, original) {
-		t.Fatalf("original changed: %q", got)
-	}
-}
-
-func TestWriteFileAtomicRestoresOriginalWhenReplaceFails(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "cred.json")
-	original := []byte("keep-me\n")
-	if err := os.WriteFile(path, original, 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("old\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	old := atomicRename
 	calls := 0
-	// Fail only temp→target (2nd call). Let target→bak and bak→target succeed
-	// so restore of the original content can be verified.
 	atomicRename = func(oldpath, newpath string) error {
 		calls++
-		if calls == 2 {
-			return errors.New("replace failed")
+		if filepath.Base(newpath) == "cred.json.bak" {
+			t.Fatalf("writeFileAtomic moved original to backup before replacing")
 		}
 		return old(oldpath, newpath)
 	}
+	t.Cleanup(func() { atomicRename = old })
+
+	if err := writeFileAtomic(path, []byte("new\n"), 0o600); err != nil {
+		t.Fatalf("writeFileAtomic: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("replace calls = %d, want 1", calls)
+	}
+}
+
+func TestWriteFileAtomicLeavesOriginalWhenReplaceFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cred.json")
+	original := []byte("keep-me\n")
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	old := atomicRename
+	atomicRename = func(string, string) error { return errors.New("replace failed") }
 	t.Cleanup(func() { atomicRename = old })
 
 	err := writeFileAtomic(path, []byte("new\n"), 0o600)
@@ -94,9 +85,42 @@ func TestWriteFileAtomicRestoresOriginalWhenReplaceFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(got, original) {
-		t.Fatalf("original not restored: %q", got)
+		t.Fatalf("original changed: %q", got)
 	}
-	if _, err := os.Stat(path + ".bak"); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("bak should be cleaned or restored, stat=%v", err)
+}
+
+func TestWriteFileAtomicCleansTempWhenReplaceFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cred.json")
+	original := []byte("keep-me\n")
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	old := atomicRename
+	atomicRename = func(string, string) error { return errors.New("replace failed") }
+	t.Cleanup(func() { atomicRename = old })
+
+	err := writeFileAtomic(path, []byte("new\n"), 0o600)
+	if err == nil || !strings.Contains(err.Error(), "replace failed") {
+		t.Fatalf("expected replace failure, got %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("original changed: %q", got)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".cred.json.tmp-") || entry.Name() == "cred.json.bak" {
+			t.Fatalf("leftover replacement file: %s", entry.Name())
+		}
 	}
 }

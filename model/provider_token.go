@@ -11,6 +11,8 @@ type ProviderToken struct {
 	ProviderId      int    `json:"provider_id" gorm:"index;not null"`
 	UpstreamTokenId int    `json:"upstream_token_id"`
 	SkKey           string `json:"sk_key" gorm:"type:varchar(256)"`
+	RefreshToken    string `json:"refresh_token" gorm:"type:varchar(512)"`
+	ExpiresAt       int64  `json:"expires_at" gorm:"index"`
 	Name            string `json:"name"`
 	GroupName       string `json:"group_name" gorm:"type:varchar(64);index"`
 	Status          int    `json:"status" gorm:"default:1"`
@@ -60,6 +62,8 @@ func (pt *ProviderToken) Update() error {
 		"provider_id":       pt.ProviderId,
 		"upstream_token_id": pt.UpstreamTokenId,
 		"sk_key":            pt.SkKey,
+		"refresh_token":     pt.RefreshToken,
+		"expires_at":        pt.ExpiresAt,
 		"name":              pt.Name,
 		"group_name":        pt.GroupName,
 		"status":            pt.Status,
@@ -95,6 +99,8 @@ func UpsertProviderToken(pt *ProviderToken) error {
 		pt.NormalizeClientRestrictions()
 		return DB.Model(&existing).Updates(map[string]interface{}{
 			"sk_key":            pt.SkKey,
+			"refresh_token":     pt.RefreshToken,
+			"expires_at":        pt.ExpiresAt,
 			"name":              pt.Name,
 			"group_name":        pt.GroupName,
 			"status":            pt.Status,
@@ -182,4 +188,15 @@ func (pt *ProviderToken) IsClientAllowed(clientType string) bool {
 		return true
 	}
 	return false
+}
+
+// GetExpiringSoonTokens retrieves tokens that will expire within the given duration
+func GetExpiringSoonTokens(withinSeconds int64) ([]*ProviderToken, error) {
+	if withinSeconds <= 0 {
+		withinSeconds = 3600 // default 1 hour
+	}
+	threshold := time.Now().Unix() + withinSeconds
+	var tokens []*ProviderToken
+	err := DB.Where("status = 1 AND expires_at > 0 AND expires_at <= ? AND refresh_token != ''", threshold).Find(&tokens).Error
+	return tokens, err
 }

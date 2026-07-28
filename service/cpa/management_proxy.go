@@ -158,6 +158,12 @@ func (p *ManagementProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if handled := p.handleAuthFileRefresh(wrapped, r, lease); handled {
+		p.auditf("management proxy: user=%q method=%s path=%s status=%d duration=%v",
+			username, r.Method, normalizePath(r.URL.Path), wrapped.status(), time.Since(start))
+		return
+	}
+
 	// Handle auth file quota refresh
 	if handled := p.handleAuthFileQuota(wrapped, r, lease, useExternalAuth); handled {
 		p.auditf("management proxy: user=%q method=%s path=%s status=%d duration=%v",

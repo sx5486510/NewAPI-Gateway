@@ -32,6 +32,10 @@ func SysLog(s string) {
 	_, _ = fmt.Fprintf(gin.DefaultWriter, "[SYS] %v | %s \n", t.Format("2006/01/02 - 15:04:05"), s)
 }
 
+func GetGinWriter() io.Writer {
+	return gin.DefaultWriter
+}
+
 func SysError(s string) {
 	t := time.Now()
 	_, _ = fmt.Fprintf(gin.DefaultErrorWriter, "[SYS] %v | %s \n", t.Format("2006/01/02 - 15:04:05"), s)

@@ -78,6 +78,8 @@ type UpstreamToken struct {
 	UsedQuota          int64  `json:"used_quota"`
 	ModelLimitsEnabled bool   `json:"model_limits_enabled"`
 	ModelLimits        string `json:"model_limits"`
+	RefreshToken       string `json:"refresh_token"`
+	ExpiresAt          int64  `json:"expires_at"`
 }
 
 // UpstreamUserSelf mirrors partial user/self response
@@ -468,4 +470,37 @@ func (c *UpstreamClient) Checkin() (*CheckinResponse, error) {
 		return nil, fmt.Errorf("checkin failed: %s", result.Message)
 	}
 	return &result.Data, nil
+}
+
+// RefreshTokenResponse for the token refresh endpoint
+type RefreshTokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresAt    int64  `json:"expires_at"`
+}
+
+// RefreshUpstreamToken calls upstream POST /api/token/:id/refresh to refresh an access token
+func (c *UpstreamClient) RefreshUpstreamToken(tokenId int, refreshToken string) (*RefreshTokenResponse, error) {
+	if strings.TrimSpace(refreshToken) == "" {
+		return nil, fmt.Errorf("refresh token is empty")
+	}
+	payload := map[string]interface{}{
+		"refresh_token": refreshToken,
+	}
+	body, err := c.doRequestWithBody("POST", fmt.Sprintf("/api/token/%d/refresh", tokenId), payload)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Success bool                 `json:"success"`
+		Message string               `json:"message"`
+		Data    RefreshTokenResponse `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse refresh token response: %w", err)
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf("refresh token failed: %s", resp.Message)
+	}
+	return &resp.Data, nil
 }

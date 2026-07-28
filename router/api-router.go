@@ -150,6 +150,13 @@ func SetApiRouter(router *gin.Engine) {
 
 		// === Dashboard (Admin) ===
 		apiRouter.GET("/dashboard", middleware.AdminAuth(), controller.GetDashboard)
+
+		// === Auth Token Refresh (Admin) ===
+		authRoute := apiRouter.Group("/auth")
+		authRoute.Use(middleware.AdminAuth(), middleware.NoTokenAuth())
+		{
+			authRoute.POST("/refresh", controller.RefreshAuthToken)
+		}
 	}
 
 	// === CPA Management API (Root session OR X-Management-Key) ===

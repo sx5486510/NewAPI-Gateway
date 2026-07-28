@@ -11,6 +11,7 @@ import (
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy"
 	cpaconfig "github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
+	log "github.com/sirupsen/logrus"
 )
 
 // loopbackHost is the only interface CPA is allowed to bind to when embedded.
@@ -77,6 +78,15 @@ func StartEmbedded(configPath, managementPassword string) (*EmbedResult, error) 
 	if len(cfg.APIKeys) > 0 {
 		apiKey = strings.TrimSpace(cfg.APIKeys[0])
 	}
+
+	// Configure logrus to output to Gateway's gin.DefaultWriter
+	// so CPA's log messages (including "core auth auto-refresh started")
+	// appear in Gateway's logs instead of being lost to stderr.
+	log.SetOutput(common.GetGinWriter())
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: "2006/01/02 - 15:04:05",
+	})
 
 	service, err := cliproxy.NewBuilder().
 		WithConfig(cfg).

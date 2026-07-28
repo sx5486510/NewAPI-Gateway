@@ -8,6 +8,7 @@ import (
 
 var syncTicker *time.Ticker
 var checkinTimer *time.Timer
+var refreshTicker *time.Ticker
 var stopCron chan bool
 
 const (
@@ -23,9 +24,12 @@ func StartCronJobs() {
 	syncTicker = time.NewTicker(5 * time.Minute)
 	// Checkin at fixed local calendar time every day
 	checkinTimer = time.NewTimer(durationUntilNextCheckin(time.Now()))
+	// Refresh expiring tokens every 2 minutes
+	refreshTicker = time.NewTicker(2 * time.Minute)
 
 	// Catch up one run on startup
 	go CheckinAllProviders()
+	go RefreshExpiringTokens()
 
 	go func() {
 		for {
@@ -35,8 +39,11 @@ func StartCronJobs() {
 			case <-checkinTimer.C:
 				CheckinAllProviders()
 				checkinTimer.Reset(durationUntilNextCheckin(time.Now()))
+			case <-refreshTicker.C:
+				RefreshExpiringTokens()
 			case <-stopCron:
 				syncTicker.Stop()
+				refreshTicker.Stop()
 				if !checkinTimer.Stop() {
 					select {
 					case <-checkinTimer.C:
@@ -48,7 +55,7 @@ func StartCronJobs() {
 		}
 	}()
 
-	common.SysLog("cron jobs started: sync every 5m, checkin daily at 00:05 local time")
+	common.SysLog("cron jobs started: sync every 5m, checkin daily at 00:05 local time, refresh tokens every 2m")
 }
 
 // StopCronJobs stops background tasks

@@ -412,8 +412,8 @@ func persistXAIToken(path string, original []byte, token *xaiTokenResponse, now 
 	return writeFileAtomic(path, body, 0o600)
 }
 
-// atomicRename is os.Rename by default; tests may override to inject failures.
-var atomicRename = os.Rename
+// atomicRename replaces an existing file; tests may override it to inject failures.
+var atomicRename = replaceExistingFile
 
 func writeFileAtomic(path string, body []byte, mode os.FileMode) (err error) {
 	dir := filepath.Dir(path)
@@ -441,62 +441,23 @@ func writeFileAtomic(path string, body []byte, mode os.FileMode) (err error) {
 		return err
 	}
 
-	// Windows cannot rename over an existing file. Move the original aside
-	// first, replace, and restore the backup if the replace fails.
-	backupPath := path + ".bak"
-	haveBackup := false
-	if _, statErr := os.Stat(path); statErr == nil {
-		_ = os.Remove(backupPath)
-		if err = atomicRename(path, backupPath); err != nil {
-			return fmt.Errorf("back up old file before replace: %w", err)
-		}
-		haveBackup = true
-	} else if !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(path); statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		return fmt.Errorf("stat old file before replace: %w", statErr)
 	}
-
 	if err = atomicRename(temporaryPath, path); err != nil {
-		if haveBackup {
-			if restoreErr := atomicRename(backupPath, path); restoreErr != nil {
-				return fmt.Errorf("replace file: %w (and restoring original failed: %v)", err, restoreErr)
-			}
-		}
 		return fmt.Errorf("replace file: %w", err)
-	}
-
-	if haveBackup {
-		_ = os.Remove(backupPath)
 	}
 	return nil
 }
 
 func (p *ManagementProxy) xaiAuthEntry(ctx context.Context, lease *ManagementLease, authIndex string) (*xaiAuthListEntry, error) {
-	target := *lease.Target
-	target.Path = "/v0/management/auth-files"
-	target.RawQuery = ""
-	target.Fragment = ""
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	entries, err := p.xaiAuthEntries(ctx, lease)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+lease.Password)
-	resp, err := p.transport.RoundTrip(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if !isSuccess(resp.StatusCode) {
-		return nil, fmt.Errorf("auth files list returned %d", resp.StatusCode)
-	}
-	var result struct {
-		Files []xaiAuthListEntry `json:"files"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
-		return nil, err
-	}
-	for index := range result.Files {
-		if result.Files[index].AuthIndex == authIndex {
-			return &result.Files[index], nil
+	for index := range entries {
+		if entries[index].AuthIndex == authIndex {
+			return &entries[index], nil
 		}
 	}
 	return nil, errors.New("xAI auth index was not found")
