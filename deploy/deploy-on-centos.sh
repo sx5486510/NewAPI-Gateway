@@ -327,50 +327,6 @@ if ! go mod download; then
     GOPROXY=https://goproxy.cn,direct go mod download
 fi
 
-# Apply CPA patch (adds manual token refresh API + version marker).
-# The patch modifies the CPA dependency in the Go module cache in place.
-# Failing here is fatal: a silent skip would build a gateway WITHOUT the
-# manual-refresh feature, which is exactly what we must never ship.
-CPA_PATCH="${SOURCE_DIR}/cpa-manual-refresh.patch"
-CPA_PATCH_MARKER="+gateway-manual-refresh"
-CPA_MARKER_FILE="internal/buildinfo/buildinfo.go"
-if [ -f "${CPA_PATCH}" ]; then
-    echo -e "${YELLOW}Applying CPA patch (${CPA_PATCH_MARKER})...${NC}"
-    CPA_MODULE_PATH=$(go list -m -f '{{.Dir}}' github.com/router-for-me/CLIProxyAPI/v7 2>/dev/null || true)
-    if [ -z "${CPA_MODULE_PATH}" ] || [ ! -d "${CPA_MODULE_PATH}" ]; then
-        echo -e "${RED}Error: CPA module not found; cannot apply patch.${NC}"
-        echo -e "${RED}Run 'go mod download' first, then re-run this script.${NC}"
-        exit 1
-    fi
-
-    # Go module cache is extracted read-only (mode 0444). Make it writable so
-    # the patch can be applied in place. Go does not re-hash an already-extracted
-    # module on build, so patching the cache dir is safe for subsequent builds.
-    chmod -R u+w "${CPA_MODULE_PATH}"
-    cd "${CPA_MODULE_PATH}"
-
-    if grep -q "${CPA_PATCH_MARKER}" "${CPA_MARKER_FILE}" 2>/dev/null; then
-        echo -e "${GREEN}CPA patch already applied (marker present).${NC}"
-    elif git apply --check "${CPA_PATCH}" 2>/dev/null; then
-        git apply "${CPA_PATCH}"
-        echo -e "${GREEN}CPA patch applied.${NC}"
-    else
-        echo -e "${RED}Error: CPA patch failed to apply cleanly.${NC}"
-        echo -e "${RED}The CPA version (v7.x) likely changed; regenerate ${CPA_PATCH}.${NC}"
-        cd "${SOURCE_DIR}"
-        exit 1
-    fi
-
-    # Confirm the version marker actually landed in the source.
-    if ! grep -q "${CPA_PATCH_MARKER}" "${CPA_MARKER_FILE}" 2>/dev/null; then
-        echo -e "${RED}Error: patch marker '${CPA_PATCH_MARKER}' not found after apply.${NC}"
-        cd "${SOURCE_DIR}"
-        exit 1
-    fi
-    echo -e "${GREEN}CPA patch verified: ${CPA_PATCH_MARKER}${NC}"
-    cd "${SOURCE_DIR}"
-fi
-
 echo "Building..."
 # Enable CGO for SQLite
 TMP_BINARY=$(mktemp "${INSTALL_DIR}/bin/${BINARY_NAME}.tmp.XXXXXX")
