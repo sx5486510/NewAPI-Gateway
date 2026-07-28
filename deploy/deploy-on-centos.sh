@@ -327,6 +327,24 @@ if ! go mod download; then
     GOPROXY=https://goproxy.cn,direct go mod download
 fi
 
+# Apply CPA patch if exists
+if [ -f "${SOURCE_DIR}/cpa-manual-refresh.patch" ]; then
+    echo -e "${YELLOW}Applying CPA manual refresh patch...${NC}"
+    CPA_MODULE_PATH=$(go list -m -f '{{.Dir}}' github.com/router-for-me/CLIProxyAPI/v7 2>/dev/null || true)
+    if [ -n "${CPA_MODULE_PATH}" ] && [ -d "${CPA_MODULE_PATH}" ]; then
+        cd "${CPA_MODULE_PATH}"
+        if git apply --check "${SOURCE_DIR}/cpa-manual-refresh.patch" 2>/dev/null; then
+            git apply "${SOURCE_DIR}/cpa-manual-refresh.patch"
+            echo -e "${GREEN}CPA patch applied successfully.${NC}"
+        else
+            echo -e "${YELLOW}CPA patch already applied or conflicts, skipping...${NC}"
+        fi
+        cd "${SOURCE_DIR}"
+    else
+        echo -e "${YELLOW}Warning: CPA module not found, patch skipped.${NC}"
+    fi
+fi
+
 echo "Building..."
 # Enable CGO for SQLite
 TMP_BINARY=$(mktemp "${INSTALL_DIR}/bin/${BINARY_NAME}.tmp.XXXXXX")
