@@ -1,3 +1,36 @@
+# ============================================================================
+# CPA Manual Token Refresh Patch
+# ============================================================================
+# Patch-Version:   1.0.0
+# Patch-Marker:    +gateway-manual-refresh
+# Base-CPA:        v7.2.102 (github.com/router-for-me/CLIProxyAPI/v7)
+# Generated:       2026-07-28
+#
+# Adds:
+#   - POST /v0/management/auth-files/refresh   (manual token refresh)
+#   - Manager.RefreshAuthForRequest()          (exported refresh method)
+#   - buildinfo.PatchSuffix                     (version marker)
+#
+# Verify patch is active (any one of):
+#   1. Startup banner: "CLIProxyAPI Version: <ver>+gateway-manual-refresh"
+#   2. HTTP header on /v0/management/*: X-CPA-PATCH: +gateway-manual-refresh
+#
+# git apply ignores these leading comment lines (they precede the first
+# "diff --git" hunk), so the patch stays applicable as-is.
+# ============================================================================
+diff --git a/cmd/server/main.go b/cmd/server/main.go
+index 5df6342c..47654892 100644
+--- a/cmd/server/main.go
++++ b/cmd/server/main.go
+@@ -70,7 +70,7 @@ func shouldEnableExampleAPIKeySafeMode(cfg *config.Config, commandMode, tuiMode,
+ // It parses command-line flags, loads configuration, and starts the appropriate
+ // service based on the provided flags (login, codex-login, or server mode).
+ func main() {
+-	fmt.Printf("CLIProxyAPI Version: %s, Commit: %s, BuiltAt: %s\n", buildinfo.Version, buildinfo.Commit, buildinfo.BuildDate)
++	fmt.Printf("CLIProxyAPI Version: %s%s, Commit: %s, BuiltAt: %s\n", buildinfo.Version, buildinfo.PatchSuffix, buildinfo.Commit, buildinfo.BuildDate)
+ 
+ 	// Command-line flags to control the application's behavior.
+ 	var codexLogin bool
 diff --git a/internal/api/handlers/management/auth_files.go b/internal/api/handlers/management/auth_files.go
 index 6e4c3bde..d59af097 100644
 --- a/internal/api/handlers/management/auth_files.go
@@ -126,6 +159,18 @@ index 6e4c3bde..d59af097 100644
  // PopulateAuthContext extracts request info and adds it to the context
  func PopulateAuthContext(ctx context.Context, c *gin.Context) context.Context {
  	info := &coreauth.RequestInfo{
+diff --git a/internal/api/handlers/management/handler.go b/internal/api/handlers/management/handler.go
+index 78fd505d..482328d6 100644
+--- a/internal/api/handlers/management/handler.go
++++ b/internal/api/handlers/management/handler.go
+@@ -267,6 +267,7 @@ func (h *Handler) Middleware() gin.HandlerFunc {
+ 		c.Header("X-CPA-VERSION", buildinfo.Version)
+ 		c.Header("X-CPA-COMMIT", buildinfo.Commit)
+ 		c.Header("X-CPA-BUILD-DATE", buildinfo.BuildDate)
++		c.Header("X-CPA-PATCH", buildinfo.PatchSuffix)
+ 		c.Header("X-CPA-SUPPORT-PLUGIN", pluginhost.SupportPluginHeaderValue())
+ 
+ 		clientIP := c.ClientIP()
 diff --git a/internal/api/server.go b/internal/api/server.go
 index 7853c84b..8335952e 100644
 --- a/internal/api/server.go
@@ -138,6 +183,19 @@ index 7853c84b..8335952e 100644
  		mgmt.POST("/vertex/import", s.mgmt.ImportVertexCredential)
  
  		mgmt.GET("/anthropic-auth-url", s.mgmt.RequestAnthropicToken)
+diff --git a/internal/buildinfo/buildinfo.go b/internal/buildinfo/buildinfo.go
+index 0bdfaf8b..bc93d3bc 100644
+--- a/internal/buildinfo/buildinfo.go
++++ b/internal/buildinfo/buildinfo.go
+@@ -12,4 +12,8 @@ var (
+ 
+ 	// BuildDate records when the binary was built in UTC.
+ 	BuildDate = "unknown"
++
++	// PatchSuffix indicates custom patches applied to this build.
++	// Empty for upstream builds, non-empty for patched versions.
++	PatchSuffix = "+gateway-manual-refresh"
+ )
 diff --git a/sdk/cliproxy/auth/conductor.go b/sdk/cliproxy/auth/conductor.go
 index 716a6645..0bff0b1d 100644
 --- a/sdk/cliproxy/auth/conductor.go
