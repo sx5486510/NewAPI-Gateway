@@ -25,6 +25,7 @@ func setupCPAProviderTestDB(t *testing.T) {
 
 func TestUpsertEmbeddedCPAProviderIdempotent(t *testing.T) {
 	setupCPAProviderTestDB(t)
+	t.Setenv("GATEWAY_INSTANCE_ID", "prod-37")
 
 	// First registration inserts a new key_only provider.
 	p1, err := upsertEmbeddedCPAProvider("http://127.0.0.1:18317", "key-one")
@@ -69,7 +70,7 @@ func TestUpsertEmbeddedCPAProviderIdempotent(t *testing.T) {
 
 	// Only one provider with the well-known name should exist.
 	var count int64
-	if err := model.DB.Model(&model.Provider{}).Where("name = ?", EmbeddedCPAProviderName).Count(&count).Error; err != nil {
+	if err := model.DB.Model(&model.Provider{}).Where("name = ?", currentEmbeddedCPAProviderName()).Count(&count).Error; err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if count != 1 {
@@ -77,12 +78,53 @@ func TestUpsertEmbeddedCPAProviderIdempotent(t *testing.T) {
 	}
 }
 
+func TestUpsertEmbeddedCPAProviderMigratesLegacyGlobalRecordToLocalInstance(t *testing.T) {
+	setupCPAProviderTestDB(t)
+	t.Setenv("GATEWAY_INSTANCE_ID", "prod-37")
+
+	legacy := &model.Provider{
+		Name:         EmbeddedCPAProviderName,
+		BaseURL:      "http://127.0.0.1:18317",
+		ApiKey:       "legacy-key",
+		ProviderType: model.ProviderTypeKeyOnly,
+		Status:       common.UserStatusEnabled,
+		Priority:     7,
+		Weight:       11,
+	}
+	if err := model.DB.Create(legacy).Error; err != nil {
+		t.Fatalf("create legacy provider: %v", err)
+	}
+
+	provider, err := upsertEmbeddedCPAProvider("http://127.0.0.1:29000", "new-key")
+	if err != nil {
+		t.Fatalf("upsert embedded provider: %v", err)
+	}
+	if provider.Id != legacy.Id {
+		t.Fatalf("expected legacy provider to be migrated in place, got %d want %d", provider.Id, legacy.Id)
+	}
+	if provider.Name != currentEmbeddedCPAProviderName() {
+		t.Fatalf("provider name = %q, want %q", provider.Name, currentEmbeddedCPAProviderName())
+	}
+	if provider.Priority != 7 || provider.Weight != 11 {
+		t.Fatalf("legacy operator tuning not preserved: priority=%d weight=%d", provider.Priority, provider.Weight)
+	}
+
+	var legacyCount int64
+	if err := model.DB.Model(&model.Provider{}).Where("name = ?", EmbeddedCPAProviderName).Count(&legacyCount).Error; err != nil {
+		t.Fatalf("count legacy providers: %v", err)
+	}
+	if legacyCount != 0 {
+		t.Fatalf("expected legacy global provider record to be renamed away, got %d legacy rows", legacyCount)
+	}
+}
+
 func TestCPACoordinatorPreservesDesiredProviderStatusAndDebounces(t *testing.T) {
 	setupCPAProviderTestDB(t)
+	t.Setenv("GATEWAY_INSTANCE_ID", "prod-37")
 
 	// Create a provider with disabled status (operator's desired state)
 	provider := &model.Provider{
-		Name:         EmbeddedCPAProviderName,
+		Name:         currentEmbeddedCPAProviderName(),
 		BaseURL:      "http://127.0.0.1:29005",
 		ApiKey:       "old-key",
 		ProviderType: model.ProviderTypeKeyOnly,
@@ -141,9 +183,10 @@ func TestCPACoordinatorPreservesDesiredProviderStatusAndDebounces(t *testing.T) 
 
 func TestCPACoordinatorCloseStopsTimer(t *testing.T) {
 	setupCPAProviderTestDB(t)
+	t.Setenv("GATEWAY_INSTANCE_ID", "prod-37")
 
 	provider := &model.Provider{
-		Name:         EmbeddedCPAProviderName,
+		Name:         currentEmbeddedCPAProviderName(),
 		BaseURL:      "http://127.0.0.1:29006",
 		ApiKey:       "key",
 		ProviderType: model.ProviderTypeKeyOnly,

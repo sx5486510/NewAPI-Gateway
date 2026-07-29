@@ -104,13 +104,13 @@ func StartEmbedded(configPath, managementPassword string) (*EmbedResult, error) 
 	go func() {
 		defer close(doneCh)
 		defer close(errorsCh)
-		common.SysLog(fmt.Sprintf("embedded CPA starting on %s:%d", loopbackHost, port))
+		common.SysLog(fmt.Sprintf("embedded CPA starting %s bind=%s:%d", common.EmbeddedCPALogLabel(), loopbackHost, port))
 		if runErr := service.Run(ctx); runErr != nil && !errors.Is(runErr, context.Canceled) {
 			errorsCh <- runErr
-			common.SysLog("embedded CPA exited with an error")
+			common.SysLog(fmt.Sprintf("embedded CPA exited with an error %s", common.EmbeddedCPALogLabel()))
 			return
 		}
-		common.SysLog("embedded CPA stopped")
+		common.SysLog(fmt.Sprintf("embedded CPA stopped %s", common.EmbeddedCPALogLabel()))
 	}()
 
 	return &EmbedResult{

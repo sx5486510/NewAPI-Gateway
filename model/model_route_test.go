@@ -144,6 +144,76 @@ func TestBuildRouteAttemptsSkipsRuntimeUnavailableProvider(t *testing.T) {
 	}
 }
 
+func TestBuildRouteAttemptsSkipsEmbeddedProvidersOwnedByOtherInstances(t *testing.T) {
+	setupModelRouteTestDB(t)
+	t.Setenv("GATEWAY_INSTANCE_ID", "dev-19")
+
+	localProvider := &Provider{
+		Name:         "__embedded_cpa__@dev-19",
+		BaseURL:      "http://127.0.0.1:29001",
+		ApiKey:       "local-key",
+		ProviderType: ProviderTypeKeyOnly,
+		Status:       common.UserStatusEnabled,
+	}
+	if err := DB.Create(localProvider).Error; err != nil {
+		t.Fatalf("create local provider: %v", err)
+	}
+	localToken := &ProviderToken{
+		ProviderId: localProvider.Id,
+		SkKey:      "local-token",
+		Status:     common.UserStatusEnabled,
+	}
+	if err := DB.Create(localToken).Error; err != nil {
+		t.Fatalf("create local token: %v", err)
+	}
+	if err := DB.Create(&ModelRoute{
+		ModelName:       "fixture-model",
+		ProviderTokenId: localToken.Id,
+		ProviderId:      localProvider.Id,
+		Enabled:         true,
+	}).Error; err != nil {
+		t.Fatalf("create local route: %v", err)
+	}
+
+	remoteProvider := &Provider{
+		Name:         "__embedded_cpa__@prod-37",
+		BaseURL:      "http://127.0.0.1:29002",
+		ApiKey:       "remote-key",
+		ProviderType: ProviderTypeKeyOnly,
+		Status:       common.UserStatusEnabled,
+	}
+	if err := DB.Create(remoteProvider).Error; err != nil {
+		t.Fatalf("create remote provider: %v", err)
+	}
+	remoteToken := &ProviderToken{
+		ProviderId: remoteProvider.Id,
+		SkKey:      "remote-token",
+		Status:     common.UserStatusEnabled,
+	}
+	if err := DB.Create(remoteToken).Error; err != nil {
+		t.Fatalf("create remote token: %v", err)
+	}
+	if err := DB.Create(&ModelRoute{
+		ModelName:       "fixture-model",
+		ProviderTokenId: remoteToken.Id,
+		ProviderId:      remoteProvider.Id,
+		Enabled:         true,
+	}).Error; err != nil {
+		t.Fatalf("create remote route: %v", err)
+	}
+
+	attempts, err := BuildRouteAttemptsByPriority("fixture-model", "")
+	if err != nil {
+		t.Fatalf("build route attempts: %v", err)
+	}
+	if len(attempts) != 1 || len(attempts[0]) != 1 {
+		t.Fatalf("expected only the local embedded provider route, got %#v", attempts)
+	}
+	if attempts[0][0].Provider.Id != localProvider.Id {
+		t.Fatalf("expected local provider %d, got %d", localProvider.Id, attempts[0][0].Provider.Id)
+	}
+}
+
 func TestRouteSystemPromptPatchClearAndOmission(t *testing.T) {
 	setupModelRouteTestDB(t)
 	prompt := SystemPrompt{Name: "preset", ModelName: "gpt-4", Content: "content"}

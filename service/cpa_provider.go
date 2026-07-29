@@ -10,11 +10,9 @@ import (
 	"time"
 )
 
-// EmbeddedCPAProviderName is the fixed, well-known name of the auto-registered
-// provider that fronts the embedded CPA instance. Registration is idempotent on
-// this name: an existing provider is updated in place, preserving any manual
-// tuning (priority/weight/status) an operator applied.
-const EmbeddedCPAProviderName = "__embedded_cpa__"
+// EmbeddedCPAProviderName is the legacy global name used before embedded CPA
+// providers became instance-scoped for shared-database deployments.
+const EmbeddedCPAProviderName = common.EmbeddedCPAProviderBaseName
 
 // CPAProviderRegistrationCallback returns an onReady callback (baseURL, apiKey)
 // suitable for cpa.StartFromDB / cpa.Reload. This is a legacy compatibility
@@ -57,7 +55,7 @@ func RegisterEmbeddedCPAProvider(baseURL string, apiKey string) error {
 	if err := SyncProvider(provider); err != nil {
 		return fmt.Errorf("cpa: sync embedded provider failed: %w", err)
 	}
-	common.SysLog(fmt.Sprintf("embedded CPA provider %q registered and synced (id=%d)", EmbeddedCPAProviderName, provider.Id))
+	common.SysLog(fmt.Sprintf("embedded CPA provider ready %s id=%d base_url=%s", common.EmbeddedCPALogLabel(), provider.Id, provider.BaseURL))
 	return nil
 }
 
@@ -103,7 +101,7 @@ func (c *CPAProviderCoordinator) OnCPAReady(baseURL, apiKey string) {
 	if err := c.syncProvider(provider); err != nil {
 		common.SysLog(fmt.Sprintf("embedded CPA provider sync failed: %v", err))
 	} else {
-		common.SysLog(fmt.Sprintf("embedded CPA provider %q ready and synced (id=%d)", EmbeddedCPAProviderName, provider.Id))
+		common.SysLog(fmt.Sprintf("embedded CPA provider ready %s id=%d base_url=%s", common.EmbeddedCPALogLabel(), provider.Id, provider.BaseURL))
 	}
 }
 
@@ -122,8 +120,8 @@ func (c *CPAProviderCoordinator) OnCPAUnavailable() {
 	if c.providerID != 0 {
 		common.SetProviderRuntimeAvailable(c.providerID, false)
 	} else {
-		// Look up by name if we don't have the ID
-		if provider, err := model.GetProviderByName(EmbeddedCPAProviderName); err == nil && provider != nil {
+		// Look up the local embedded provider by its instance-scoped name if we don't have the ID.
+		if provider, err := model.GetProviderByName(currentEmbeddedCPAProviderName()); err == nil && provider != nil {
 			common.SetProviderRuntimeAvailable(provider.Id, false)
 		}
 	}
@@ -144,7 +142,7 @@ func (c *CPAProviderCoordinator) ScheduleCPASync() {
 	}
 
 	c.timer = time.AfterFunc(c.debounce, func() {
-		provider, err := model.GetProviderByName(EmbeddedCPAProviderName)
+		provider, err := model.GetProviderByName(currentEmbeddedCPAProviderName())
 		if err != nil || provider == nil {
 			return
 		}
@@ -166,17 +164,33 @@ func (c *CPAProviderCoordinator) Close() {
 	}
 }
 
+func currentEmbeddedCPAProviderName() string {
+	return common.LocalEmbeddedCPAProviderName()
+}
+
 // upsertEmbeddedCPAProvider creates or updates the well-known embedded CPA
 // provider and returns the persisted record. It preserves operator-tuned
 // fields like Status, Priority, and Weight.
 func upsertEmbeddedCPAProvider(baseURL string, apiKey string) (*model.Provider, error) {
-	existing, err := model.GetProviderByName(EmbeddedCPAProviderName)
+	currentName := currentEmbeddedCPAProviderName()
+	existing, err := model.GetProviderByName(currentName)
 	if err != nil {
 		return nil, fmt.Errorf("cpa: lookup existing provider failed: %w", err)
+	}
+	if existing == nil {
+		legacy, legacyErr := model.GetProviderByName(EmbeddedCPAProviderName)
+		if legacyErr != nil {
+			return nil, fmt.Errorf("cpa: lookup legacy embedded provider failed: %w", legacyErr)
+		}
+		if legacy != nil {
+			existing = legacy
+			existing.Name = currentName
+		}
 	}
 
 	if existing != nil {
 		// Update only the connection details; keep operator-tuned fields intact.
+		existing.Name = currentName
 		existing.BaseURL = baseURL
 		existing.ApiKey = apiKey
 		existing.ProviderType = model.ProviderTypeKeyOnly
@@ -188,7 +202,7 @@ func upsertEmbeddedCPAProvider(baseURL string, apiKey string) (*model.Provider, 
 	}
 
 	provider := &model.Provider{
-		Name:           EmbeddedCPAProviderName,
+		Name:           currentName,
 		BaseURL:        baseURL,
 		ApiKey:         apiKey,
 		ProviderType:   model.ProviderTypeKeyOnly,
@@ -196,12 +210,12 @@ func upsertEmbeddedCPAProvider(baseURL string, apiKey string) (*model.Provider, 
 		Priority:       0,
 		Weight:         10,
 		CheckinEnabled: false,
-		Remark:         "Auto-registered embedded CLIProxyAPI (CPA) instance on loopback.",
+		Remark:         fmt.Sprintf("Auto-registered embedded CLIProxyAPI (CPA) instance on loopback for gateway instance %s.", common.LocalGatewayInstanceID()),
 	}
 	if err := provider.Insert(); err != nil {
 		return nil, fmt.Errorf("cpa: insert embedded provider failed: %w", err)
 	}
-	return model.GetProviderByName(EmbeddedCPAProviderName)
+	return model.GetProviderByName(currentName)
 }
 
 // waitForCPAReady polls the CPA root endpoint until it responds or the timeout

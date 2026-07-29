@@ -452,6 +452,9 @@ func BuildRouteAttemptsByPriority(modelName string, clientType string) ([][]Rout
 		if provider.Status != common.UserStatusEnabled || token.Status != common.UserStatusEnabled {
 			continue
 		}
+		if common.IsEmbeddedCPAProviderName(provider.Name) && !common.IsLocalEmbeddedCPAProviderName(provider.Name) {
+			continue
+		}
 		if !common.IsProviderRuntimeAvailable(route.ProviderId) {
 			continue
 		}
