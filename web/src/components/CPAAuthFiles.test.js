@@ -1458,7 +1458,10 @@ describe('CPAAuthFiles', () => {
   });
 
   test('deletes only the selected group and refreshes the list once', async () => {
-    const files = [...buildAuthFiles('claude', 2), ...buildAuthFiles('codex', 1)];
+    const files = [
+      ...buildAuthFiles('claude', 2),
+      ...buildAuthFiles('codex', 1),
+    ];
     mockCPAAuthGet({ listData: { files } });
     helpers.API.delete.mockResolvedValue({ data: { success: true } });
     window.confirm = jest.fn(() => true);

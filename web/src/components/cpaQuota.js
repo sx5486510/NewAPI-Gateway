@@ -751,9 +751,7 @@ const buildGrokSummary = (config) => {
       ? (onDemandUsedCents / onDemandCapCents) * 100
       : null;
   const hasWeekly =
-    periodType === 'weekly' ||
-    usagePercent !== null ||
-    productUsage.length > 0;
+    periodType === 'weekly' || usagePercent !== null || productUsage.length > 0;
   const hasMonthly =
     monthlyLimitCents !== null ||
     usedCents !== null ||
@@ -802,8 +800,7 @@ const mergeGrokSummaries = (primary, fallback) => {
     // credits-format payload cannot mask monthlyLimit/used/onDemand values.
     monthlyLimitCents: fallback.monthlyLimitCents ?? primary.monthlyLimitCents,
     usedCents: fallback.usedCents ?? primary.usedCents,
-    includedUsedCents:
-      fallback.includedUsedCents ?? primary.includedUsedCents,
+    includedUsedCents: fallback.includedUsedCents ?? primary.includedUsedCents,
     onDemandCapCents: fallback.onDemandCapCents ?? primary.onDemandCapCents,
     onDemandUsedCents: fallback.onDemandUsedCents ?? primary.onDemandUsedCents,
     onDemandUsedPercent:
@@ -847,7 +844,8 @@ const extractGrokUserId = (file) => {
 
 export const resolveGrokUserId = async (file, downloadText) => {
   const direct = extractGrokUserId(file);
-  if (direct || typeof downloadText !== 'function' || !file?.name) return direct;
+  if (direct || typeof downloadText !== 'function' || !file?.name)
+    return direct;
 
   let text;
   try {
@@ -982,9 +980,9 @@ const fetchGrokQuota = async ({ file, authIndex, post, downloadText }) => {
             ? usedCents > 0
               ? `已用 ${formatUsd(usedCents)}`
               : '无配额'
-            : `${formatUsd(
-                Math.max(0, limitCents - usedCents)
-              )} / ${formatUsd(limitCents)}`,
+            : `${formatUsd(Math.max(0, limitCents - usedCents))} / ${formatUsd(
+                limitCents
+              )}`,
       })
     );
   }

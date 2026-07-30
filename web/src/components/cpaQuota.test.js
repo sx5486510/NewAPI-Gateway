@@ -497,7 +497,10 @@ describe('CPA quota shared contract', () => {
     };
     const post = jest.fn(() => ok(zeroConfig));
 
-    const result = await fetchCPAQuota({ type: 'xai', auth_index: 6 }, { post });
+    const result = await fetchCPAQuota(
+      { type: 'xai', auth_index: 6 },
+      { post }
+    );
     expect(result.plan).toBe('Free');
     expect(result.groups).toEqual([]);
     expect(result.meta).toEqual([]);

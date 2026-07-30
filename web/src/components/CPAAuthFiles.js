@@ -76,7 +76,12 @@ const groupFilesByType = (files) => {
   return groups;
 };
 
-const DEFAULT_FILTERS = { search: '', status: 'all', type: 'all', hideZeroQuota: false };
+const DEFAULT_FILTERS = {
+  search: '',
+  status: 'all',
+  type: 'all',
+  hideZeroQuota: false,
+};
 
 const matchesSearch = (file, search) => {
   const query = search.trim().toLowerCase();
@@ -438,7 +443,9 @@ const CPAAuthFiles = () => {
         showSuccess(`已删除 ${successCount} 个认证文件`);
       } else {
         showError(
-          `批量删除完成：成功 ${successCount}，失败 ${failedNames.length}：${failedNames.join(', ')}`
+          `批量删除完成：成功 ${successCount}，失败 ${
+            failedNames.length
+          }：${failedNames.join(', ')}`
         );
       }
     } finally {
@@ -507,7 +514,9 @@ const CPAAuthFiles = () => {
         showSuccess(`已一键删除 ${successCount} 个失效认证`);
       } else {
         showError(
-          `一键删除完成：成功 ${successCount}，失败 ${failedNames.length}：${failedNames.join(', ')}`
+          `一键删除完成：成功 ${successCount}，失败 ${
+            failedNames.length
+          }：${failedNames.join(', ')}`
         );
       }
     } finally {
@@ -560,7 +569,9 @@ const CPAAuthFiles = () => {
         showSuccess(`已清理 ${successCount} 个磁盘缺失认证`);
       } else {
         showError(
-          `磁盘缺失清理完成：成功 ${successCount}，失败 ${failedNames.length}：${failedNames.join(', ')}`
+          `磁盘缺失清理完成：成功 ${successCount}，失败 ${
+            failedNames.length
+          }：${failedNames.join(', ')}`
         );
       }
     } finally {
@@ -585,7 +596,9 @@ const CPAAuthFiles = () => {
         });
         if (deduped.length !== raw.length) {
           console.warn(
-            `[CPA] auth-files list had ${raw.length - deduped.length} duplicate name(s); deduped before render`
+            `[CPA] auth-files list had ${
+              raw.length - deduped.length
+            } duplicate name(s); deduped before render`
           );
         }
         setAuthFiles(deduped);
@@ -882,7 +895,9 @@ const CPAAuthFiles = () => {
 
     if (internalDuplicates.length > 0) {
       showError(
-        `本次选择的文件中有重名，已自动去重: ${[...new Set(internalDuplicates)].join(', ')}`
+        `本次选择的文件中有重名，已自动去重: ${[
+          ...new Set(internalDuplicates),
+        ].join(', ')}`
       );
     }
 
@@ -995,8 +1010,7 @@ const CPAAuthFiles = () => {
           .slice(0, 3)
           .map((item) => `${item.name}: ${item.error}`)
           .join('；');
-        const more =
-          failed.length > 3 ? ` 等 ${failed.length} 个文件` : '';
+        const more = failed.length > 3 ? ` 等 ${failed.length} 个文件` : '';
         showError(`上传失败: ${preview}${more}`);
       }
 
@@ -1119,7 +1133,9 @@ const CPAAuthFiles = () => {
           },
         }));
         showError(
-          `令牌刷新失败: ${file.name}\n${error.response?.data?.message || error.message}`
+          `令牌刷新失败: ${file.name}\n${
+            error.response?.data?.message || error.message
+          }`
         );
       } finally {
         refreshTokenInFlightRef.current.delete(key);
@@ -1206,22 +1222,36 @@ const CPAAuthFiles = () => {
 
     if (!detail || detail.status === 'loading') {
       return (
-        <div id={credentialId} data-credential-status={file.name} style={containerStyle}>
+        <div
+          id={credentialId}
+          data-credential-status={file.name}
+          style={containerStyle}
+        >
           <span id={`${credentialId}-last-refresh`} style={itemStyle}>
             最近刷新: {formatCredentialTime(lastRefreshTime)}
           </span>
-          <span id={`${credentialId}-access-token`} style={itemStyle}>Access Token: 读取中</span>
-          <span id={`${credentialId}-refresh-token`} style={itemStyle}>Refresh Token: 读取中</span>
+          <span id={`${credentialId}-access-token`} style={itemStyle}>
+            Access Token: 读取中
+          </span>
+          <span id={`${credentialId}-refresh-token`} style={itemStyle}>
+            Refresh Token: 读取中
+          </span>
         </div>
       );
     }
     if (detail.status === 'error') {
       return (
-        <div id={credentialId} data-credential-status={file.name} style={containerStyle}>
+        <div
+          id={credentialId}
+          data-credential-status={file.name}
+          style={containerStyle}
+        >
           <span id={`${credentialId}-last-refresh`} style={itemStyle}>
             最近刷新: {formatCredentialTime(lastRefreshTime)}
           </span>
-          <span id={`${credentialId}-error`} style={itemStyle}>{detail.error}</span>
+          <span id={`${credentialId}-error`} style={itemStyle}>
+            {detail.error}
+          </span>
         </div>
       );
     }
@@ -1245,18 +1275,30 @@ const CPAAuthFiles = () => {
     }[refreshStatus];
 
     return (
-      <div id={credentialId} data-credential-status={file.name} style={containerStyle}>
+      <div
+        id={credentialId}
+        data-credential-status={file.name}
+        style={containerStyle}
+      >
         <span id={`${credentialId}-last-refresh`} style={itemStyle}>
           最近刷新: {formatCredentialTime(lastRefreshTime)}
         </span>
-        <span id={`${credentialId}-access-token`} style={itemStyle}>Access Token: {accessText}</span>
-        <span id={`${credentialId}-refresh-token`} style={{
-          ...itemStyle,
-          color: refreshStatus === 'expired' ? '#ef4444' :
-                 refreshStatus === 'suspected_invalid' ? '#f59e0b' :
-                 'var(--text-secondary)',
-          fontWeight: refreshStatus === 'expired' ? '500' : 'normal'
-        }}>
+        <span id={`${credentialId}-access-token`} style={itemStyle}>
+          Access Token: {accessText}
+        </span>
+        <span
+          id={`${credentialId}-refresh-token`}
+          style={{
+            ...itemStyle,
+            color:
+              refreshStatus === 'expired'
+                ? '#ef4444'
+                : refreshStatus === 'suspected_invalid'
+                ? '#f59e0b'
+                : 'var(--text-secondary)',
+            fontWeight: refreshStatus === 'expired' ? '500' : 'normal',
+          }}
+        >
           Refresh Token: {refreshText}
         </span>
       </div>
@@ -1273,7 +1315,8 @@ const CPAAuthFiles = () => {
     const blocks = buildHealthBlocks(file.recent_requests);
     const hasData = total > 0;
     const overallRate = hasData ? (success / total) * 100 : null;
-    const rateText = overallRate === null ? '--' : `${Math.round(overallRate)}%`;
+    const rateText =
+      overallRate === null ? '--' : `${Math.round(overallRate)}%`;
     const badgeStyle = hasData
       ? healthRateBadgeStyle(overallRate)
       : { color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' };
@@ -1309,9 +1352,9 @@ const CPAAuthFiles = () => {
                   title={
                     idle
                       ? `${block.time}: 无请求`
-                      : `${block.time}: 成功 ${block.success}, 失败 ${block.failed} (${Math.round(
-                          block.rate * 100
-                        )}%)`
+                      : `${block.time}: 成功 ${block.success}, 失败 ${
+                          block.failed
+                        } (${Math.round(block.rate * 100)}%)`
                   }
                   style={{
                     flex: '1 1 0',
@@ -1358,7 +1401,10 @@ const CPAAuthFiles = () => {
     if (!state) return null;
     if (state.status === 'loading') {
       return (
-        <div id={testId} style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+        <div
+          id={testId}
+          style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}
+        >
           正在测试...
         </div>
       );
@@ -1412,14 +1458,20 @@ const CPAAuthFiles = () => {
     const quotaId = toElementId('cpa-auth-file-quota', file.name);
     if (!state || state.status === 'idle') {
       return (
-        <div id={quotaId} style={{ fontSize: '0.875rem', color: 'var(--text-tertiary)' }}>
+        <div
+          id={quotaId}
+          style={{ fontSize: '0.875rem', color: 'var(--text-tertiary)' }}
+        >
           点击刷新额度
         </div>
       );
     }
     if (state.status === 'loading') {
       return (
-        <div id={quotaId} style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+        <div
+          id={quotaId}
+          style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}
+        >
           正在加载额度...
         </div>
       );
@@ -1474,9 +1526,15 @@ const CPAAuthFiles = () => {
         : date.toLocaleString('zh-CN');
     };
     return (
-      <div id={quotaId} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div
+        id={quotaId}
+        style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
+      >
         {quota.plan && (
-          <div id={`${quotaId}-plan`} style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+          <div
+            id={`${quotaId}-plan`}
+            style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}
+          >
             套餐: {quota.plan}
           </div>
         )}
@@ -1495,7 +1553,10 @@ const CPAAuthFiles = () => {
             key={group.id}
             style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
           >
-            <div id={`${quotaId}-group-${group.id}-label`} style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+            <div
+              id={`${quotaId}-group-${group.id}-label`}
+              style={{ fontSize: '0.875rem', fontWeight: 600 }}
+            >
               {group.label}
             </div>
             {group.items?.map((item) => (
@@ -1514,19 +1575,38 @@ const CPAAuthFiles = () => {
                     marginBottom: '0.2rem',
                   }}
                 >
-                  <span id={`${quotaId}-item-${item.id}-label`}>{item.label}</span>
-                  <span id={`${quotaId}-item-${item.id}-percent`} style={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                  <span id={`${quotaId}-item-${item.id}-label`}>
+                    {item.label}
+                  </span>
+                  <span
+                    id={`${quotaId}-item-${item.id}-percent`}
+                    style={{
+                      flexShrink: 0,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
                     {item.remainingPercent === null
                       ? '--'
                       : `${Math.round(item.remainingPercent)}%`}
                   </span>
                 </div>
-                <ProgressBar id={`${quotaId}-item-${item.id}-progress`} percent={item.remainingPercent} />
+                <ProgressBar
+                  id={`${quotaId}-item-${item.id}-progress`}
+                  percent={item.remainingPercent}
+                />
                 {item.detail && (
-                  <div id={`${quotaId}-item-${item.id}-detail`} style={{ marginTop: '0.15rem' }}>{item.detail}</div>
+                  <div
+                    id={`${quotaId}-item-${item.id}-detail`}
+                    style={{ marginTop: '0.15rem' }}
+                  >
+                    {item.detail}
+                  </div>
                 )}
                 {item.resetAt && (
-                  <div id={`${quotaId}-item-${item.id}-reset`} style={{ marginTop: '0.1rem' }}>
+                  <div
+                    id={`${quotaId}-item-${item.id}-reset`}
+                    style={{ marginTop: '0.1rem' }}
+                  >
                     重置: {formatReset(item.resetAt)}
                   </div>
                 )}
@@ -1558,7 +1638,12 @@ const CPAAuthFiles = () => {
           textAlign: 'center',
         }}
       >
-        <p id='cpa-auth-files-loading-text' style={{ color: 'var(--text-secondary)' }}>加载中...</p>
+        <p
+          id='cpa-auth-files-loading-text'
+          style={{ color: 'var(--text-secondary)' }}
+        >
+          加载中...
+        </p>
       </div>
     );
   }
@@ -1596,11 +1681,17 @@ const CPAAuthFiles = () => {
             >
               认证文件
             </h3>
-            <p id='cpa-auth-files-description' style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+            <p
+              id='cpa-auth-files-description'
+              style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}
+            >
               管理 CLI 认证凭证文件(Claude/Codex/Grok 等)
             </p>
           </div>
-          <div id='cpa-auth-files-header-actions' style={{ display: 'flex', gap: '0.5rem' }}>
+          <div
+            id='cpa-auth-files-header-actions'
+            style={{ display: 'flex', gap: '0.5rem' }}
+          >
             <Button
               id='cpa-auth-files-refresh-btn'
               variant='outline'
@@ -1706,9 +1797,15 @@ const CPAAuthFiles = () => {
                   borderRadius: '0.375rem',
                 }}
               >
-                <option id='cpa-auth-files-filter-type-all' value='all'>全部类型</option>
+                <option id='cpa-auth-files-filter-type-all' value='all'>
+                  全部类型
+                </option>
                 {Object.entries(typeLabels).map(([key, { name }]) => (
-                  <option id={`cpa-auth-files-filter-type-${key}`} key={key} value={key}>
+                  <option
+                    id={`cpa-auth-files-filter-type-${key}`}
+                    key={key}
+                    value={key}
+                  >
                     {name}
                   </option>
                 ))}
@@ -1726,10 +1823,25 @@ const CPAAuthFiles = () => {
                   borderRadius: '0.375rem',
                 }}
               >
-                <option id='cpa-auth-files-filter-status-all' value='all'>全部状态</option>
-                <option id='cpa-auth-files-filter-status-enabled' value='enabled'>已启用</option>
-                <option id='cpa-auth-files-filter-status-disabled' value='disabled'>已禁用</option>
-                <option id='cpa-auth-files-filter-status-quota-401' value='quota_401'>
+                <option id='cpa-auth-files-filter-status-all' value='all'>
+                  全部状态
+                </option>
+                <option
+                  id='cpa-auth-files-filter-status-enabled'
+                  value='enabled'
+                >
+                  已启用
+                </option>
+                <option
+                  id='cpa-auth-files-filter-status-disabled'
+                  value='disabled'
+                >
+                  已禁用
+                </option>
+                <option
+                  id='cpa-auth-files-filter-status-quota-401'
+                  value='quota_401'
+                >
                   401 / xAI 凭证失败
                 </option>
               </select>
@@ -1760,9 +1872,7 @@ const CPAAuthFiles = () => {
                 variant='danger'
                 size='sm'
                 onClick={handleDeleteInvalidAuths}
-                disabled={
-                  invalidAuthFiles.length === 0 || deletingInvalidAuths
-                }
+                disabled={invalidAuthFiles.length === 0 || deletingInvalidAuths}
                 loading={deletingInvalidAuths}
                 title='一键删除额度 401 与 Failed to prepare xAI credentials 的认证'
                 data-delete-invalid-count={invalidAuthFiles.length}
@@ -1814,7 +1924,12 @@ const CPAAuthFiles = () => {
                 filters.type !== 'all' ||
                 filters.status !== 'all' ||
                 filters.hideZeroQuota) && (
-                <Button id='cpa-auth-files-filter-clear-btn' variant='ghost' size='sm' onClick={handleClearFilters}>
+                <Button
+                  id='cpa-auth-files-filter-clear-btn'
+                  variant='ghost'
+                  size='sm'
+                  onClick={handleClearFilters}
+                >
                   清除筛选
                 </Button>
               )}
@@ -1945,7 +2060,9 @@ const CPAAuthFiles = () => {
                   color: 'var(--text-secondary)',
                 }}
               >
-                <p id='cpa-auth-files-filter-empty-text'>没有符合筛选条件的认证文件</p>
+                <p id='cpa-auth-files-filter-empty-text'>
+                  没有符合筛选条件的认证文件
+                </p>
               </div>
             ) : (
               <div
@@ -2065,7 +2182,10 @@ const CPAAuthFiles = () => {
                           )}
                           删除已选 ({selectedNames.length})
                         </Button>
-                        <span id={`${groupId}-header-spacer`} style={{ flex: 1 }} />
+                        <span
+                          id={`${groupId}-header-spacer`}
+                          style={{ flex: 1 }}
+                        />
                         <Button
                           id={`${groupId}-refresh-quotas-btn`}
                           variant='ghost'
@@ -2117,7 +2237,9 @@ const CPAAuthFiles = () => {
                               color: 'var(--text-secondary)',
                             }}
                           >
-                            <span id={`${groupId}-quota-progress-label`}>正在获取 {name} 组额度...</span>
+                            <span id={`${groupId}-quota-progress-label`}>
+                              正在获取 {name} 组额度...
+                            </span>
                             <span id={`${groupId}-quota-progress-count`}>
                               {groupQuotaProgress[key].completed} /{' '}
                               {groupQuotaProgress[key].total}
@@ -2172,7 +2294,9 @@ const CPAAuthFiles = () => {
                               color: '#991B1B',
                             }}
                           >
-                            <span id={`${groupId}-delete-progress-label`}>正在删除 {name} 组认证文件...</span>
+                            <span id={`${groupId}-delete-progress-label`}>
+                              正在删除 {name} 组认证文件...
+                            </span>
                             <span id={`${groupId}-delete-progress-count`}>
                               {bulkDeleteProgress[key].completed} /{' '}
                               {bulkDeleteProgress[key].total}
@@ -2215,281 +2339,293 @@ const CPAAuthFiles = () => {
                         }}
                       >
                         {visibleFiles.map((file) => {
-                          const fileId = toElementId('cpa-auth-file', file.name);
+                          const fileId = toElementId(
+                            'cpa-auth-file',
+                            file.name
+                          );
                           const isGhost = isGhostAuthFile(file);
                           const rowBg = isGhost ? '#FFF7ED' : 'transparent';
                           return (
-                          <div
-                            id={fileId}
-                            key={file.name}
-                            data-auth-file={file.name}
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              padding: '1rem',
-                              border: '1px solid var(--border-color)',
-                              borderRadius: '0.5rem',
-                              transition: 'all 0.2s',
-                              cursor: 'default',
-                              backgroundColor: rowBg,
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = color;
-                              e.currentTarget.style.backgroundColor = `${color}08`;
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor =
-                                'var(--border-color)';
-                              e.currentTarget.style.backgroundColor = rowBg;
-                            }}
-                          >
-                            {/* 选择复选框 */}
-                            <input
-                              id={`${fileId}-select`}
-                              type='checkbox'
-                              aria-label={`选择认证文件 ${file.name}`}
-                              checked={selectedNameSet.has(file.name)}
-                              disabled={Boolean(deletingGroups[key])}
-                              onChange={(event) =>
-                                handleToggleFileSelection(
-                                  key,
-                                  file.name,
-                                  event.target.checked
-                                )
-                              }
-                              style={{
-                                flex: '0 0 auto',
-                                marginRight: '0.75rem',
-                              }}
-                            />
-                            {/* 左侧：文件信息 */}
                             <div
-                              id={`${fileId}-info`}
+                              id={fileId}
+                              key={file.name}
+                              data-auth-file={file.name}
                               style={{
-                                flex: 1,
                                 display: 'flex',
-                                flexDirection: 'column',
-                                gap: '0.5rem',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '1rem',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '0.5rem',
+                                transition: 'all 0.2s',
+                                cursor: 'default',
+                                backgroundColor: rowBg,
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = color;
+                                e.currentTarget.style.backgroundColor = `${color}08`;
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor =
+                                  'var(--border-color)';
+                                e.currentTarget.style.backgroundColor = rowBg;
                               }}
                             >
+                              {/* 选择复选框 */}
+                              <input
+                                id={`${fileId}-select`}
+                                type='checkbox'
+                                aria-label={`选择认证文件 ${file.name}`}
+                                checked={selectedNameSet.has(file.name)}
+                                disabled={Boolean(deletingGroups[key])}
+                                onChange={(event) =>
+                                  handleToggleFileSelection(
+                                    key,
+                                    file.name,
+                                    event.target.checked
+                                  )
+                                }
+                                style={{
+                                  flex: '0 0 auto',
+                                  marginRight: '0.75rem',
+                                }}
+                              />
+                              {/* 左侧：文件信息 */}
                               <div
-                                id={`${fileId}-meta`}
+                                id={`${fileId}-info`}
+                                style={{
+                                  flex: 1,
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '0.5rem',
+                                }}
+                              >
+                                <div
+                                  id={`${fileId}-meta`}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.75rem',
+                                    flexWrap: 'wrap',
+                                  }}
+                                >
+                                  <span
+                                    id={`${fileId}-name`}
+                                    style={{
+                                      fontWeight: 600,
+                                      fontSize: '0.95rem',
+                                    }}
+                                  >
+                                    {file.name}
+                                  </span>
+                                  {file.email && (
+                                    <span
+                                      id={`${fileId}-email`}
+                                      style={{
+                                        fontSize: '0.875rem',
+                                        color: 'var(--text-secondary)',
+                                      }}
+                                    >
+                                      {file.email}
+                                    </span>
+                                  )}
+                                  {file.note && (
+                                    <span
+                                      id={`${fileId}-note`}
+                                      style={{
+                                        fontSize: '0.875rem',
+                                        color: 'var(--text-secondary)',
+                                        fontStyle: 'italic',
+                                      }}
+                                    >
+                                      {file.note}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* 认证状态 */}
+                                {renderCredentialInfo(file)}
+
+                                {/* 健康度 */}
+                                {renderHealthInfo(file)}
+
+                                {/* 配额信息 */}
+                                {renderQuotaInfo(file)}
+
+                                {/* 测试结果 */}
+                                {renderTestInfo(file)}
+                              </div>
+
+                              {/* 右侧：状态和操作按钮 */}
+                              <div
+                                id={`${fileId}-actions`}
                                 style={{
                                   display: 'flex',
                                   alignItems: 'center',
                                   gap: '0.75rem',
-                                  flexWrap: 'wrap',
+                                  marginLeft: '1rem',
                                 }}
                               >
+                                {/* 状态徽章 */}
                                 <span
-                                  id={`${fileId}-name`}
-                                  style={{
-                                    fontWeight: 600,
-                                    fontSize: '0.95rem',
-                                  }}
-                                >
-                                  {file.name}
-                                </span>
-                                {file.email && (
-                                  <span
-                                    id={`${fileId}-email`}
-                                    style={{
-                                      fontSize: '0.875rem',
-                                      color: 'var(--text-secondary)',
-                                    }}
-                                  >
-                                    {file.email}
-                                  </span>
-                                )}
-                                {file.note && (
-                                  <span
-                                    id={`${fileId}-note`}
-                                    style={{
-                                      fontSize: '0.875rem',
-                                      color: 'var(--text-secondary)',
-                                      fontStyle: 'italic',
-                                    }}
-                                  >
-                                    {file.note}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* 认证状态 */}
-                              {renderCredentialInfo(file)}
-
-                              {/* 健康度 */}
-                              {renderHealthInfo(file)}
-
-                              {/* 配额信息 */}
-                              {renderQuotaInfo(file)}
-
-                              {/* 测试结果 */}
-                              {renderTestInfo(file)}
-                            </div>
-
-                            {/* 右侧：状态和操作按钮 */}
-                            <div
-                              id={`${fileId}-actions`}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.75rem',
-                                marginLeft: '1rem',
-                              }}
-                            >
-                              {/* 状态徽章 */}
-                              <span
-                                id={`${fileId}-status-badge`}
-                                style={{
-                                  padding: '0.25rem 0.75rem',
-                                  borderRadius: '999px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 500,
-                                  backgroundColor: file.disabled
-                                    ? '#FEE2E2'
-                                    : '#DCFCE7',
-                                  color: file.disabled ? '#991B1B' : '#166534',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {file.disabled ? '已禁用' : '已启用'}
-                              </span>
-                              {isGhost && (
-                                <span
-                                  id={`${fileId}-ghost-badge`}
+                                  id={`${fileId}-status-badge`}
                                   style={{
                                     padding: '0.25rem 0.75rem',
                                     borderRadius: '999px',
                                     fontSize: '0.75rem',
                                     fontWeight: 500,
-                                    backgroundColor: '#FFEDD5',
-                                    color: '#9A3412',
+                                    backgroundColor: file.disabled
+                                      ? '#FEE2E2'
+                                      : '#DCFCE7',
+                                    color: file.disabled
+                                      ? '#991B1B'
+                                      : '#166534',
                                     whiteSpace: 'nowrap',
                                   }}
-                                  title='内存残留，磁盘文件已不存在'
                                 >
-                                  磁盘缺失
+                                  {file.disabled ? '已禁用' : '已启用'}
                                 </span>
-                              )}
+                                {isGhost && (
+                                  <span
+                                    id={`${fileId}-ghost-badge`}
+                                    style={{
+                                      padding: '0.25rem 0.75rem',
+                                      borderRadius: '999px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 500,
+                                      backgroundColor: '#FFEDD5',
+                                      color: '#9A3412',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                    title='内存残留，磁盘文件已不存在'
+                                  >
+                                    磁盘缺失
+                                  </span>
+                                )}
 
-                              {/* 操作按钮 */}
-                              <div id={`${fileId}-action-buttons`} style={{ display: 'flex', gap: '0.5rem' }}>
-                                {getAuthIndex(file) && (
+                                {/* 操作按钮 */}
+                                <div
+                                  id={`${fileId}-action-buttons`}
+                                  style={{ display: 'flex', gap: '0.5rem' }}
+                                >
+                                  {getAuthIndex(file) && (
+                                    <Button
+                                      id={`${fileId}-reset-cooldown-btn`}
+                                      variant='ghost'
+                                      size='sm'
+                                      onClick={() => handleResetCooldown(file)}
+                                      disabled={
+                                        Boolean(
+                                          cooldownResetting[quotaKey(file)]
+                                        ) || Boolean(deletingGroups[key])
+                                      }
+                                      title='重置 CPA 路由冷却状态'
+                                      aria-label={`重置 ${file.name} 的冷却状态`}
+                                    >
+                                      <RefreshCw size={16} />
+                                      重置冷却
+                                    </Button>
+                                  )}
+                                  {getQuotaProvider(file) &&
+                                    !isAuthFileDisabled(file) && (
+                                      <Button
+                                        id={`${fileId}-test-btn`}
+                                        variant='ghost'
+                                        size='sm'
+                                        onClick={() => handleTestAuth(file)}
+                                        disabled={
+                                          testStates[quotaKey(file)]?.status ===
+                                            'loading' ||
+                                          Boolean(deletingGroups[key])
+                                        }
+                                        title='用此认证向服务商发一条测试消息'
+                                        aria-label={`测试 ${file.name}`}
+                                      >
+                                        <Send size={16} />
+                                        测试
+                                      </Button>
+                                    )}
+                                  {getQuotaProvider(file) &&
+                                    !isAuthFileDisabled(file) && (
+                                      <Button
+                                        id={`${fileId}-refresh-quota-btn`}
+                                        variant='ghost'
+                                        size='sm'
+                                        onClick={() => handleRefreshQuota(file)}
+                                        disabled={
+                                          quotaStates[quotaKey(file)]
+                                            ?.status === 'loading' ||
+                                          Boolean(deletingGroups[key])
+                                        }
+                                        title='获取服务商真实额度'
+                                        aria-label={`获取 ${file.name} 的真实额度`}
+                                      >
+                                        <RefreshCw size={16} />
+                                        获取真实额度
+                                      </Button>
+                                    )}
+                                  {getQuotaProvider(file) &&
+                                    !isAuthFileDisabled(file) && (
+                                      <Button
+                                        id={`${fileId}-refresh-token-btn`}
+                                        variant='ghost'
+                                        size='sm'
+                                        onClick={() => handleRefreshToken(file)}
+                                        disabled={
+                                          refreshTokenStates[quotaKey(file)]
+                                            ?.status === 'loading' ||
+                                          Boolean(deletingGroups[key])
+                                        }
+                                        title='手动刷新访问令牌（用于已过期或即将过期的令牌）'
+                                        aria-label={`刷新 ${file.name} 的访问令牌`}
+                                      >
+                                        <RefreshCw size={16} />
+                                        刷新令牌
+                                      </Button>
+                                    )}
                                   <Button
-                                    id={`${fileId}-reset-cooldown-btn`}
+                                    id={`${fileId}-toggle-status-btn`}
                                     variant='ghost'
                                     size='sm'
-                                    onClick={() => handleResetCooldown(file)}
-                                    disabled={
-                                      Boolean(cooldownResetting[quotaKey(file)]) ||
-                                      Boolean(deletingGroups[key])
-                                    }
-                                    title='重置 CPA 路由冷却状态'
-                                    aria-label={`重置 ${file.name} 的冷却状态`}
+                                    onClick={() => handleToggleStatus(file)}
+                                    disabled={Boolean(deletingGroups[key])}
+                                    title={file.disabled ? '启用' : '禁用'}
                                   >
-                                    <RefreshCw size={16} />
-                                    重置冷却
+                                    {file.disabled ? '启用' : '禁用'}
                                   </Button>
-                                )}
-                                {getQuotaProvider(file) &&
-                                  !isAuthFileDisabled(file) && (
-                                    <Button
-                                      id={`${fileId}-test-btn`}
-                                      variant='ghost'
-                                      size='sm'
-                                      onClick={() => handleTestAuth(file)}
-                                      disabled={
-                                        testStates[quotaKey(file)]?.status ===
-                                          'loading' || Boolean(deletingGroups[key])
-                                      }
-                                      title='用此认证向服务商发一条测试消息'
-                                      aria-label={`测试 ${file.name}`}
-                                    >
-                                      <Send size={16} />
-                                      测试
-                                    </Button>
-                                  )}
-                                {getQuotaProvider(file) &&
-                                  !isAuthFileDisabled(file) && (
-                                    <Button
-                                      id={`${fileId}-refresh-quota-btn`}
-                                      variant='ghost'
-                                      size='sm'
-                                      onClick={() => handleRefreshQuota(file)}
-                                      disabled={
-                                        quotaStates[quotaKey(file)]?.status ===
-                                          'loading' || Boolean(deletingGroups[key])
-                                      }
-                                      title='获取服务商真实额度'
-                                      aria-label={`获取 ${file.name} 的真实额度`}
-                                    >
-                                      <RefreshCw size={16} />
-                                      获取真实额度
-                                    </Button>
-                                  )}
-                                {getQuotaProvider(file) &&
-                                  !isAuthFileDisabled(file) && (
-                                    <Button
-                                      id={`${fileId}-refresh-token-btn`}
-                                      variant='ghost'
-                                      size='sm'
-                                      onClick={() => handleRefreshToken(file)}
-                                      disabled={
-                                        refreshTokenStates[quotaKey(file)]?.status ===
-                                          'loading' || Boolean(deletingGroups[key])
-                                      }
-                                      title='手动刷新访问令牌（用于已过期或即将过期的令牌）'
-                                      aria-label={`刷新 ${file.name} 的访问令牌`}
-                                    >
-                                      <RefreshCw size={16} />
-                                      刷新令牌
-                                    </Button>
-                                  )}
-                                <Button
-                                  id={`${fileId}-toggle-status-btn`}
-                                  variant='ghost'
-                                  size='sm'
-                                  onClick={() => handleToggleStatus(file)}
-                                  disabled={Boolean(deletingGroups[key])}
-                                  title={file.disabled ? '启用' : '禁用'}
-                                >
-                                  {file.disabled ? '启用' : '禁用'}
-                                </Button>
-                                <Button
-                                  id={`${fileId}-edit-btn`}
-                                  variant='ghost'
-                                  size='sm'
-                                  onClick={() => handleOpenEdit(file)}
-                                  disabled={Boolean(deletingGroups[key])}
-                                  title='编辑'
-                                >
-                                  <Edit size={16} />
-                                </Button>
-                                <Button
-                                  id={`${fileId}-download-btn`}
-                                  variant='ghost'
-                                  size='sm'
-                                  onClick={() => handleDownload(file.name)}
-                                  title='下载'
-                                >
-                                  <Download size={16} />
-                                </Button>
-                                <Button
-                                  id={`${fileId}-delete-btn`}
-                                  variant='ghost'
-                                  size='sm'
-                                  onClick={() => handleDelete(file.name)}
-                                  disabled={Boolean(deletingGroups[key])}
-                                  title='删除'
-                                  style={{ color: '#DC2626' }}
-                                >
-                                  <Trash2 size={16} />
-                                </Button>
+                                  <Button
+                                    id={`${fileId}-edit-btn`}
+                                    variant='ghost'
+                                    size='sm'
+                                    onClick={() => handleOpenEdit(file)}
+                                    disabled={Boolean(deletingGroups[key])}
+                                    title='编辑'
+                                  >
+                                    <Edit size={16} />
+                                  </Button>
+                                  <Button
+                                    id={`${fileId}-download-btn`}
+                                    variant='ghost'
+                                    size='sm'
+                                    onClick={() => handleDownload(file.name)}
+                                    title='下载'
+                                  >
+                                    <Download size={16} />
+                                  </Button>
+                                  <Button
+                                    id={`${fileId}-delete-btn`}
+                                    variant='ghost'
+                                    size='sm'
+                                    onClick={() => handleDelete(file.name)}
+                                    disabled={Boolean(deletingGroups[key])}
+                                    title='删除'
+                                    style={{ color: '#DC2626' }}
+                                  >
+                                    <Trash2 size={16} />
+                                  </Button>
+                                </div>
                               </div>
                             </div>
-                          </div>
                           );
                         })}
                       </div>
@@ -2548,7 +2684,9 @@ const CPAAuthFiles = () => {
                           >
                             {AUTH_FILE_PAGE_SIZES.map((pageSize) => (
                               <option
-                                id={`${groupId}-page-size-option-${pageSize === Infinity ? 'all' : pageSize}`}
+                                id={`${groupId}-page-size-option-${
+                                  pageSize === Infinity ? 'all' : pageSize
+                                }`}
                                 key={pageSize}
                                 value={pageSize}
                               >
@@ -2594,7 +2732,10 @@ const CPAAuthFiles = () => {
         onClose={closeUploadModal}
         title='上传认证文件'
       >
-        <div id='cpa-auth-upload-modal-content' style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div
+          id='cpa-auth-upload-modal-content'
+          style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+        >
           <div id='cpa-auth-upload-file-field'>
             <input
               id='cpa-auth-upload-file-input'
@@ -2627,12 +2768,20 @@ const CPAAuthFiles = () => {
                 fontSize: '0.875rem',
               }}
             >
-              <p id='cpa-auth-upload-selected-count' style={{ fontWeight: 500, marginBottom: '0.5rem' }}>
+              <p
+                id='cpa-auth-upload-selected-count'
+                style={{ fontWeight: 500, marginBottom: '0.5rem' }}
+              >
                 已选择 {uploadFiles.length} 个文件:
               </p>
-              <ul id='cpa-auth-upload-selected-list' style={{ margin: 0, paddingLeft: '1.5rem' }}>
+              <ul
+                id='cpa-auth-upload-selected-list'
+                style={{ margin: 0, paddingLeft: '1.5rem' }}
+              >
                 {uploadFiles.map((file, idx) => (
-                  <li id={`cpa-auth-upload-selected-item-${idx}`} key={idx}>{file.name}</li>
+                  <li id={`cpa-auth-upload-selected-item-${idx}`} key={idx}>
+                    {file.name}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -2676,8 +2825,8 @@ const CPAAuthFiles = () => {
                   {uploadProgress.completed >= uploadProgress.total
                     ? '上传完成，正在同步列表...'
                     : uploadProgress.currentName
-                      ? `正在上传 ${uploadProgress.currentName}`
-                      : '正在上传...'}
+                    ? `正在上传 ${uploadProgress.currentName}`
+                    : '正在上传...'}
                 </span>
                 <span
                   id='cpa-auth-upload-progress-count'
@@ -2701,7 +2850,8 @@ const CPAAuthFiles = () => {
                   style={{
                     width: `${
                       uploadProgress.total > 0
-                        ? (uploadProgress.completed / uploadProgress.total) * 100
+                        ? (uploadProgress.completed / uploadProgress.total) *
+                          100
                         : 0
                     }%`,
                     height: '100%',
@@ -2771,7 +2921,10 @@ const CPAAuthFiles = () => {
         }}
         title='编辑认证文件'
       >
-        <div id='cpa-auth-edit-modal-content' style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div
+          id='cpa-auth-edit-modal-content'
+          style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+        >
           <div id='cpa-auth-edit-name-field'>
             <label
               id='cpa-auth-edit-name-label'
@@ -2873,7 +3026,9 @@ const CPAAuthFiles = () => {
             >
               取消
             </Button>
-            <Button id='cpa-auth-edit-save-btn' onClick={handleSaveEdit}>保存</Button>
+            <Button id='cpa-auth-edit-save-btn' onClick={handleSaveEdit}>
+              保存
+            </Button>
           </div>
         </div>
       </Modal>
