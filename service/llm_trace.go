@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
@@ -27,6 +28,10 @@ type llmTraceInput struct {
 	RequestBody      []byte
 	ResponseBody     []byte
 	ErrorMessage     string
+
+	// Resolved from Context before the trace is handed to a goroutine.
+	ClientIp  string
+	UserAgent string
 }
 
 type traceStreamCapture struct {
@@ -64,6 +69,39 @@ func (c *traceStreamCapture) String() string {
 	return c.builder.String()
 }
 
+// pendingLLMTraces tracks in-flight async traces so callers (shutdown, tests)
+// can drain them instead of racing the goroutine.
+var pendingLLMTraces sync.WaitGroup
+
+// WaitForPendingLLMTraces blocks until every async trace has been written.
+func WaitForPendingLLMTraces() {
+	pendingLLMTraces.Wait()
+}
+
+// captureLLMTraceAsync runs the trace off the request goroutine.
+//
+// The security audit plus the insert cost hundreds of milliseconds on a Claude
+// Code sized payload, and net/http only finalizes the response once the handler
+// returns — so doing this inline stalls the client after its last token.
+// Anything derived from the gin context is resolved here, before the goroutine
+// starts: once the handler returns gin may recycle the context and its request.
+func captureLLMTraceAsync(input llmTraceInput) {
+	if !common.LLMTraceEnabled {
+		return
+	}
+	if input.AggToken == nil || input.Provider == nil || input.Token == nil || input.Context == nil {
+		return
+	}
+	input.ClientIp = input.Context.ClientIP()
+	input.UserAgent = strings.TrimSpace(input.Context.GetHeader("User-Agent"))
+	input.Context = nil
+	pendingLLMTraces.Add(1)
+	go func() {
+		defer pendingLLMTraces.Done()
+		writeLLMTrace(input)
+	}()
+}
+
 func captureLLMTrace(input llmTraceInput) {
 	if !common.LLMTraceEnabled {
 		return
@@ -71,7 +109,12 @@ func captureLLMTrace(input llmTraceInput) {
 	if input.AggToken == nil || input.Provider == nil || input.Token == nil || input.Context == nil {
 		return
 	}
+	input.ClientIp = input.Context.ClientIP()
+	input.UserAgent = strings.TrimSpace(input.Context.GetHeader("User-Agent"))
+	writeLLMTrace(input)
+}
 
+func writeLLMTrace(input llmTraceInput) {
 	// Perform security audit
 	auditResult := AuditLLMContent(string(input.RequestBody), string(input.ResponseBody))
 	riskTagsJSON := "[]"
@@ -98,8 +141,8 @@ func captureLLMTrace(input llmTraceInput) {
 		RequestBody:       string(input.RequestBody),
 		ResponseBody:      string(input.ResponseBody),
 		ErrorMessage:      input.ErrorMessage,
-		ClientIp:          input.Context.ClientIP(),
-		UserAgent:         strings.TrimSpace(input.Context.GetHeader("User-Agent")),
+		ClientIp:          input.ClientIp,
+		UserAgent:         input.UserAgent,
 		RiskLevel:         auditResult.RiskLevel,
 		RiskTags:          riskTagsJSON,
 		AutoReviewed:      true,

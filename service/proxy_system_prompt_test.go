@@ -59,6 +59,9 @@ func TestProxyRouteSystemPromptRetryUsesOnlyCurrentRoutePresetAndTracesSentBody(
 	assertSingleRoutePrompt(t, firstBody, "FIRST ROUTE PRESET", "SECOND ROUTE PRESET")
 	assertSingleRoutePrompt(t, secondBody, "SECOND ROUTE PRESET", "FIRST ROUTE PRESET")
 
+	// Traces are written off the request goroutine; drain before asserting.
+	WaitForPendingLLMTraces()
+
 	var trace model.LLMTrace
 	if err := model.DB.Where("provider_id = ?", 12).First(&trace).Error; err != nil {
 		t.Fatalf("find second trace: %v", err)

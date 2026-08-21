@@ -255,7 +255,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			0,
 			errorMsg,
 		)
-		captureLLMTrace(llmTraceInput{
+		captureLLMTraceAsync(llmTraceInput{
 			AggToken:        aggToken,
 			Provider:        provider,
 			Token:           token,
@@ -299,7 +299,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			aggToken, provider, token, c, requestId,
 			usage, requestedStream, responseIsStream, 0, int(elapsed), errorMsg,
 		)
-		captureLLMTrace(llmTraceInput{
+		captureLLMTraceAsync(llmTraceInput{
 			AggToken:         aggToken,
 			Provider:         provider,
 			Token:            token,
@@ -435,7 +435,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			aggToken, provider, token, c, requestId,
 			streamUsage, requestedStream, true, firstTokenMs, int(elapsed), errorMsg,
 		)
-		captureLLMTrace(llmTraceInput{
+		captureLLMTraceAsync(llmTraceInput{
 			AggToken:         aggToken,
 			Provider:         provider,
 			Token:            token,
@@ -473,7 +473,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 				int(elapsed),
 				errorMsg,
 			)
-			captureLLMTrace(llmTraceInput{
+			captureLLMTraceAsync(llmTraceInput{
 				AggToken:        aggToken,
 				Provider:        provider,
 				Token:           token,
@@ -517,7 +517,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			aggToken, provider, token, c, requestId,
 			usage, requestedStream, false, 0, int(elapsed), errorMsg,
 		)
-		captureLLMTrace(llmTraceInput{
+		captureLLMTraceAsync(llmTraceInput{
 			AggToken:         aggToken,
 			Provider:         provider,
 			Token:            token,
