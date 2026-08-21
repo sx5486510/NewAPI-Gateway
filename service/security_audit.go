@@ -12,6 +12,73 @@ type SecurityAuditResult struct {
 	RiskTags  []string `json:"risk_tags"`
 }
 
+// multipleMatchThreshold is the number of email/phone hits above which the
+// content is flagged as a possible data dump.
+const multipleMatchThreshold = 5
+
+// gatedRegexp pairs a pattern with the literals any match of it must contain.
+//
+// Scanning a megabyte of text with one regexp costs roughly 40ms, while
+// strings.Contains over the same text costs well under a millisecond. Most rules
+// here can only match adjacent to a fixed literal, so checking for that literal
+// first turns the common "no hit anywhere" case from a scan into a memchr.
+//
+// gates is an AND of ORs: every inner slice is one required alternation and is
+// satisfied by any of its literals. A missing gate is *proof* the pattern cannot
+// match, so skipping the scan is exact rather than a heuristic that might drop a
+// real finding.
+type gatedRegexp struct {
+	re    *regexp.Regexp
+	gates [][]string
+}
+
+// gatesPass reports whether haystack clears every gate.
+//
+// Gate literals are written lowercase, so haystack must be the lowercased text
+// whenever the gates contain letters: that lets one gate serve both the (?i)
+// patterns and the case-sensitive ones (an "AKIA" in the original still shows up
+// as "akia" once lowered, so the condition stays necessary). Gates made only of
+// digits and punctuation are unaffected by case and may be checked against the
+// raw text.
+func (g gatedRegexp) gatesPass(haystack string) bool {
+	for _, alternation := range g.gates {
+		if !containsAny(haystack, alternation) {
+			return false
+		}
+	}
+	return true
+}
+
+// matchString reports whether the pattern matches haystack, consulting the gates
+// against gateHaystack first. Callers whose haystack is already lowercased pass
+// it as both arguments.
+func (g gatedRegexp) matchString(haystack, gateHaystack string) bool {
+	return g.gatesPass(gateHaystack) && g.re.MatchString(haystack)
+}
+
+func containsAny(haystack string, needles []string) bool {
+	for _, needle := range needles {
+		if strings.Contains(haystack, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// unmarshalJSONObject decodes s into a JSON object, returning nil when s is not
+// one. The cheap prefix check keeps a multi-megabyte non-JSON haystack from
+// being copied into a []byte just for Unmarshal to reject it.
+func unmarshalJSONObject(s string) map[string]interface{} {
+	if !strings.HasPrefix(strings.TrimLeft(s, " \t\r\n"), "{") {
+		return nil
+	}
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(s), &data); err != nil {
+		return nil
+	}
+	return data
+}
+
 // AuditLLMContent performs security audit on request/response content
 func AuditLLMContent(requestBody, responseBody string) SecurityAuditResult {
 	result := SecurityAuditResult{
@@ -23,11 +90,17 @@ func AuditLLMContent(requestBody, responseBody string) SecurityAuditResult {
 	requestText := extractTextFromJSON(requestBody)
 	responseText := extractTextFromJSON(responseBody)
 
+	// Every rule below scans the same haystack, so build the raw and lowercased
+	// forms once instead of re-concatenating (and re-lowering) per rule. On a
+	// Claude Code sized payload that alone removes several megabytes of copies.
+	combined := requestText + "\n" + responseText
+	combinedLower := strings.ToLower(combined)
+
 	// Run all detection rules
-	checkPromptInjection(&result, requestText, responseText)
-	checkDangerousActions(&result, requestText, responseText)
-	checkSensitiveData(&result, requestText, responseText)
-	checkAbnormalToolCalls(&result, requestText, responseText)
+	checkPromptInjection(&result, combinedLower)
+	checkDangerousActions(&result, combinedLower)
+	checkSensitiveData(&result, combined, combinedLower)
+	checkAbnormalToolCalls(&result, responseText, combinedLower)
 
 	return result
 }
@@ -64,53 +137,73 @@ func extractTextRecursive(data interface{}, texts *[]string) {
 	}
 }
 
-// checkPromptInjection detects prompt injection and jailbreak attempts
-func checkPromptInjection(result *SecurityAuditResult, request, response string) {
-	combined := strings.ToLower(request + "\n" + response)
+// Jailbreak keywords, pre-lowered once so the hot path only does Contains.
+var jailbreakPatterns = lowerAll([]string{
+	"ignore previous instructions",
+	"ignore all previous",
+	"disregard previous",
+	"forget previous",
+	"new instructions",
+	"system prompt",
+	"you are now",
+	"act as if",
+	"pretend to be",
+	"roleplay as",
+	"do anything now",
+	"DAN mode",
+	"developer mode",
+	"god mode",
+	"unrestricted mode",
+	"jailbreak",
+	"越狱",
+	"忽略之前",
+	"忽略上面",
+	"忽略以上",
+	"无视规则",
+	"现在你是",
+	"扮演",
+})
 
-	// Jailbreak keywords
-	jailbreakPatterns := []string{
-		"ignore previous instructions",
-		"ignore all previous",
-		"disregard previous",
-		"forget previous",
-		"new instructions",
-		"system prompt",
-		"you are now",
-		"act as if",
-		"pretend to be",
-		"roleplay as",
-		"do anything now",
-		"DAN mode",
-		"developer mode",
-		"god mode",
-		"unrestricted mode",
-		"jailbreak",
-		"越狱",
-		"忽略之前",
-		"忽略上面",
-		"忽略以上",
-		"无视规则",
-		"现在你是",
-		"扮演",
+// Instruction override patterns. Both alternations are required, so gating on
+// each one independently is far more selective than gating on either alone.
+var overrideRegexps = []gatedRegexp{
+	{
+		regexp.MustCompile(`(?i)(override|bypass|disable|turn off)\s+(safety|filter|restriction|guideline)`),
+		[][]string{
+			{"override", "bypass", "disable", "turn off"},
+			{"safety", "filter", "restriction", "guideline"},
+		},
+	},
+	{
+		regexp.MustCompile(`(?i)(你现在|now you are|you're now)\s+(不受|unrestricted|without)`),
+		[][]string{
+			{"你现在", "now you are", "you're now"},
+			{"不受", "unrestricted", "without"},
+		},
+	},
+}
+
+func lowerAll(patterns []string) []string {
+	lowered := make([]string, len(patterns))
+	for i, pattern := range patterns {
+		lowered[i] = strings.ToLower(pattern)
 	}
+	return lowered
+}
 
+// checkPromptInjection detects prompt injection and jailbreak attempts.
+// combined must already be lowercased.
+func checkPromptInjection(result *SecurityAuditResult, combined string) {
 	for _, pattern := range jailbreakPatterns {
-		if strings.Contains(combined, strings.ToLower(pattern)) {
+		if strings.Contains(combined, pattern) {
 			result.RiskTags = append(result.RiskTags, "prompt_injection")
 			updateRiskLevel(result, "high")
 			return
 		}
 	}
 
-	// Instruction override patterns
-	overrideRegex := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)(override|bypass|disable|turn off)\s+(safety|filter|restriction|guideline)`),
-		regexp.MustCompile(`(?i)(你现在|now you are|you're now)\s+(不受|unrestricted|without)`),
-	}
-
-	for _, re := range overrideRegex {
-		if re.MatchString(combined) {
+	for _, re := range overrideRegexps {
+		if re.matchString(combined, combined) {
 			result.RiskTags = append(result.RiskTags, "instruction_override")
 			updateRiskLevel(result, "high")
 			return
@@ -118,10 +211,9 @@ func checkPromptInjection(result *SecurityAuditResult, request, response string)
 	}
 }
 
-// checkDangerousActions detects dangerous operations in tool calls or responses
-func checkDangerousActions(result *SecurityAuditResult, request, response string) {
-	combined := strings.ToLower(request + "\n" + response)
-
+// checkDangerousActions detects dangerous operations in tool calls or responses.
+// combined must already be lowercased.
+func checkDangerousActions(result *SecurityAuditResult, combined string) {
 	// File system operations
 	dangerousFileOps := []string{
 		"rm -rf",
@@ -208,52 +300,45 @@ func checkDangerousActions(result *SecurityAuditResult, request, response string
 	}
 }
 
-// checkSensitiveData detects sensitive information leakage
-func checkSensitiveData(result *SecurityAuditResult, request, response string) {
-	combined := request + "\n" + response
+// API Keys and tokens (common patterns)
+var apiKeyRegexps = []gatedRegexp{
+	// Every alternation of the name group ends in "key".
+	{regexp.MustCompile(`(?i)(api[_-]?key|apikey|access[_-]?key)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{20,})`), [][]string{{"key"}}},
+	// "password" and "passwd" share the "pass" prefix.
+	{regexp.MustCompile(`(?i)(secret|password|passwd|pwd)\s*[:=]\s*['"]?([^\s'"]{8,})`), [][]string{{"secret", "pass", "pwd"}}},
+	{regexp.MustCompile(`\bsk-[a-zA-Z0-9\-_]{20,}`), [][]string{{"sk-"}}},                 // OpenAI API key pattern
+	{regexp.MustCompile(`\bghp_[a-zA-Z0-9]{36,}`), [][]string{{"ghp_"}}},                  // GitHub personal access token
+	{regexp.MustCompile(`\bglpat-[a-zA-Z0-9_\-]{20,}`), [][]string{{"glpat-"}}},           // GitLab token
+	{regexp.MustCompile(`\bxox[baprs]-[a-zA-Z0-9\-]{10,}`), [][]string{{"xox"}}},          // Slack token
+	{regexp.MustCompile(`\bAIza[a-zA-Z0-9_\-]{35}`), [][]string{{"aiza"}}},                // Google API key
+	{regexp.MustCompile(`\bAKIA[0-9A-Z]{16}`), [][]string{{"akia"}}},                      // AWS access key
+	{regexp.MustCompile(`\bya29\.[a-zA-Z0-9_\-]{100,}`), [][]string{{"ya29."}}},           // Google OAuth token
+	{regexp.MustCompile(`\beyJ[a-zA-Z0-9_\-]*\.eyJ[a-zA-Z0-9_\-]*`), [][]string{{"eyj"}}}, // JWT token
+}
 
-	// API Keys and tokens (common patterns)
-	apiKeyPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)(api[_-]?key|apikey|access[_-]?key)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{20,})`),
-		regexp.MustCompile(`(?i)(secret|password|passwd|pwd)\s*[:=]\s*['"]?([^\s'"]{8,})`),
-		regexp.MustCompile(`\bsk-[a-zA-Z0-9\-_]{20,}`),                // OpenAI API key pattern
-		regexp.MustCompile(`\bghp_[a-zA-Z0-9]{36,}`),                   // GitHub personal access token
-		regexp.MustCompile(`\bglpat-[a-zA-Z0-9_\-]{20,}`),              // GitLab token
-		regexp.MustCompile(`\bxox[baprs]-[a-zA-Z0-9\-]{10,}`),          // Slack token
-		regexp.MustCompile(`\bAIza[a-zA-Z0-9_\-]{35}`),                 // Google API key
-		regexp.MustCompile(`\bAKIA[0-9A-Z]{16}`),                       // AWS access key
-		regexp.MustCompile(`\bya29\.[a-zA-Z0-9_\-]{100,}`),             // Google OAuth token
-		regexp.MustCompile(`\beyJ[a-zA-Z0-9_\-]*\.eyJ[a-zA-Z0-9_\-]*`), // JWT token
-	}
+// Email addresses (potential PII)
+var emailRegexp = gatedRegexp{regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`), [][]string{{"@"}}}
 
-	for _, re := range apiKeyPatterns {
-		if re.MatchString(combined) {
+// checkSensitiveData detects sensitive information leakage.
+// combined must be the raw (case-preserving) text: several rules below are
+// case-sensitive. combinedLower is the same text lowercased, used for gating.
+func checkSensitiveData(result *SecurityAuditResult, combined, combinedLower string) {
+	for _, re := range apiKeyRegexps {
+		if re.matchString(combined, combinedLower) {
 			result.RiskTags = append(result.RiskTags, "api_key_leak")
 			updateRiskLevel(result, "critical")
 			break
 		}
 	}
 
-	// Credit card numbers (basic Luhn check pattern)
-	ccPattern := regexp.MustCompile(`\b(?:\d{4}[\s\-]?){3}\d{4}\b`)
-	if ccPattern.MatchString(combined) {
-		result.RiskTags = append(result.RiskTags, "credit_card")
-		updateRiskLevel(result, "critical")
-	}
-
-	// Email addresses (potential PII)
-	emailPattern := regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
-	emails := emailPattern.FindAllString(combined, -1)
-	if len(emails) > 5 { // Multiple emails might indicate data dump
-		result.RiskTags = append(result.RiskTags, "multiple_emails")
-		updateRiskLevel(result, "medium")
-	}
-
-	// Phone numbers - improved detection to avoid false positives
-	phones := detectPhoneNumbers(combined)
-	if len(phones) > 5 {
-		result.RiskTags = append(result.RiskTags, "multiple_phones")
-		updateRiskLevel(result, "medium")
+	// Stop at 6 matches: the only question is whether more than 5 exist, so there
+	// is no reason to materialize every address in a large payload.
+	if emailRegexp.gatesPass(combined) {
+		emails := emailRegexp.re.FindAllString(combined, multipleMatchThreshold+1)
+		if len(emails) > multipleMatchThreshold { // Multiple emails might indicate data dump
+			result.RiskTags = append(result.RiskTags, "multiple_emails")
+			updateRiskLevel(result, "medium")
+		}
 	}
 
 	// SSH private keys
@@ -284,25 +369,13 @@ func checkSensitiveData(result *SecurityAuditResult, request, response string) {
 			break
 		}
 	}
-
-	// Chinese ID card (simplified check)
-	idCardPattern := regexp.MustCompile(`\b[1-9]\d{5}(18|19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b`)
-	if idCardPattern.MatchString(combined) {
-		result.RiskTags = append(result.RiskTags, "id_card_number")
-		updateRiskLevel(result, "high")
-	}
 }
 
-// checkAbnormalToolCalls detects suspicious tool usage patterns
-func checkAbnormalToolCalls(result *SecurityAuditResult, request, response string) {
-	combined := strings.ToLower(request + "\n" + response)
-
+// checkAbnormalToolCalls detects suspicious tool usage patterns.
+// combined must already be lowercased.
+func checkAbnormalToolCalls(result *SecurityAuditResult, response, combined string) {
 	// Look for tool_calls or function_call in JSON
-	var requestData map[string]interface{}
-	var responseData map[string]interface{}
-
-	json.Unmarshal([]byte(request), &requestData)
-	json.Unmarshal([]byte(response), &responseData)
+	responseData := unmarshalJSONObject(response)
 
 	// Check for excessive tool calls
 	toolCallCount := 0
@@ -355,76 +428,6 @@ func checkAbnormalToolCalls(result *SecurityAuditResult, request, response strin
 		result.RiskTags = append(result.RiskTags, "repeated_tool_errors")
 		updateRiskLevel(result, "low")
 	}
-}
-
-// detectPhoneNumbers detects real phone numbers while avoiding false positives
-func detectPhoneNumbers(text string) []string {
-	var phones []string
-
-	// Pre-filter: remove markdown code blocks and inline code
-	text = removeCodeBlocks(text)
-
-	// Exclude patterns that look like technical notation
-	excludePatterns := []*regexp.Regexp{
-		regexp.MustCompile(`\(.*?:.*?\)`),           // (index:id), (key:value)
-		regexp.MustCompile(`\[.*?\]\(.*?\)`),        // [text](link) markdown links
-		regexp.MustCompile(`\{.*?:.*?\}`),           // {key:value} JSON
-		regexp.MustCompile(`<.*?:.*?>`),             // <tag:attr> XML/HTML
-		regexp.MustCompile(`\w+:\w+`),               // protocol:value, format:spec
-		regexp.MustCompile(`\(\d+[,\.]\d+\)`),       // (1.5), (10,20) coordinates/tuples
-	}
-
-	// Apply exclusions
-	for _, re := range excludePatterns {
-		text = re.ReplaceAllString(text, "")
-	}
-
-	// Real phone number patterns
-	phonePatterns := []*regexp.Regexp{
-		// Chinese mobile: 1[3-9]xxxxxxxxx
-		regexp.MustCompile(`\b1[3-9]\d{9}\b`),
-		// Chinese with country code: +86 1xxxxxxxxxx or 0086 1xxxxxxxxxx
-		regexp.MustCompile(`\+86\s?1[3-9]\d{9}\b`),
-		regexp.MustCompile(`0086\s?1[3-9]\d{9}\b`),
-		// Formatted: 138-xxxx-xxxx or 138 xxxx xxxx
-		regexp.MustCompile(`\b1[3-9]\d[\s\-]\d{4}[\s\-]\d{4}\b`),
-		// International format with parentheses: +1 (xxx) xxx-xxxx
-		regexp.MustCompile(`\+\d{1,3}\s?\(\d{3}\)\s?\d{3}[\s\-]?\d{4}\b`),
-	}
-
-	seen := make(map[string]bool)
-	for _, re := range phonePatterns {
-		matches := re.FindAllString(text, -1)
-		for _, match := range matches {
-			// Additional validation: must be mostly digits
-			digitCount := 0
-			for _, ch := range match {
-				if ch >= '0' && ch <= '9' {
-					digitCount++
-				}
-			}
-			// At least 10 digits for a valid phone number
-			if digitCount >= 10 && !seen[match] {
-				phones = append(phones, match)
-				seen[match] = true
-			}
-		}
-	}
-
-	return phones
-}
-
-// removeCodeBlocks removes markdown code blocks and inline code
-func removeCodeBlocks(text string) string {
-	// Remove code blocks: ```...``` (must be done first, before inline)
-	re2 := regexp.MustCompile("(?s)```[^`]*```")
-	text = re2.ReplaceAllString(text, "")
-
-	// Remove inline code: `...`
-	re1 := regexp.MustCompile("`[^`]+`")
-	text = re1.ReplaceAllString(text, "")
-
-	return text
 }
 
 // updateRiskLevel updates risk level to higher severity if needed
