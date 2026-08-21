@@ -29,18 +29,33 @@
 - 如果只勾选 `allow_codex`，则只有 Codex 客户端可以使用此令牌
 - 如果只勾选 `allow_cc`，则只有 ClaudeCode/CC 客户端可以使用此令牌
 - 如果两者都勾选，则 Codex 和 ClaudeCode/CC 都可以使用
-- 未识别的客户端（clientType 为空）始终可以使用未设置限制的令牌
+- 未识别的客户端（clientType 为空）只能使用「未设置限制」或「全禁用」的令牌；勾选了 Codex/CC 的令牌会拒绝它
 
 ### 3. 路由过滤
 
 在路由选择阶段 (`model/model_route.go:BuildRouteAttemptsByPriority()`)，系统会：
 
 1. 从上下文获取客户端类型（由中间件提取）
-2. 遍历候选路由时，调用 `token.IsClientAllowed(clientType)` 检查
-3. 过滤掉不符合限制的路由
-4. 返回符合条件的路由列表供重试逻辑使用
+2. 遍历候选路由时，**串行与**检查两层限制：
+   - `route.IsClientAllowed(clientType)` —— 路由层（管理员手动禁用）
+   - `token.IsClientAllowed(clientType)` —— 令牌层（线路自身限制）
+   两层都放行才保留该路由；任一层拒绝都会记录 `[client-restriction]` 日志并跳过
+3. 返回符合条件的路由列表供重试逻辑使用
 
-过滤逻辑位于 `model/provider_token.go:IsClientAllowed()`
+两层的判定逻辑共用 `model/client_restriction.go:EvaluateClientRestriction()`，真值表如下：
+
+| 勾选状态 | Codex 客户端 | CC 客户端 | 泛客户端（UA 未识别） |
+|---|---|---|---|
+| 都不勾 | ✅ | ✅ | ✅ |
+| 仅 Codex | ✅ | ❌ | ❌ |
+| 仅 CC | ❌ | ✅ | ❌ |
+| Codex + CC | ✅ | ✅ | ❌ |
+| 全禁用 | ❌ | ❌ | ✅ |
+
+**语义要点：**
+- 勾选 Codex/CC 表示「线路**保留给**指定客户端」，泛客户端同样算跑错客户端，一并拒绝
+- 「全禁用」表示「线路**禁止**已识别客户端」，只放行泛客户端，与 Codex/CC 勾选互斥
+- 未来新增的未识别客户端类型，在受限线路上默认拒绝
 
 ## 使用方法
 
