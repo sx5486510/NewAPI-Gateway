@@ -738,3 +738,108 @@ func TestBatchUpdateModelRoutesRollsBackWhenRouteMissing(t *testing.T) {
 		t.Fatal("expected valid route update to be rolled back")
 	}
 }
+
+func TestBuildRouteAttemptsAppliesTokenClientRestriction(t *testing.T) {
+	setupModelRouteTestDB(t)
+
+	provider := &Provider{
+		Name:         "token-restriction-test",
+		BaseURL:      "http://127.0.0.1:29002",
+		ApiKey:       "test-key",
+		ProviderType: ProviderTypeKeyOnly,
+		Status:       common.UserStatusEnabled,
+		Priority:     0,
+		Weight:       10,
+	}
+	if err := DB.Create(provider).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 令牌层限制：只许 cc 客户端。路由层不设限制。
+	token := &ProviderToken{
+		ProviderId: provider.Id,
+		SkKey:      "cc-only-token",
+		Status:     common.UserStatusEnabled,
+		AllowCC:    true,
+	}
+	if err := DB.Create(token).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	route := &ModelRoute{
+		ModelName:       "token-restriction-model",
+		ProviderTokenId: token.Id,
+		ProviderId:      provider.Id,
+		Enabled:         true,
+		Priority:        0,
+		Weight:          10,
+	}
+	if err := DB.Create(route).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// cc 客户端：令牌与路由都放行 → 应选中
+	attempts, err := BuildRouteAttemptsByPriority("token-restriction-model", "cc")
+	if err != nil {
+		t.Fatalf("expected cc client to reach the cc-only token: %v", err)
+	}
+	if len(attempts) == 0 || len(attempts[0]) == 0 {
+		t.Fatal("expected at least one attempt for cc client")
+	}
+
+	// codex 客户端：令牌层拒绝 → 应无可用路由
+	if _, err := BuildRouteAttemptsByPriority("token-restriction-model", "codex"); err == nil {
+		t.Fatal("expected codex client to be rejected by token-level restriction")
+	}
+
+	// 泛客户端：令牌层保留给 cc，泛客户端也应被拒
+	if _, err := BuildRouteAttemptsByPriority("token-restriction-model", ""); err == nil {
+		t.Fatal("expected generic client to be rejected by token-level restriction")
+	}
+}
+
+func TestBuildRouteAttemptsRequiresBothRouteAndTokenToAllow(t *testing.T) {
+	setupModelRouteTestDB(t)
+
+	provider := &Provider{
+		Name:         "serial-and-test",
+		BaseURL:      "http://127.0.0.1:29003",
+		ApiKey:       "test-key",
+		ProviderType: ProviderTypeKeyOnly,
+		Status:       common.UserStatusEnabled,
+		Priority:     0,
+		Weight:       10,
+	}
+	if err := DB.Create(provider).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 令牌只许 codex，路由只许 cc —— 交集为空，任何客户端都进不来。
+	token := &ProviderToken{
+		ProviderId: provider.Id,
+		SkKey:      "codex-only-token",
+		Status:     common.UserStatusEnabled,
+		AllowCodex: true,
+	}
+	if err := DB.Create(token).Error; err != nil {
+		t.Fatal(err)
+	}
+	route := &ModelRoute{
+		ModelName:       "serial-and-model",
+		ProviderTokenId: token.Id,
+		ProviderId:      provider.Id,
+		Enabled:         true,
+		Priority:        0,
+		Weight:          10,
+		AllowCC:         true,
+	}
+	if err := DB.Create(route).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	for _, clientType := range []string{"codex", "cc", ""} {
+		if _, err := BuildRouteAttemptsByPriority("serial-and-model", clientType); err == nil {
+			t.Fatalf("expected empty intersection to reject client %q", clientType)
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"NewAPI-Gateway/common"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"math/rand"
 	"regexp"
@@ -440,8 +441,14 @@ func BuildRouteAttemptsByPriority(modelName string, clientType string) ([][]Rout
 		if !common.IsProviderRuntimeAvailable(route.ProviderId) {
 			continue
 		}
-		// Filter by client type restrictions
+		// Filter by client type restrictions.
+		// 路由层（管理员手动禁用）与令牌层（线路自身限制）串行与：两层都放行才可用。
 		if !route.IsClientAllowed(clientType) {
+			common.SysLog(fmt.Sprintf("[client-restriction] route_id=%d model=%s client_type=%q rejected by route restriction", route.Id, route.ModelName, clientType))
+			continue
+		}
+		if !token.IsClientAllowed(clientType) {
+			common.SysLog(fmt.Sprintf("[client-restriction] route_id=%d token_id=%d model=%s client_type=%q rejected by token restriction", route.Id, token.Id, route.ModelName, clientType))
 			continue
 		}
 		metric := metricLookup[route.Id]
