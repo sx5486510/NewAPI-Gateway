@@ -162,32 +162,11 @@ func (pt *ProviderToken) NormalizeClientRestrictions() {
 	}
 }
 
-// IsClientAllowed checks if a client type is allowed to use this token
-// Returns true if:
-// - AllowCodex, AllowCC, and BlockClients are false (no restriction)
-// - clientType is empty (unrestricted client)
-// - clientType matches one of the allowed types
+// IsClientAllowed checks if a client type is allowed to use this token.
+// 判定逻辑集中在 EvaluateClientRestriction，与 ModelRoute 共用同一张真值表。
 func (pt *ProviderToken) IsClientAllowed(clientType string) bool {
 	pt.NormalizeClientRestrictions()
-	// No restriction set - allow all
-	if !pt.AllowCodex && !pt.AllowCC && !pt.BlockClients {
-		return true
-	}
-	// Unrestricted client - allow all
-	if clientType == "" {
-		return true
-	}
-	if pt.BlockClients && (clientType == "codex" || clientType == "cc") {
-		return false
-	}
-	// Check specific restrictions
-	if clientType == "codex" && pt.AllowCodex {
-		return true
-	}
-	if clientType == "cc" && pt.AllowCC {
-		return true
-	}
-	return false
+	return EvaluateClientRestriction(clientType, pt.AllowCodex, pt.AllowCC, pt.BlockClients)
 }
 
 // GetExpiringSoonTokens retrieves tokens that will expire within the given duration

@@ -86,29 +86,11 @@ type ModelRoute struct {
 	SystemPromptId  *int   `json:"system_prompt_id" gorm:"index"`
 }
 
-// IsClientAllowed checks if a route allows the specified client type
+// IsClientAllowed checks if a route allows the specified client type.
+// 判定逻辑集中在 EvaluateClientRestriction，与 ProviderToken 共用同一张真值表。
 func (mr *ModelRoute) IsClientAllowed(clientType string) bool {
 	mr.NormalizeClientRestrictions()
-	// No restriction set - allow all
-	if !mr.AllowCodex && !mr.AllowCC && !mr.BlockClients {
-		return true
-	}
-	// Block all clients mode
-	if mr.BlockClients {
-		return false
-	}
-	// Unrestricted client - allow if no specific allow rules
-	if clientType == "" {
-		return !mr.AllowCodex && !mr.AllowCC
-	}
-	// Check specific restrictions
-	if clientType == "codex" && mr.AllowCodex {
-		return true
-	}
-	if clientType == "cc" && mr.AllowCC {
-		return true
-	}
-	return false
+	return EvaluateClientRestriction(clientType, mr.AllowCodex, mr.AllowCC, mr.BlockClients)
 }
 
 func (mr *ModelRoute) NormalizeClientRestrictions() {

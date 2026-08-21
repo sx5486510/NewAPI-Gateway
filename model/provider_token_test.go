@@ -73,3 +73,42 @@ func TestProviderTokenUpdateClearsBooleanRestrictionFields(t *testing.T) {
 		t.Fatal("expected block_clients to be saved")
 	}
 }
+
+func TestProviderTokenIsClientAllowedExcludesGenericWhenReserved(t *testing.T) {
+	codexOnly := ProviderToken{AllowCodex: true}
+	if !codexOnly.IsClientAllowed("codex") {
+		t.Error("expected codex client to be allowed on a codex-reserved token")
+	}
+	if codexOnly.IsClientAllowed("cc") {
+		t.Error("expected cc client to be rejected on a codex-reserved token")
+	}
+	if codexOnly.IsClientAllowed("") {
+		t.Error("expected generic client to be rejected on a codex-reserved token")
+	}
+
+	ccOnly := ProviderToken{AllowCC: true}
+	if !ccOnly.IsClientAllowed("cc") {
+		t.Error("expected cc client to be allowed on a cc-reserved token")
+	}
+	if ccOnly.IsClientAllowed("") {
+		t.Error("expected generic client to be rejected on a cc-reserved token")
+	}
+
+	unrestricted := ProviderToken{}
+	if !unrestricted.IsClientAllowed("") || !unrestricted.IsClientAllowed("codex") || !unrestricted.IsClientAllowed("cc") {
+		t.Error("expected unrestricted token to allow every client type")
+	}
+}
+
+func TestModelRouteIsClientAllowedBlockClientsKeepsGeneric(t *testing.T) {
+	blocked := ModelRoute{BlockClients: true}
+	if blocked.IsClientAllowed("codex") {
+		t.Error("expected codex client to be blocked")
+	}
+	if blocked.IsClientAllowed("cc") {
+		t.Error("expected cc client to be blocked")
+	}
+	if !blocked.IsClientAllowed("") {
+		t.Error("expected generic client to remain allowed when only identified clients are blocked")
+	}
+}
