@@ -1203,6 +1203,32 @@ func BatchUpdateModelRoutes(patches []ModelRoutePatch) error {
 	})
 }
 
+// CleanupOrphanModelRoutes 删除 provider_id 指向已删除供应商的孤儿路由，返回删除条数。
+// 与启动时的 cleanupOrphanRoutes 共用同一套判定：LEFT JOIN providers 后主键为 NULL 即孤儿。
+func CleanupOrphanModelRoutes() (int64, error) {
+	var orphanIds []int
+	err := DB.Table("model_routes AS mr").
+		Joins("LEFT JOIN providers AS p ON p.id = mr.provider_id").
+		Where("p.id IS NULL").
+		Pluck("mr.id", &orphanIds).Error
+	if err != nil {
+		return 0, err
+	}
+	if len(orphanIds) == 0 {
+		return 0, nil
+	}
+
+	var deleted int64
+	for _, batch := range chunkInts(orphanIds, sqliteSingleInChunkSize) {
+		result := DB.Where("id IN ?", batch).Delete(&ModelRoute{})
+		if result.Error != nil {
+			return deleted, result.Error
+		}
+		deleted += result.RowsAffected
+	}
+	return deleted, nil
+}
+
 func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) ([]*ModelRouteOverviewItem, error) {
 	config := loadRoutingTuningConfig()
 

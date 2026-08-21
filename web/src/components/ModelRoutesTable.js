@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCcw, RotateCcw, Save, Search } from 'lucide-react';
+import { RefreshCcw, RotateCcw, Save, Search, Trash2 } from 'lucide-react';
 import { API, copy, showError, showSuccess } from '../helpers';
 import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
 import Button from './ui/Button';
@@ -397,6 +397,7 @@ const ModelRoutesTable = () => {
     const [routes, setRoutes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [cleaning, setCleaning] = useState(false);
     const [searchKeyword, setSearchKeyword] = useState('');
     const [providerFilter, setProviderFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState('all');
@@ -812,6 +813,30 @@ const ModelRoutesTable = () => {
         }
     };
 
+    const orphanCount = useMemo(
+        () => routes.filter((route) => route.provider_deleted).length,
+        [routes]
+    );
+
+    const cleanupOrphans = async () => {
+        setCleaning(true);
+        try {
+            const res = await API.post('/api/route/cleanup-orphans');
+            const { success, data, message } = res.data;
+            if (success) {
+                const deleted = Number(data?.deleted) || 0;
+                showSuccess(`已清理 ${deleted} 条孤儿路由`);
+                await loadOverview(false);
+            } else {
+                showError(message || '清理孤儿路由失败');
+            }
+        } catch (e) {
+            showError('清理孤儿路由失败');
+        } finally {
+            setCleaning(false);
+        }
+    };
+
     const copyModelName = async (modelName) => {
         const ok = await copy(modelName);
         if (ok) {
@@ -849,6 +874,11 @@ const ModelRoutesTable = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <Button variant="secondary" onClick={() => loadOverview()} icon={RefreshCcw} disabled={loading || saving}>刷新</Button>
                     <Button variant="outline" onClick={rebuildRoutes} icon={RefreshCcw}>重建路由</Button>
+                    {orphanCount > 0 && (
+                        <Button variant="danger" onClick={cleanupOrphans} icon={Trash2} loading={cleaning} disabled={saving}>
+                            清理孤儿路由 ({orphanCount})
+                        </Button>
+                    )}
                     <Button variant="secondary" onClick={() => setDrafts({})} icon={RotateCcw} disabled={dirtyCount === 0 || saving}>撤销未保存</Button>
                     <Button variant="primary" onClick={saveChanges} icon={Save} loading={saving} disabled={dirtyCount === 0}>保存变更</Button>
                 </div>

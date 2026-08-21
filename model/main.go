@@ -61,38 +61,20 @@ func runMigrations(db *gorm.DB) error {
 	}
 
 	// Clean up orphan routes: model_routes referencing deleted providers
-	cleanupOrphanRoutes(db)
+	cleanupOrphanRoutes()
 
 	return nil
 }
 
 // cleanupOrphanRoutes removes model_routes that reference deleted providers
-func cleanupOrphanRoutes(db *gorm.DB) {
-	var count int64
-	err := db.Table("model_routes AS mr").
-		Joins("LEFT JOIN providers AS p ON p.id = mr.provider_id").
-		Where("p.id IS NULL").
-		Count(&count).Error
-
-	if err != nil || count == 0 {
+func cleanupOrphanRoutes() {
+	deleted, err := CleanupOrphanModelRoutes()
+	if err != nil {
+		common.SysError(fmt.Sprintf("Failed to cleanup orphan routes: %v", err))
 		return
 	}
-
-	common.SysLog(fmt.Sprintf("Found %d orphan routes (deleted providers), cleaning up...", count))
-
-	result := db.Exec(`
-		DELETE FROM model_routes
-		WHERE id IN (
-			SELECT mr.id FROM model_routes AS mr
-			LEFT JOIN providers AS p ON p.id = mr.provider_id
-			WHERE p.id IS NULL
-		)
-	`)
-
-	if result.Error != nil {
-		common.SysError(fmt.Sprintf("Failed to cleanup orphan routes: %v", result.Error))
-	} else {
-		common.SysLog(fmt.Sprintf("Successfully cleaned up %d orphan routes", result.RowsAffected))
+	if deleted > 0 {
+		common.SysLog(fmt.Sprintf("Successfully cleaned up %d orphan routes", deleted))
 	}
 }
 

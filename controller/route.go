@@ -102,3 +102,12 @@ func RebuildRoutes(c *gin.Context) {
 	}()
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "路由重建任务已启动"})
 }
+
+func CleanupOrphanRoutes(c *gin.Context) {
+	deleted, err := model.CleanupOrphanModelRoutes()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{"deleted": deleted}})
+}

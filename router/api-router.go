@@ -116,6 +116,7 @@ func SetApiRouter(router *gin.Engine) {
 			routeGroup.PUT("/:id", controller.UpdateRoute)
 			routeGroup.POST("/batch-update", controller.BatchUpdateRoutes)
 			routeGroup.POST("/rebuild", controller.RebuildRoutes)
+			routeGroup.POST("/cleanup-orphans", controller.CleanupOrphanRoutes)
 		}
 
 		// === System Prompts (Admin) ===
