@@ -32,7 +32,7 @@ const SystemSetting = () => {
     RoutingPriceGuardEnabled: 'true',
     RoutingPriceGuardMaxUnitPrice: '75',
     LLMTraceEnabled: 'false',
-    StripSystemReminderEnabled: 'true',
+    StripSystemReminderEnabled: 'false',
   });
   const [originInputs, setOriginInputs] = useState({});
   const [dbInfo, setDbInfo] = useState({ driver: '', sqlitePath: '' });

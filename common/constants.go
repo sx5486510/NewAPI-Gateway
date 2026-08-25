@@ -34,7 +34,7 @@ var WeChatAuthEnabled = false
 var TurnstileCheckEnabled = false
 var RegisterEnabled = true
 var LLMTraceEnabled = false
-var StripSystemReminderEnabled = true
+var StripSystemReminderEnabled = false
 
 var SMTPServer = ""
 var SMTPPort = 587
