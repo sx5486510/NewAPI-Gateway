@@ -32,6 +32,7 @@ const SystemSetting = () => {
     RoutingPriceGuardEnabled: 'true',
     RoutingPriceGuardMaxUnitPrice: '75',
     LLMTraceEnabled: 'false',
+    StripSystemReminderEnabled: 'true',
   });
   const [originInputs, setOriginInputs] = useState({});
   const [dbInfo, setDbInfo] = useState({ driver: '', sqlitePath: '' });
@@ -88,6 +89,7 @@ const SystemSetting = () => {
       case 'RegisterEnabled':
       case 'RoutingHealthAdjustmentEnabled':
       case 'RoutingPriceGuardEnabled':
+      case 'StripSystemReminderEnabled':
       case 'LLMTraceEnabled':
       case 'ProxyEnabled':
         value = inputs[key] === 'true' ? 'false' : 'true';
@@ -350,6 +352,16 @@ const SystemSetting = () => {
           checked={inputs.LLMTraceEnabled === 'true'}
           label='启用 LLM 上下文审计'
           name='LLMTraceEnabled'
+          onChange={handleCheckboxChange}
+        />
+
+        <div style={{ borderTop: '1px solid var(--border-color)', margin: '1.5rem 0' }}></div>
+
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '1rem' }}>请求转发设置</h3>
+        <Checkbox
+          checked={inputs.StripSystemReminderEnabled === 'true'}
+          label='转发前过滤 <system-reminder> 标签（部分供应商会因此拒绝服务）'
+          name='StripSystemReminderEnabled'
           onChange={handleCheckboxChange}
         />
 

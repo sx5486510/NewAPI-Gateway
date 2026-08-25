@@ -155,6 +155,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			Retryable: true,
 		}
 	}
+	bodyBytes = stripSystemReminders(bodyBytes)
 	requestedStream := extractRequestedStream(bodyBytes)
 
 	// 2. Construct upstream URL

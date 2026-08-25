@@ -33,6 +33,7 @@ func InitOptionMap() {
 	common.OptionMap["TurnstileCheckEnabled"] = strconv.FormatBool(common.TurnstileCheckEnabled)
 	common.OptionMap["RegisterEnabled"] = strconv.FormatBool(common.RegisterEnabled)
 	common.OptionMap["LLMTraceEnabled"] = strconv.FormatBool(common.LLMTraceEnabled)
+	common.OptionMap["StripSystemReminderEnabled"] = strconv.FormatBool(common.StripSystemReminderEnabled)
 	common.OptionMap["SMTPServer"] = ""
 	common.OptionMap["SMTPPort"] = strconv.Itoa(common.SMTPPort)
 	common.OptionMap["SMTPAccount"] = ""
@@ -131,6 +132,8 @@ func updateOptionMap(key string, value string) {
 			common.RegisterEnabled = boolValue
 		case "LLMTraceEnabled":
 			common.LLMTraceEnabled = boolValue
+		case "StripSystemReminderEnabled":
+			common.StripSystemReminderEnabled = boolValue
 		case "ProxyEnabled":
 			common.ProxyEnabled = boolValue
 		}
