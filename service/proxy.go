@@ -100,6 +100,12 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 		resolvedModel = strings.TrimSpace(c.GetString("request_model"))
 	}
 
+	needsConvert := c.Request.URL.Path == "/v1/messages" && route.ConvertMessagesToChat
+	effectivePath := c.Request.URL.Path
+	if needsConvert {
+		effectivePath = "/v1/chat/completions"
+	}
+
 	permit, retryAfter, ok := common.GlobalRouteCooldown.TryAcquireRouteAttempt(token.Id, resolvedModel)
 	if !ok {
 		retryAfterSeconds := int(math.Ceil(retryAfter.Seconds()))
@@ -130,7 +136,27 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 		}
 	}
 
-	bodyBytes, err = prepareRouteRequestBody(c.Request.Method, c.Request.URL.Path, bodyBytes, route)
+	if needsConvert {
+		convertedBody, convErr := ConvertAnthropicRequestToChat(bodyBytes)
+		if convErr != nil {
+			responseBody := ConvertChatErrorToMessagesError(http.StatusBadRequest, upstreamErrorInfo{
+				Type:    "invalid_request_error",
+				Message: convErr.Error(),
+			})
+			errorMsg := buildErrorMessage("failed to convert Anthropic request: "+convErr.Error(), c, bodyBytes)
+			logProxyErrorTrace(c, requestId, provider, token, errorMsg)
+			return &ProxyAttemptError{
+				StatusCode:          http.StatusBadRequest,
+				Message:             convErr.Error(),
+				Retryable:           false,
+				UpstreamBody:        responseBody,
+				UpstreamContentType: "application/json",
+			}
+		}
+		bodyBytes = convertedBody
+	}
+
+	bodyBytes, err = prepareRouteRequestBody(c.Request.Method, effectivePath, bodyBytes, route)
 	if err != nil {
 		var invalidRequest *RouteSystemPromptInvalidRequestError
 		if errors.As(err, &invalidRequest) {
@@ -159,7 +185,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 	requestedStream := extractRequestedStream(bodyBytes)
 
 	// 2. Construct upstream URL
-	upstreamURL := strings.TrimRight(provider.BaseURL, "/") + c.Request.URL.Path
+	upstreamURL := strings.TrimRight(provider.BaseURL, "/") + effectivePath
 	if c.Request.URL.RawQuery != "" {
 		upstreamURL += "?" + c.Request.URL.RawQuery
 	}
@@ -203,6 +229,9 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 		"Content-Type", "Accept", "Accept-Language", "User-Agent", "anthropic-beta",
 	}
 	for _, h := range safeHeaders {
+		if needsConvert && h == "anthropic-beta" {
+			continue
+		}
 		if v := c.GetHeader(h); v != "" {
 			req.Header.Set(h, v)
 		}
@@ -213,7 +242,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 	logProxyAuthDebug(c, req, requestId, provider, token)
 
 	// 6. Anthropic compatibility
-	if isAnthropicPath(c.Request.URL.Path) {
+	if !needsConvert && isAnthropicPath(c.Request.URL.Path) {
 		req.Header.Set("x-api-key", token.SkKey)
 		if v := c.GetHeader("anthropic-version"); v != "" {
 			req.Header.Set("anthropic-version", v)
@@ -334,13 +363,19 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 		if isNonRetryableInvalidRequest(resp.StatusCode, upstreamErr) {
 			retryable = false
 		}
+		upstreamBody := respBody
+		upstreamContentType := resp.Header.Get("Content-Type")
+		if needsConvert && !retryable {
+			upstreamBody = ConvertChatErrorToMessagesError(resp.StatusCode, upstreamErr)
+			upstreamContentType = "application/json"
+		}
 		return &ProxyAttemptError{
 			StatusCode:          resp.StatusCode,
 			Message:             "upstream request failed",
 			Retryable:           retryable,
 			RetryAfterSeconds:   retryAfterSeconds,
-			UpstreamBody:        respBody,
-			UpstreamContentType: resp.Header.Get("Content-Type"),
+			UpstreamBody:        upstreamBody,
+			UpstreamContentType: upstreamContentType,
 			UpstreamErrorCode:   upstreamErr.Code,
 			UpstreamErrorType:   upstreamErr.Type,
 		}
@@ -373,14 +408,43 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 		errorMsg := ""
 		streamCompleted := false
 		clientCanceled := false
+		var sseConverter *MessagesSSEConverter
+		if needsConvert {
+			sseConverter = NewMessagesSSEConverter(resolvedModel)
+		}
+		convertFailedBeforeFirstEvent := false
 		for scanner.Scan() {
 			line := scanner.Text()
 			if streamIdleTimer != nil {
 				streamIdleTimer.Reset(streamIdleTimeout)
 			}
-			streamCapture.appendLine(line)
-			fmt.Fprintf(c.Writer, "%s\n", line)
 			eventCount++
+
+			if sseConverter != nil {
+				convertedChunk, convErr := sseConverter.ConvertLine(line)
+				if convErr != nil {
+					if !sseConverter.HasEmittedFirstEvent() {
+						convertFailedBeforeFirstEvent = true
+						errorMsg = appendStreamError(errorMsg, "stream conversion failed before first event: "+convErr.Error())
+						break
+					}
+					errorMsg = appendStreamError(errorMsg, "stream conversion failed: "+convErr.Error())
+					errorEvent := buildAnthropicStreamErrorEvent(convErr)
+					streamCapture.appendRaw(string(errorEvent))
+					c.Writer.Write(errorEvent)
+					if ok {
+						flusher.Flush()
+					}
+					break
+				}
+				if len(convertedChunk) > 0 {
+					streamCapture.appendRaw(string(convertedChunk))
+					c.Writer.Write(convertedChunk)
+				}
+			} else {
+				streamCapture.appendLine(line)
+				fmt.Fprintf(c.Writer, "%s\n", line)
+			}
 
 			if lineError := extractSSELineErrorMessage(line); lineError != "" && errorMsg == "" {
 				errorMsg = lineError
@@ -420,6 +484,49 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 				errorMsg = appendStreamError(errorMsg, "client canceled")
 			} else {
 				errorMsg = appendStreamError(errorMsg, "stream scanner error: "+scanErr.Error())
+			}
+		}
+		if convertFailedBeforeFirstEvent {
+			convErrorMsg := buildErrorMessage(errorMsg, c, bodyBytes)
+			logProxyErrorTrace(c, requestId, provider, token, convErrorMsg)
+			elapsed := time.Since(startTime).Milliseconds()
+			logUsage(
+				aggToken, provider, token, c, requestId,
+				usageMetrics{ModelName: resolvedModel}, requestedStream, true, 0, int(elapsed), convErrorMsg,
+			)
+			captureLLMTraceAsync(llmTraceInput{
+				AggToken:         aggToken,
+				Provider:         provider,
+				Token:            token,
+				Context:          c,
+				RequestId:        requestId,
+				ModelName:        resolvedModel,
+				Method:           c.Request.Method,
+				Path:             c.Request.URL.Path,
+				StatusCode:       resp.StatusCode,
+				RequestedStream:  requestedStream,
+				ResponseIsStream: true,
+				RequestBody:      bodyBytes,
+				ResponseBody:     []byte(streamCapture.String()),
+				ErrorMessage:     convErrorMsg,
+			})
+			resetProxyResponseHeadersForRetry(c)
+			return &ProxyAttemptError{
+				StatusCode: http.StatusBadGateway,
+				Message:    "stream conversion failed before first event: " + errorMsg,
+				Retryable:  true,
+			}
+		}
+		if sseConverter != nil && !convertFailedBeforeFirstEvent && errorMsg == "" {
+			finalChunk, finalErr := sseConverter.Finalize()
+			if finalErr != nil {
+				errorMsg = appendStreamError(errorMsg, "stream finalize failed: "+finalErr.Error())
+			} else if len(finalChunk) > 0 {
+				streamCapture.appendRaw(string(finalChunk))
+				c.Writer.Write(finalChunk)
+				if ok {
+					flusher.Flush()
+				}
 			}
 		}
 		errorMsg = finalizeStreamError(errorMsg, eventCount, streamCompleted)
@@ -506,14 +613,52 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			logProxyErrorTrace(c, requestId, provider, token, errorMsg)
 		}
 
-		c.Status(resp.StatusCode)
-		_, _ = c.Writer.Write(respBody)
-
 		elapsed := time.Since(startTime).Milliseconds()
 		usage := extractUsageAndModelFromJSON(respBody)
 		if usage.ModelName == "" {
 			usage.ModelName = c.GetString("request_model")
 		}
+
+		finalRespBody := respBody
+		if needsConvert && len(respBody) > 0 {
+			convertedBody, convErr := ConvertChatResponseToMessages(respBody)
+			if convErr != nil {
+				convErrorMsg := buildErrorMessage("failed to convert upstream response to Anthropic format: "+convErr.Error(), c, bodyBytes)
+				logProxyErrorTrace(c, requestId, provider, token, convErrorMsg)
+				logUsage(
+					aggToken, provider, token, c, requestId,
+					usage, requestedStream, false, 0, int(elapsed), convErrorMsg,
+				)
+				captureLLMTraceAsync(llmTraceInput{
+					AggToken:         aggToken,
+					Provider:         provider,
+					Token:            token,
+					Context:          c,
+					RequestId:        requestId,
+					ModelName:        usage.ModelName,
+					Method:           c.Request.Method,
+					Path:             c.Request.URL.Path,
+					StatusCode:       resp.StatusCode,
+					RequestedStream:  requestedStream,
+					ResponseIsStream: false,
+					RequestBody:      bodyBytes,
+					ResponseBody:     respBody,
+					ErrorMessage:     convErrorMsg,
+				})
+				common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
+				return &ProxyAttemptError{
+					StatusCode: http.StatusBadGateway,
+					Message:    "failed to convert upstream response: " + convErr.Error(),
+					Retryable:  true,
+				}
+			}
+			finalRespBody = convertedBody
+		}
+
+		c.Writer.Header().Set("Content-Length", strconv.Itoa(len(finalRespBody)))
+		c.Status(resp.StatusCode)
+		_, _ = c.Writer.Write(finalRespBody)
+
 		logUsage(
 			aggToken, provider, token, c, requestId,
 			usage, requestedStream, false, 0, int(elapsed), errorMsg,
@@ -531,7 +676,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			RequestedStream:  requestedStream,
 			ResponseIsStream: false,
 			RequestBody:      bodyBytes,
-			ResponseBody:     respBody,
+			ResponseBody:     finalRespBody,
 			ErrorMessage:     errorMsg,
 		})
 		if errorMsg != "" {
@@ -583,6 +728,19 @@ func selectProxyHTTPClient(stream bool) *http.Client {
 		return streamProxyHTTPClient
 	}
 	return proxyHTTPClient
+}
+
+// resetProxyResponseHeadersForRetry clears any response headers/status set
+// during an aborted attempt so a subsequent retry on the same *gin.Context
+// starts from a clean slate. It must only be called before any bytes have
+// been written to the underlying ResponseWriter (i.e. before c.Writer.Write
+// or c.Writer.Flush), since gin defers header commit until the first write.
+func resetProxyResponseHeadersForRetry(c *gin.Context) {
+	header := c.Writer.Header()
+	for key := range header {
+		header.Del(key)
+	}
+	c.Status(http.StatusOK)
 }
 
 func newStreamIdleTimer(timeout time.Duration, cancel context.CancelFunc, reason *atomic.Value) *time.Timer {

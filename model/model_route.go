@@ -74,17 +74,18 @@ func chunkStrings(values []string, chunkSize int) [][]string {
 }
 
 type ModelRoute struct {
-	Id              int    `json:"id"`
-	ModelName       string `json:"model_name" gorm:"type:varchar(255);index;not null"`
-	ProviderTokenId int    `json:"provider_token_id" gorm:"index;not null"`
-	ProviderId      int    `json:"provider_id" gorm:"index;not null"`
-	Enabled         bool   `json:"enabled" gorm:"default:true"`
-	Priority        int    `json:"priority" gorm:"default:0;index"`
-	Weight          int    `json:"weight" gorm:"default:10"`
-	AllowCodex      bool   `json:"allow_codex" gorm:"default:false"`
-	AllowCC         bool   `json:"allow_cc" gorm:"default:false"`
-	BlockClients    bool   `json:"block_clients" gorm:"default:false"`
-	SystemPromptId  *int   `json:"system_prompt_id" gorm:"index"`
+	Id                    int    `json:"id"`
+	ModelName             string `json:"model_name" gorm:"type:varchar(255);index;not null"`
+	ProviderTokenId       int    `json:"provider_token_id" gorm:"index;not null"`
+	ProviderId            int    `json:"provider_id" gorm:"index;not null"`
+	Enabled               bool   `json:"enabled" gorm:"default:true"`
+	Priority              int    `json:"priority" gorm:"default:0;index"`
+	Weight                int    `json:"weight" gorm:"default:10"`
+	AllowCodex            bool   `json:"allow_codex" gorm:"default:false"`
+	AllowCC               bool   `json:"allow_cc" gorm:"default:false"`
+	BlockClients          bool   `json:"block_clients" gorm:"default:false"`
+	SystemPromptId        *int   `json:"system_prompt_id" gorm:"index"`
+	ConvertMessagesToChat bool   `json:"convert_messages_to_chat" gorm:"default:false"`
 }
 
 // IsClientAllowed checks if a route allows the specified client type.
@@ -105,14 +106,15 @@ func (mr *ModelRoute) NormalizeClientRestrictions() {
 }
 
 type ModelRoutePatch struct {
-	Id             int                    `json:"id"`
-	Priority       *int                   `json:"priority,omitempty"`
-	Weight         *int                   `json:"weight,omitempty"`
-	Enabled        *bool                  `json:"enabled,omitempty"`
-	AllowCodex     *bool                  `json:"allow_codex,omitempty"`
-	AllowCC        *bool                  `json:"allow_cc,omitempty"`
-	BlockClients   *bool                  `json:"block_clients,omitempty"`
-	SystemPromptId NullableSystemPromptID `json:"system_prompt_id"`
+	Id                    int                    `json:"id"`
+	Priority              *int                   `json:"priority,omitempty"`
+	Weight                *int                   `json:"weight,omitempty"`
+	Enabled               *bool                  `json:"enabled,omitempty"`
+	AllowCodex            *bool                  `json:"allow_codex,omitempty"`
+	AllowCC               *bool                  `json:"allow_cc,omitempty"`
+	BlockClients          *bool                  `json:"block_clients,omitempty"`
+	SystemPromptId        NullableSystemPromptID `json:"system_prompt_id"`
+	ConvertMessagesToChat *bool                  `json:"convert_messages_to_chat,omitempty"`
 }
 
 // NullableSystemPromptID distinguishes an omitted field from an explicit JSON
@@ -155,6 +157,9 @@ func (p *ModelRoutePatch) ToUpdates() map[string]interface{} {
 	}
 	if p.BlockClients != nil {
 		updates["block_clients"] = *p.BlockClients
+	}
+	if p.ConvertMessagesToChat != nil {
+		updates["convert_messages_to_chat"] = *p.ConvertMessagesToChat
 	}
 	if p.SystemPromptId.Set {
 		if p.SystemPromptId.Value == nil {
@@ -234,6 +239,7 @@ type ModelRouteOverviewItem struct {
 	AllowCodex              bool     `json:"allow_codex"`
 	AllowCC                 bool     `json:"allow_cc"`
 	BlockClients            bool     `json:"block_clients"`
+	ConvertMessagesToChat   bool     `json:"convert_messages_to_chat"`
 	Enabled                 bool     `json:"enabled"`
 	Priority                int      `json:"priority"`
 	Weight                  int      `json:"weight"`
@@ -262,33 +268,34 @@ type ModelRouteOverviewItem struct {
 }
 
 type modelRouteOverviewRow struct {
-	Id                  int     `gorm:"column:id"`
-	ModelName           string  `gorm:"column:model_name"`
-	SystemPromptId      *int    `gorm:"column:system_prompt_id"`
-	ProviderId          int     `gorm:"column:provider_id"`
-	ProviderName        string  `gorm:"column:provider_name"`
-	ProviderBaseURL     string  `gorm:"column:provider_base_url"`
-	ProviderBalance     string  `gorm:"column:provider_balance"`
-	ProviderStatus      int     `gorm:"column:provider_status"`
-	ProviderIdExists    *int    `gorm:"column:provider_id_exists"` // p.id IS NOT NULL 判断供应商是否存在
-	ProviderTokenId     int     `gorm:"column:provider_token_id"`
-	TokenName           string  `gorm:"column:token_name"`
-	TokenGroupName      string  `gorm:"column:token_group_name"`
-	TokenStatus         int     `gorm:"column:token_status"`
-	TokenUnlimitedQuota *bool   `gorm:"column:token_unlimited_quota"`
-	TokenRemainQuota    *int64  `gorm:"column:token_remain_quota"`
-	TokenUsedQuota      *int64  `gorm:"column:token_used_quota"`
-	AllowCodex          bool    `gorm:"column:allow_codex"`
-	AllowCC             bool    `gorm:"column:allow_cc"`
-	BlockClients        bool    `gorm:"column:block_clients"`
-	Enabled             bool    `gorm:"column:enabled"`
-	Priority            int     `gorm:"column:priority"`
-	Weight              int     `gorm:"column:weight"`
-	PricingGroupRatio   string  `gorm:"column:pricing_group_ratio"`
-	QuotaType           int     `gorm:"column:quota_type"`
-	ModelRatio          float64 `gorm:"column:model_ratio"`
-	CompletionRatio     float64 `gorm:"column:completion_ratio"`
-	ModelPrice          float64 `gorm:"column:model_price"`
+	Id                    int     `gorm:"column:id"`
+	ModelName             string  `gorm:"column:model_name"`
+	SystemPromptId        *int    `gorm:"column:system_prompt_id"`
+	ProviderId            int     `gorm:"column:provider_id"`
+	ProviderName          string  `gorm:"column:provider_name"`
+	ProviderBaseURL       string  `gorm:"column:provider_base_url"`
+	ProviderBalance       string  `gorm:"column:provider_balance"`
+	ProviderStatus        int     `gorm:"column:provider_status"`
+	ProviderIdExists      *int    `gorm:"column:provider_id_exists"` // p.id IS NOT NULL 判断供应商是否存在
+	ProviderTokenId       int     `gorm:"column:provider_token_id"`
+	TokenName             string  `gorm:"column:token_name"`
+	TokenGroupName        string  `gorm:"column:token_group_name"`
+	TokenStatus           int     `gorm:"column:token_status"`
+	TokenUnlimitedQuota   *bool   `gorm:"column:token_unlimited_quota"`
+	TokenRemainQuota      *int64  `gorm:"column:token_remain_quota"`
+	TokenUsedQuota        *int64  `gorm:"column:token_used_quota"`
+	AllowCodex            bool    `gorm:"column:allow_codex"`
+	AllowCC               bool    `gorm:"column:allow_cc"`
+	BlockClients          bool    `gorm:"column:block_clients"`
+	ConvertMessagesToChat bool    `gorm:"column:convert_messages_to_chat"`
+	Enabled               bool    `gorm:"column:enabled"`
+	Priority              int     `gorm:"column:priority"`
+	Weight                int     `gorm:"column:weight"`
+	PricingGroupRatio     string  `gorm:"column:pricing_group_ratio"`
+	QuotaType             int     `gorm:"column:quota_type"`
+	ModelRatio            float64 `gorm:"column:model_ratio"`
+	CompletionRatio       float64 `gorm:"column:completion_ratio"`
+	ModelPrice            float64 `gorm:"column:model_price"`
 }
 
 type RouteAttempt struct {
@@ -1253,6 +1260,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			"mr.allow_codex",
 			"mr.allow_cc",
 			"mr.block_clients",
+			"mr.convert_messages_to_chat",
 			"mr.enabled",
 			"mr.priority",
 			"mr.weight",
@@ -1336,6 +1344,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			AllowCodex:              row.AllowCodex,
 			AllowCC:                 row.AllowCC,
 			BlockClients:            row.BlockClients,
+			ConvertMessagesToChat:   row.ConvertMessagesToChat,
 			Enabled:                 row.Enabled,
 			Priority:                row.Priority,
 			Weight:                  row.Weight,

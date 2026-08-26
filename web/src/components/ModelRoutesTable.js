@@ -475,6 +475,10 @@ const ModelRoutesTable = () => {
                         const freshPromptId = normalizeSystemPromptId(freshRoute.system_prompt_id);
                         if (draftPromptId !== freshPromptId) remaining.system_prompt_id = draftPromptId;
                     }
+                    if (Object.prototype.hasOwnProperty.call(draft, 'convert_messages_to_chat')
+                        && !!draft.convert_messages_to_chat !== !!freshRoute.convert_messages_to_chat) {
+                        remaining.convert_messages_to_chat = draft.convert_messages_to_chat;
+                    }
                     if (Object.keys(remaining).length > 0) reconciledDrafts[id] = remaining;
                 });
                 return reconciledDrafts;
@@ -674,11 +678,13 @@ const ModelRoutesTable = () => {
             const baseDraft = {
                 enabled: original.enabled,
                 system_prompt_id: normalizeSystemPromptId(original.system_prompt_id),
+                convert_messages_to_chat: !!original.convert_messages_to_chat,
                 ...(prev[routeId] || {})
             };
             const nextDraft = { ...baseDraft, ...patch };
             const unchanged = nextDraft.enabled === original.enabled
-                && normalizeSystemPromptId(nextDraft.system_prompt_id) === normalizeSystemPromptId(original.system_prompt_id);
+                && normalizeSystemPromptId(nextDraft.system_prompt_id) === normalizeSystemPromptId(original.system_prompt_id)
+                && !!nextDraft.convert_messages_to_chat === !!original.convert_messages_to_chat;
             if (unchanged) {
                 const next = { ...prev };
                 delete next[routeId];
@@ -699,11 +705,13 @@ const ModelRoutesTable = () => {
                 const current = {
                     enabled: original.enabled,
                     system_prompt_id: normalizeSystemPromptId(original.system_prompt_id),
+                    convert_messages_to_chat: !!original.convert_messages_to_chat,
                     ...(next[route.id] || {})
                 };
                 current.enabled = enabled;
                 const unchanged = current.enabled === original.enabled
-                    && normalizeSystemPromptId(current.system_prompt_id) === normalizeSystemPromptId(original.system_prompt_id);
+                    && normalizeSystemPromptId(current.system_prompt_id) === normalizeSystemPromptId(original.system_prompt_id)
+                    && !!current.convert_messages_to_chat === !!original.convert_messages_to_chat;
                 if (unchanged) {
                     delete next[route.id];
                 } else {
@@ -726,6 +734,10 @@ const ModelRoutesTable = () => {
             if (Object.prototype.hasOwnProperty.call(value, 'system_prompt_id')
                 && draftPromptId !== normalizeSystemPromptId(original.system_prompt_id)) {
                 item.system_prompt_id = draftPromptId;
+            }
+            if (Object.prototype.hasOwnProperty.call(value, 'convert_messages_to_chat')
+                && !!value.convert_messages_to_chat !== !!original.convert_messages_to_chat) {
+                item.convert_messages_to_chat = !!value.convert_messages_to_chat;
             }
             return item;
         });
@@ -1064,6 +1076,7 @@ const ModelRoutesTable = () => {
                                         <col style={{ width: '9%' }} />
                                         <col style={{ width: '12%' }} />
                                         <col style={{ width: '10%' }} />
+                                        <col style={{ width: '10%' }} />
                                     </colgroup>
                                     <Thead>
                                         <Tr>
@@ -1077,19 +1090,20 @@ const ModelRoutesTable = () => {
                                             {renderSortableDetailHeader('status', '状态')}
                                             <Th style={stickyHeaderCellStyle}>系统提示词</Th>
                                             <Th style={stickyHeaderCellStyle}>客户端限制</Th>
+                                            <Th style={stickyHeaderCellStyle}>协议转换</Th>
                                         </Tr>
                                     </Thead>
                                     <Tbody>
                                         {selectedGroupedRoutes.length === 0 ? (
                                             <Tr>
-                                                <Td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
+                                                <Td colSpan={11} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
                                                     当前模型没有符合条件的路由
                                                 </Td>
                                             </Tr>
                                         ) : selectedGroupedRoutes.map((group) => (
                                             <React.Fragment key={group.key}>
                                                 <Tr style={{ backgroundColor: 'var(--gray-50)' }}>
-                                                    <Td colSpan={10} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
+                                                    <Td colSpan={11} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                             <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>候选路由</div>
                                                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -1116,6 +1130,7 @@ const ModelRoutesTable = () => {
                                                     const tokenAllowCodex = route.allow_codex || false;
                                                     const tokenAllowCC = route.allow_cc || false;
                                                     const tokenBlockClients = route.block_clients || false;
+                                                    const convertMessagesToChat = !!route.convert_messages_to_chat;
                                                     const routePriceLines = buildRoutePriceLines(route);
                                                     const tokenQuota = formatTokenQuota(route);
                                                     const promptOptions = systemPromptsByModel.get(String(route.model_name || '')) || [];
@@ -1310,6 +1325,25 @@ const ModelRoutesTable = () => {
                                                                         <span style={helperTextStyle}>不限制</span>
                                                                     )}
                                                                 </div>
+                                                            </Td>
+                                                            <Td style={cellMiddleStyle}>
+                                                                <label style={tokenClientToggleStyle} title="开启后，网关会将 Anthropic /v1/messages 请求转换为 OpenAI Chat Completions 请求转发给上游">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        className="routes-convert-messages-toggle"
+                                                                        checked={convertMessagesToChat}
+                                                                        aria-label={`${route.provider_name || '路由'}协议转换`}
+                                                                        onChange={(e) => updateDraft(route.id, { convert_messages_to_chat: e.target.checked })}
+                                                                        disabled={saving}
+                                                                        style={{ margin: 0 }}
+                                                                    />
+                                                                    <span>Messages→Chat</span>
+                                                                </label>
+                                                                {convertMessagesToChat && (tokenBlockClients || !tokenAllowCC) && (
+                                                                    <div style={{ ...helperTextStyle, marginTop: '0.25rem' }}>
+                                                                        提示：CC 客户端当前可能无法使用该路由
+                                                                    </div>
+                                                                )}
                                                             </Td>
                                                         </Tr>
                                                     );

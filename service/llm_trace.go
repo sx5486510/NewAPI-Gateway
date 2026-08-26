@@ -62,6 +62,23 @@ func (c *traceStreamCapture) appendLine(line string) {
 	c.builder.WriteString(text)
 }
 
+// appendRaw appends text as-is (no implicit trailing newline), for callers
+// that already include their own line terminators (e.g. converted SSE
+// events, which may span multiple lines per logical chunk).
+func (c *traceStreamCapture) appendRaw(text string) {
+	if c == nil || !c.enabled || text == "" {
+		return
+	}
+	remaining := c.limit - c.builder.Len()
+	if remaining <= 0 {
+		return
+	}
+	if len(text) > remaining {
+		text = text[:remaining]
+	}
+	c.builder.WriteString(text)
+}
+
 func (c *traceStreamCapture) String() string {
 	if c == nil || !c.enabled {
 		return ""
