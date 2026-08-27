@@ -555,6 +555,17 @@ func syncTokens(client *UpstreamClient, provider *model.Provider) error {
 				}
 			}
 		}
+		modelLimits := strings.TrimSpace(t.ModelLimits)
+		// Pricing is provider-wide, but model availability can differ per key.
+		// Populate the token allow-list from the key-scoped models endpoint when
+		// the upstream token does not provide an explicit model limit.
+		if modelLimits == "" && rawKey != "" && !model.IsMaskedKey(rawKey) {
+			if keyModels, modelErr := fetchOpenAIModels(provider.BaseURL, rawKey); modelErr == nil {
+				modelLimits = strings.Join(keyModels, ",")
+			} else {
+				common.SysLog(fmt.Sprintf("warning: unable to fetch models for upstream token %d of provider %s: %v", t.Id, provider.Name, modelErr))
+			}
+		}
 		pt := &model.ProviderToken{
 			ProviderId:      provider.Id,
 			UpstreamTokenId: t.Id,
@@ -569,7 +580,7 @@ func syncTokens(client *UpstreamClient, provider *model.Provider) error {
 			RemainQuota:     t.RemainQuota,
 			UnlimitedQuota:  t.UnlimitedQuota,
 			UsedQuota:       t.UsedQuota,
-			ModelLimits:     t.ModelLimits,
+			ModelLimits:     modelLimits,
 			LastSynced:      time.Now().Unix(),
 		}
 		if err := model.UpsertProviderToken(pt); err != nil {
