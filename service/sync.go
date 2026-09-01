@@ -10,8 +10,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+var providerRebuildLocks sync.Map
+
+func providerRebuildLock(providerID int) *sync.Mutex {
+	lock, _ := providerRebuildLocks.LoadOrStore(providerID, &sync.Mutex{})
+	return lock.(*sync.Mutex)
+}
 
 // SyncProvider synchronizes pricing, tokens, and balance from an upstream provider
 func SyncProvider(provider *model.Provider) error {
@@ -626,6 +634,10 @@ func clearProviderSyncState(provider *model.Provider) error {
 // Logic: for each provider_token, find its group_name, then find all models
 // whose pricing.enable_groups contains that group_name → create route entries
 func RebuildProviderRoutes(providerId int) error {
+	lock := providerRebuildLock(providerId)
+	lock.Lock()
+	defer lock.Unlock()
+
 	tokens, err := model.GetEnabledProviderTokensByProviderId(providerId)
 	if err != nil {
 		return err

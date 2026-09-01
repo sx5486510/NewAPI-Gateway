@@ -16,6 +16,15 @@ var DB *gorm.DB
 
 // runMigrations handles custom migrations that AutoMigrate cannot handle
 func runMigrations(db *gorm.DB) error {
+	if err := repairDuplicateProviderTokens(db); err != nil {
+		return fmt.Errorf("failed to repair duplicate provider tokens: %w", err)
+	}
+	if err := repairDuplicateModelRoutes(db); err != nil {
+		return fmt.Errorf("failed to repair duplicate model routes: %w", err)
+	}
+	if err := createRouteUniquenessIndexes(db); err != nil {
+		return fmt.Errorf("failed to create route uniqueness indexes: %w", err)
+	}
 	// Add client restriction columns to provider_token table if they don't exist
 	if !db.Migrator().HasColumn(&ProviderToken{}, "allow_codex") {
 		common.SysLog("Adding allow_codex column to provider_token table")
@@ -63,6 +72,88 @@ func runMigrations(db *gorm.DB) error {
 	// Clean up orphan routes: model_routes referencing deleted providers
 	cleanupOrphanRoutes()
 
+	return nil
+}
+
+func repairDuplicateProviderTokens(db *gorm.DB) error {
+	type tokenKey struct {
+		ID         int
+		ProviderID int
+		UpstreamID int
+	}
+	var tokens []tokenKey
+	if err := db.Model(&ProviderToken{}).Select("id, provider_id, upstream_token_id").Order("id ASC").Find(&tokens).Error; err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(tokens))
+	duplicateIDs := make([]int, 0)
+	for _, token := range tokens {
+		key := fmt.Sprintf("%d:%d", token.ProviderID, token.UpstreamID)
+		if _, exists := seen[key]; exists {
+			duplicateIDs = append(duplicateIDs, token.ID)
+			continue
+		}
+		seen[key] = struct{}{}
+	}
+	for _, batch := range chunkInts(duplicateIDs, sqliteSingleInChunkSize) {
+		if err := db.Where("provider_token_id IN ?", batch).Delete(&ModelRoute{}).Error; err != nil {
+			return err
+		}
+		if err := db.Where("id IN ?", batch).Delete(&ProviderToken{}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func repairDuplicateModelRoutes(db *gorm.DB) error {
+	type routeKey struct {
+		ID         int
+		ProviderID int
+		TokenID    int
+		ModelName  string
+	}
+	var routes []routeKey
+	if err := db.Model(&ModelRoute{}).Select("id, provider_id, provider_token_id, model_name").Order("id ASC").Find(&routes).Error; err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(routes))
+	duplicateIDs := make([]int, 0)
+	for _, route := range routes {
+		key := fmt.Sprintf("%d:%d:%s", route.ProviderID, route.TokenID, route.ModelName)
+		if _, exists := seen[key]; exists {
+			duplicateIDs = append(duplicateIDs, route.ID)
+			continue
+		}
+		seen[key] = struct{}{}
+	}
+	for _, batch := range chunkInts(duplicateIDs, sqliteSingleInChunkSize) {
+		if err := db.Where("id IN ?", batch).Delete(&ModelRoute{}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func createRouteUniquenessIndexes(db *gorm.DB) error {
+	statements := []string{
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_model_routes_provider_token_model ON model_routes(provider_id, provider_token_id, model_name)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_tokens_provider_upstream ON provider_tokens(provider_id, upstream_token_id)",
+	}
+	if db.Dialector.Name() == "mysql" {
+		statements = nil
+		if !db.Migrator().HasIndex(&ModelRoute{}, "idx_model_routes_provider_token_model") {
+			statements = append(statements, "ALTER TABLE model_routes ADD UNIQUE INDEX idx_model_routes_provider_token_model (provider_id, provider_token_id, model_name)")
+		}
+		if !db.Migrator().HasIndex(&ProviderToken{}, "idx_provider_tokens_provider_upstream") {
+			statements = append(statements, "ALTER TABLE provider_tokens ADD UNIQUE INDEX idx_provider_tokens_provider_upstream (provider_id, upstream_token_id)")
+		}
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil && !strings.Contains(strings.ToLower(err.Error()), "already exists") && !strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -3,6 +3,7 @@ package model
 import (
 	"NewAPI-Gateway/common"
 	"encoding/json"
+	"strconv"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -389,6 +390,36 @@ func TestBuildRouteAttemptsKeepsExpensiveRoutesWhenPriceGuardDisabled(t *testing
 	}
 }
 
+func TestBuildRouteAttemptsDeduplicatesSameProviderTokenAcrossModelAliases(t *testing.T) {
+	setupModelRouteTestDB(t)
+	provider := Provider{Id: 1, Name: "provider", Status: common.UserStatusEnabled}
+	token := ProviderToken{Id: 101, ProviderId: 1, Name: "token", GroupName: "default", Status: common.UserStatusEnabled}
+	if err := DB.Create(&provider).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.Create(&token).Error; err != nil {
+		t.Fatal(err)
+	}
+	routes := []ModelRoute{
+		{ModelName: "deepseek-v4-flash", ProviderId: 1, ProviderTokenId: 101, Enabled: true},
+		{ModelName: "deepseek/deepseek-v4-flash", ProviderId: 1, ProviderTokenId: 101, Enabled: true},
+	}
+	if err := DB.Create(&routes).Error; err != nil {
+		t.Fatal(err)
+	}
+	common.SetProviderRuntimeAvailable(1, true)
+	if err := DB.Create(&ModelPricing{ProviderId: 1, ModelName: "deepseek-v4-flash", EnableGroups: `["default"]`}).Error; err != nil {
+		t.Fatal(err)
+	}
+	attempts, err := BuildRouteAttemptsByPriority("deepseek-v4-flash", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts) != 1 || len(attempts[0]) != 1 {
+		t.Fatalf("expected one token candidate, got %#v", attempts)
+	}
+}
+
 func TestComputeRouteContributionIgnoresManualWeight(t *testing.T) {
 	lowWeight := computeRouteContribution(-10, 1, 1, 1, 0)
 	highWeight := computeRouteContribution(100, 1, 1, 1, 0)
@@ -697,6 +728,48 @@ func TestRebuildRoutesForProviderAddsAndRemovesRoutes(t *testing.T) {
 	}
 	if len(routes) != 2 || routes[0].ModelName != "add" || routes[1].ModelName != "keep" {
 		t.Fatalf("expected add and keep routes, got %#v", routes)
+	}
+}
+
+func TestRebuildRoutesForProviderDeduplicatesExistingRows(t *testing.T) {
+	setupModelRouteTestDB(t)
+	rows := []ModelRoute{
+		{ModelName: "deepseek-v4-flash", ProviderId: 1, ProviderTokenId: 101, Enabled: true},
+		{ModelName: "deepseek-v4-flash", ProviderId: 1, ProviderTokenId: 101, Enabled: false},
+	}
+	if err := DB.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := RebuildRoutesForProvider(1, []ModelRoute{{ModelName: "deepseek-v4-flash", ProviderId: 1, ProviderTokenId: 101, Enabled: true}}); err != nil {
+		t.Fatalf("rebuild routes: %v", err)
+	}
+	var count int64
+	if err := DB.Model(&ModelRoute{}).Where("provider_id = ? AND provider_token_id = ? AND model_name = ?", 1, 101, "deepseek-v4-flash").Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one route after rebuild, got %d", count)
+	}
+}
+
+func TestRebuildRoutesForProviderDeletesLargeStaleSetInBatches(t *testing.T) {
+	setupModelRouteTestDB(t)
+	rows := make([]ModelRoute, 1100)
+	for i := range rows {
+		rows[i] = ModelRoute{ModelName: "stale-" + strconv.Itoa(i), ProviderId: 1, ProviderTokenId: 101, Enabled: true}
+	}
+	if err := DB.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := RebuildRoutesForProvider(1, nil); err != nil {
+		t.Fatalf("rebuild routes with large stale set: %v", err)
+	}
+	var count int64
+	if err := DB.Model(&ModelRoute{}).Where("provider_id = ?", 1).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected all stale routes removed, got %d", count)
 	}
 }
 

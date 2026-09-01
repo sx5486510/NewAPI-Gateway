@@ -132,6 +132,16 @@ describe('ModelRoutesTable', () => {
     expect(statusSwitch.getAttribute('aria-checked')).toBe('false');
     expect(statusSwitch.textContent).toContain('禁用');
   });
+
+  it('shows the raw model name when a route is grouped by a normalized alias', async () => {
+    setApiLists([{ ...route, model_name: 'deepseek/deepseek-v4-flash' }], []);
+    await act(async () => {
+      root.render(<ModelRoutesTable />);
+    });
+
+    expect(document.body.textContent).toContain('deepseek/deepseek-v4-flash');
+    expect(document.body.textContent).toContain('原始模型');
+  });
   it('saves disabled route drafts with enabled false', async () => {
     await act(async () => {
       root.render(<ModelRoutesTable />);

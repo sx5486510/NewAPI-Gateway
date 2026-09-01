@@ -4,6 +4,7 @@ import (
 	"NewAPI-Gateway/model"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestCollectRequiredTokenGroups(t *testing.T) {
@@ -32,5 +33,29 @@ func TestGetMissingTokenGroups(t *testing.T) {
 	want := []string{"beta"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("getMissingTokenGroups() = %v, want %v", got, want)
+	}
+}
+
+func TestProviderRebuildLockSerializesSameProvider(t *testing.T) {
+	lock := providerRebuildLock(987654)
+	lock.Lock()
+	entered := make(chan struct{})
+	released := make(chan struct{})
+	go func() {
+		lock.Lock()
+		close(entered)
+		lock.Unlock()
+		close(released)
+	}()
+	select {
+	case <-entered:
+		t.Fatal("second rebuild acquired the provider lock too early")
+	case <-time.After(20 * time.Millisecond):
+	}
+	lock.Unlock()
+	select {
+	case <-released:
+	case <-time.After(time.Second):
+		t.Fatal("second rebuild did not acquire the provider lock after release")
 	}
 }

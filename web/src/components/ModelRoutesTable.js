@@ -1119,6 +1119,8 @@ const ModelRoutesTable = () => {
                                                     const tokenName = String(route.token_name || '').trim();
                                                     const tokenGroup = String(route.token_group_name || '').trim();
                                                     const displayTokenName = tokenName && tokenName !== tokenGroup ? tokenName : '';
+                                                    const rawModelName = String(route.model_name || '').trim();
+                                                    const normalizedModelName = String(selectedEntry.modelName || '').trim();
                                                     const healthValue = Number(route.health_value);
                                                     const healthSuccessCount = Number(route.health_success_count);
                                                     const healthErrorCount = Number(route.health_error_count);
@@ -1173,6 +1175,11 @@ const ModelRoutesTable = () => {
                                                                 {displayTokenName && (
                                                                     <div style={{ ...helperTextStyle, marginTop: '0.2rem' }}>
                                                                         {displayTokenName}
+                                                                    </div>
+                                                                )}
+                                                                {rawModelName && rawModelName !== normalizedModelName && (
+                                                                    <div style={{ ...helperTextStyle, marginTop: '0.2rem' }} title={rawModelName}>
+                                                                        原始模型：{rawModelName}
                                                                     </div>
                                                                 )}
                                                                 <div style={{ marginTop: '0.35rem', display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap' }}>

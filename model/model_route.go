@@ -487,10 +487,41 @@ func BuildRouteAttemptsByPriority(modelName string, clientType string) ([][]Rout
 			config.ValueScoreFactor,
 		)
 	}
+	// A token can expose several upstream model aliases. Keep one route per
+	// provider token in a retry plan so the same credential is never retried
+	// multiple times for one request.
+	uniqueAttempts := make([]RouteAttempt, 0, len(attempts))
+	seenTokens := make(map[int]int, len(attempts))
+	for _, attempt := range attempts {
+		if previousIndex, seen := seenTokens[attempt.Route.ProviderTokenId]; seen {
+			if routeModelMatchRank(attempt.Route.ModelName, requestedModel) < routeModelMatchRank(uniqueAttempts[previousIndex].Route.ModelName, requestedModel) {
+				uniqueAttempts[previousIndex] = attempt
+			}
+			continue
+		}
+		seenTokens[attempt.Route.ProviderTokenId] = len(uniqueAttempts)
+		uniqueAttempts = append(uniqueAttempts, attempt)
+	}
+	attempts = uniqueAttempts
 	if config.HealthEnabled {
 		return [][]RouteAttempt{orderAttemptsByHealthValue(attempts)}, nil
 	}
 	return [][]RouteAttempt{weightedShuffleAttempts(attempts)}, nil
+}
+
+func routeModelMatchRank(routeModelName, requestedModel string) int {
+	if strings.EqualFold(strings.TrimSpace(routeModelName), strings.TrimSpace(requestedModel)) {
+		return 0
+	}
+	routeNormalized := common.NormalizeModelName(routeModelName)
+	requestedNormalized := common.NormalizeModelName(requestedModel)
+	if routeNormalized != "" && routeNormalized == requestedNormalized {
+		return 1
+	}
+	if routeNormalized != "" && common.ToVersionAgnosticKey(routeNormalized) == common.ToVersionAgnosticKey(requestedNormalized) {
+		return 2
+	}
+	return 3
 }
 
 func getCandidateRoutesByModel(requestedModel string) ([]ModelRoute, error) {
@@ -1529,14 +1560,30 @@ func RebuildRoutesForProvider(providerId int, routes []ModelRoute) error {
 		return err
 	}
 	existingMap := make(map[string]ModelRoute, len(existingRoutes))
+	duplicateIDs := make([]int, 0)
 	for _, route := range existingRoutes {
-		existingMap[routeModelTokenKey(route.ModelName, route.ProviderTokenId)] = route
+		key := routeModelTokenKey(route.ModelName, route.ProviderTokenId)
+		if previous, ok := existingMap[key]; ok {
+			if route.Id < previous.Id {
+				duplicateIDs = append(duplicateIDs, previous.Id)
+				existingMap[key] = route
+			} else {
+				duplicateIDs = append(duplicateIDs, route.Id)
+			}
+			continue
+		}
+		existingMap[key] = route
 	}
 
 	generatedKeys := make(map[string]struct{}, len(routes))
 	newRoutes := make([]ModelRoute, 0, len(routes))
+	generatedSeen := make(map[string]struct{}, len(routes))
 	for _, route := range routes {
 		key := routeModelTokenKey(route.ModelName, route.ProviderTokenId)
+		if _, seen := generatedSeen[key]; seen {
+			continue
+		}
+		generatedSeen[key] = struct{}{}
 		generatedKeys[key] = struct{}{}
 		if previous, ok := existingMap[key]; ok {
 			if err := tx.Model(&ModelRoute{}).Where("id = ?", previous.Id).Updates(map[string]interface{}{
@@ -1585,8 +1632,9 @@ func RebuildRoutesForProvider(providerId int, routes []ModelRoute) error {
 			staleIDs = append(staleIDs, route.Id)
 		}
 	}
-	if len(staleIDs) > 0 {
-		if err := tx.Where("id IN ?", staleIDs).Delete(&ModelRoute{}).Error; err != nil {
+	deleteIDs := append(duplicateIDs, staleIDs...)
+	for _, batch := range chunkInts(deleteIDs, sqliteSingleInChunkSize) {
+		if err := tx.Where("id IN ?", batch).Delete(&ModelRoute{}).Error; err != nil {
 			tx.Rollback()
 			return err
 		}
