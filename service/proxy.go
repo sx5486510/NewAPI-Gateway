@@ -411,8 +411,13 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 		firstTokenMs := 0
 		eventCount := 0
 		errorMsg := ""
+		sseProtocolErrorMsg := ""
 		streamCompleted := false
 		clientCanceled := false
+		var sseValidator *AnthropicSSEValidator
+		if c.Request.URL.Path == "/v1/messages" {
+			sseValidator = NewAnthropicSSEValidator()
+		}
 		var sseConverter *MessagesSSEConverter
 		if needsConvert {
 			sseConverter = NewMessagesSSEConverter(resolvedModel)
@@ -443,10 +448,20 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 					break
 				}
 				if len(convertedChunk) > 0 {
+					if sseValidator != nil {
+						if validationErr := sseValidator.ConsumeBytes(convertedChunk); validationErr != nil && sseProtocolErrorMsg == "" {
+							sseProtocolErrorMsg = validationErr.Error()
+						}
+					}
 					streamCapture.appendRaw(string(convertedChunk))
 					c.Writer.Write(convertedChunk)
 				}
 			} else {
+				if sseValidator != nil {
+					if validationErr := sseValidator.ConsumeLine(line); validationErr != nil && sseProtocolErrorMsg == "" {
+						sseProtocolErrorMsg = validationErr.Error()
+					}
+				}
 				streamCapture.appendLine(line)
 				fmt.Fprintf(c.Writer, "%s\n", line)
 			}
@@ -536,6 +551,11 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 		}
 		errorMsg = finalizeStreamError(errorMsg, eventCount, streamCompleted)
 		routeErrorMsg := errorMsg
+		// SSE protocol diagnostics are audit-only. Preserve the original route
+		// outcome so an otherwise client-canceled request is not cooled down.
+		if sseProtocolErrorMsg != "" {
+			errorMsg = appendStreamError(errorMsg, sseProtocolErrorMsg)
+		}
 		if errorMsg != "" {
 			errorMsg = buildErrorMessage(errorMsg, c, bodyBytes)
 			logProxyErrorTrace(c, requestId, provider, token, errorMsg)
@@ -1406,6 +1426,9 @@ func isClientCanceledError(err error, c *gin.Context) bool {
 }
 
 func extractErrorKeyInfo(errorMsg string) (httpStatus int, errorType string, upstreamHost string) {
+	if strings.Contains(errorMsg, "invalid SSE response:") {
+		errorType = "INVALID_SSE_RESPONSE"
+	}
 	// Extract HTTP status code (e.g., "upstream status 502" -> 502)
 	if strings.Contains(errorMsg, "upstream status ") {
 		parts := strings.Split(errorMsg, "upstream status ")
@@ -1558,6 +1581,9 @@ func extractErrorKeyInfo(errorMsg string) (httpStatus int, errorType string, ups
 		}
 	}
 
+	if strings.Contains(errorMsg, "invalid SSE response:") {
+		errorType = "INVALID_SSE_RESPONSE"
+	}
 	return httpStatus, errorType, upstreamHost
 }
 

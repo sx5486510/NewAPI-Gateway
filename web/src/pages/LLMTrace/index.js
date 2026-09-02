@@ -69,6 +69,8 @@ const getRiskTagText = (tag) => {
   return tagMap[tag] || tag;
 };
 
+const isInvalidSSEResponse = (trace) => String(trace?.error_message || '').includes('invalid SSE response:');
+
 const LLMTrace = () => {
   const [traces, setTraces] = useState([]);
   const [total, setTotal] = useState(0);
@@ -219,6 +221,7 @@ const LLMTrace = () => {
                       <Badge color={Number(trace.status_code) >= 400 || trace.error_message ? 'red' : 'green'}>
                         {Number(trace.status_code) || '-'}
                       </Badge>
+                      {isInvalidSSEResponse(trace) && <Badge color='orange'>INVALID SSE</Badge>}
                       <span className='log-time'>{formatTime(trace.created_at)}</span>
                     </div>
                   </div>
