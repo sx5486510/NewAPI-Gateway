@@ -142,6 +142,25 @@ describe('ModelRoutesTable', () => {
     expect(document.body.textContent).toContain('deepseek/deepseek-v4-flash');
     expect(document.body.textContent).toContain('原始模型');
   });
+  it('renders cooldown cause diagnostics when provided by the overview API', async () => {
+    setApiLists([{ ...route,
+      cooldown_in_cooldown: true,
+      cooldown_reason: 'token',
+      cooldown_remaining_secs: 47,
+      cooldown_cause_reason_code: 'rate_limited',
+      cooldown_cause_http_status: 429,
+      cooldown_cause_message: 'Too many requests',
+      cooldown_trigger_count: 4,
+    }], []);
+    await act(async () => {
+      root.render(<ModelRoutesTable />);
+    });
+    expect(document.body.textContent).toContain('Token冷却');
+    expect(document.body.textContent).toContain('HTTP 429');
+    expect(document.body.textContent).toContain('连续失败 4 次');
+    expect(document.querySelector('[title="Too many requests"]')).not.toBeNull();
+  });
+
   it('saves disabled route drafts with enabled false', async () => {
     await act(async () => {
       root.render(<ModelRoutesTable />);

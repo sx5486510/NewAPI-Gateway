@@ -1,8 +1,10 @@
 package common
 
 import (
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestRouteCooldownManager_BasicCooldownAndHalfOpen(t *testing.T) {
@@ -344,3 +346,57 @@ func TestRouteCooldownManager_GetRouteCooldownStatusReturnsEmptyWhenDisabled(t *
 	}
 }
 
+func TestRouteCooldownManager_RecordRouteFailureWithCausePopulatesFields(t *testing.T) {
+	clock := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	mgr := newRouteCooldownManager(func() RouteCooldownConfig {
+		return RouteCooldownConfig{Enabled: true, BaseSeconds: 30, Multiplier: 2, MaxSeconds: 1800, MinConsecutiveFailures: 1, UnsupportedModelHours: 24, TokenBaseSeconds: 600, TokenMaxSeconds: 7200}
+	}, func() time.Time { return clock }, func() float64 { return 0.5 })
+	mgr.RecordRouteFailureWithMinimumAndCause(42, "gpt-5", 0, CooldownCause{HTTPStatus: 503, ReasonCode: CooldownReasonUpstream5xx, ReasonMessage: "upstream temporarily unavailable", TriggeredAt: clock})
+	status := mgr.GetRouteCooldownStatus(42, "gpt-5")
+	if !status.InCooldown || status.CauseHTTPStatus != 503 || status.CauseReasonCode != CooldownReasonUpstream5xx || status.CauseMessage != "upstream temporarily unavailable" || status.TriggerCount != 1 {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestRouteCooldownManager_LegacyFailureKeepsCauseFieldsEmpty(t *testing.T) {
+	clock := time.Now()
+	mgr := newRouteCooldownManager(func() RouteCooldownConfig {
+		return RouteCooldownConfig{Enabled: true, BaseSeconds: 1, UnsupportedModelHours: 1}
+	}, func() time.Time { return clock }, nil)
+	mgr.RecordRouteFailure(1, "m")
+	status := mgr.GetRouteCooldownStatus(1, "m")
+	if status.CauseHTTPStatus != 0 || status.CauseReasonCode != "" || status.CauseMessage != "" || status.CauseTriggeredAt != 0 || status.TriggerCount != 0 {
+		t.Fatalf("legacy call unexpectedly populated cause: %+v", status)
+	}
+}
+
+func TestRouteCooldownManager_CauseOnlyAfterThreshold(t *testing.T) {
+	clock := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	mgr := newRouteCooldownManager(func() RouteCooldownConfig {
+		return RouteCooldownConfig{Enabled: true, BaseSeconds: 30, Multiplier: 2, MaxSeconds: 1800, MinConsecutiveFailures: 3, UnsupportedModelHours: 24, TokenBaseSeconds: 600, TokenMaxSeconds: 7200}
+	}, func() time.Time { return clock }, func() float64 { return 0.5 })
+	cause := CooldownCause{HTTPStatus: 500, ReasonCode: CooldownReasonUpstream5xx, ReasonMessage: "boom", TriggeredAt: clock}
+	mgr.RecordRouteFailureWithMinimumAndCause(1, "m", 0, cause)
+	mgr.RecordRouteFailureWithMinimumAndCause(1, "m", 0, cause)
+	status := mgr.GetRouteCooldownStatus(1, "m")
+	if status.InCooldown || status.CauseReasonCode != "" {
+		t.Fatalf("cause should not be visible before threshold: %+v", status)
+	}
+	mgr.RecordRouteFailureWithMinimumAndCause(1, "m", 0, cause)
+	status = mgr.GetRouteCooldownStatus(1, "m")
+	if !status.InCooldown || status.CauseReasonCode != CooldownReasonUpstream5xx || status.TriggerCount != 3 {
+		t.Fatalf("unexpected threshold status: %+v", status)
+	}
+}
+
+func TestRouteCooldownManager_CauseMessageIsUTF8SafeAndBounded(t *testing.T) {
+	clock := time.Now()
+	mgr := newRouteCooldownManager(func() RouteCooldownConfig {
+		return RouteCooldownConfig{Enabled: true, BaseSeconds: 1, UnsupportedModelHours: 1}
+	}, func() time.Time { return clock }, nil)
+	mgr.RecordRouteFailureWithMinimumAndCause(1, "m", 0, CooldownCause{ReasonMessage: strings.Repeat("界", 300)})
+	status := mgr.GetRouteCooldownStatus(1, "m")
+	if !utf8.ValidString(status.CauseMessage) || len([]rune(status.CauseMessage)) != CoolDownCauseMessageLimit()+1 {
+		t.Fatalf("invalid or unexpected message: %q", status.CauseMessage)
+	}
+}

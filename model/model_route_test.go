@@ -36,6 +36,29 @@ func setupModelRouteTestDB(t *testing.T) {
 	})
 }
 
+func TestModelRouteOverviewCooldownCauseJSONContract(t *testing.T) {
+	status := ModelRouteOverviewItem{
+		CooldownCauseHTTPStatus:  429,
+		CooldownCauseReasonCode:  "rate_limited",
+		CooldownCauseMessage:     "Too many requests",
+		CooldownCauseTriggeredAt: 123,
+		CooldownTriggerCount:     3,
+	}
+	data, err := json.Marshal(status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"cooldown_cause_http_status", "cooldown_cause_reason_code", "cooldown_cause_message", "cooldown_cause_triggered_at", "cooldown_trigger_count"} {
+		if _, ok := decoded[key]; !ok {
+			t.Fatalf("missing %s in %s", key, data)
+		}
+	}
+}
+
 func TestRouteSystemPromptPatchDistinguishesOmittedNullAndNumeric(t *testing.T) {
 	tests := []struct {
 		body       string

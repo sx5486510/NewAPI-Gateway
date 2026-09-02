@@ -301,7 +301,11 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 		})
 		outcome := classifyProxyRequestError(err, c, timeoutReason)
 		if outcome.RecordRouteFailure {
-			common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
+			reasonCode := common.CooldownReasonNetworkError
+			if timeoutReason != "" {
+				reasonCode = common.CooldownReasonStreamTimeout
+			}
+			common.GlobalRouteCooldown.RecordRouteFailureWithMinimumAndCause(token.Id, resolvedModel, 0, common.CooldownCause{ReasonCode: reasonCode, ReasonMessage: trimCooldownMessage(err.Error())})
 		}
 
 		return &ProxyAttemptError{
@@ -348,15 +352,16 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 
 		upstreamErr := extractUpstreamErrorInfo(respBody)
 		retryAfterSeconds := parseRetryAfterSeconds(resp.Header.Get("Retry-After"))
+		cause := buildCooldownCause(resp.StatusCode, upstreamErr, errorMsg)
 
 		if shouldMarkUnsupportedModel(resp.StatusCode, upstreamErr) {
-			common.GlobalRouteCooldown.MarkUnsupportedModel(token.Id, resolvedModel)
+			common.GlobalRouteCooldown.MarkUnsupportedModelWithCause(token.Id, resolvedModel, cause)
 		}
 		if shouldTriggerTokenCooldown(resp.StatusCode, upstreamErr) {
-			common.GlobalRouteCooldown.RecordTokenFailureWithMinimum(token.Id, retryAfterSeconds)
+			common.GlobalRouteCooldown.RecordTokenFailureWithMinimumAndCause(token.Id, retryAfterSeconds, cause)
 		}
 		if shouldTriggerRouteCooldown(resp.StatusCode, upstreamErr) {
-			common.GlobalRouteCooldown.RecordRouteFailureWithMinimum(token.Id, resolvedModel, retryAfterSeconds)
+			common.GlobalRouteCooldown.RecordRouteFailureWithMinimumAndCause(token.Id, resolvedModel, retryAfterSeconds, cause)
 		}
 
 		retryable := true
@@ -561,7 +566,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 		})
 		switch streamRouteOutcome(routeErrorMsg, clientCanceled, streamCompleted) {
 		case streamRouteOutcomeFailure:
-			common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
+			common.GlobalRouteCooldown.RecordRouteFailureWithMinimumAndCause(token.Id, resolvedModel, 0, common.CooldownCause{ReasonCode: common.CooldownReasonStreamReadError, ReasonMessage: trimCooldownMessage(routeErrorMsg)})
 		case streamRouteOutcomeSuccess:
 			common.GlobalRouteCooldown.RecordRouteSuccess(token.Id, resolvedModel)
 		}
@@ -595,7 +600,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 				RequestBody:     bodyBytes,
 				ErrorMessage:    errorMsg,
 			})
-			common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
+			common.GlobalRouteCooldown.RecordRouteFailureWithMinimumAndCause(token.Id, resolvedModel, 0, common.CooldownCause{ReasonCode: common.CooldownReasonNetworkError, ReasonMessage: trimCooldownMessage(readErr.Error())})
 			return &ProxyAttemptError{
 				StatusCode: http.StatusBadGateway,
 				Message:    "upstream response read failed: " + readErr.Error(),
@@ -645,7 +650,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 					ResponseBody:     respBody,
 					ErrorMessage:     convErrorMsg,
 				})
-				common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
+				common.GlobalRouteCooldown.RecordRouteFailureWithMinimumAndCause(token.Id, resolvedModel, 0, common.CooldownCause{ReasonCode: common.CooldownReasonConvertError, ReasonMessage: trimCooldownMessage(convErr.Error())})
 				return &ProxyAttemptError{
 					StatusCode: http.StatusBadGateway,
 					Message:    "failed to convert upstream response: " + convErr.Error(),
@@ -680,7 +685,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			ErrorMessage:     errorMsg,
 		})
 		if errorMsg != "" {
-			common.GlobalRouteCooldown.RecordRouteFailure(token.Id, resolvedModel)
+			common.GlobalRouteCooldown.RecordRouteFailureWithMinimumAndCause(token.Id, resolvedModel, 0, buildCooldownCause(resp.StatusCode, extractUpstreamErrorInfo(respBody), errorMsg))
 		} else {
 			common.GlobalRouteCooldown.RecordRouteSuccess(token.Id, resolvedModel)
 		}
@@ -1314,6 +1319,49 @@ func shouldTriggerRouteCooldown(statusCode int, upstreamErr upstreamErrorInfo) b
 		return true
 	}
 	return false
+}
+
+func cooldownReasonCodeFor(statusCode int, upstreamErr upstreamErrorInfo) string {
+	if statusCode >= 500 {
+		return common.CooldownReasonUpstream5xx
+	}
+	if statusCode == http.StatusRequestTimeout {
+		return common.CooldownReasonUpstream408
+	}
+	if statusCode >= 400 && statusCode < 500 {
+		code := strings.ToLower(strings.TrimSpace(upstreamErr.Code))
+		typ := strings.ToLower(strings.TrimSpace(upstreamErr.Type))
+		msg := strings.ToLower(strings.TrimSpace(upstreamErr.Message))
+		switch {
+		case strings.Contains(code, "model_not_found") || strings.Contains(typ, "model_not_found") || strings.Contains(msg, "model not found") || strings.Contains(msg, "no such model"):
+			return common.CooldownReasonModelNotFound
+		case strings.Contains(code, "permission_denied") || strings.Contains(typ, "permission_denied"):
+			return common.CooldownReasonPermissionDenied
+		case strings.Contains(code, "rate_limit") || strings.Contains(typ, "rate_limit") || strings.Contains(msg, "rate limit") || strings.Contains(msg, "quota exceeded"):
+			return common.CooldownReasonRateLimited
+		case strings.Contains(code, "invalid_request") || strings.Contains(code, "invalid_parameter") || strings.Contains(typ, "invalid_request") || strings.Contains(typ, "invalid_parameter"):
+			return common.CooldownReasonInvalidRequest
+		default:
+			return common.CooldownReasonUpstream4xx
+		}
+	}
+	return common.CooldownReasonUnknown
+}
+
+func trimCooldownMessage(message string) string {
+	message = strings.TrimSpace(message)
+	if len([]rune(message)) > common.CoolDownCauseMessageLimit() {
+		return string([]rune(message)[:common.CoolDownCauseMessageLimit()]) + "…"
+	}
+	return message
+}
+
+func buildCooldownCause(statusCode int, upstreamErr upstreamErrorInfo, fallback string) common.CooldownCause {
+	message := strings.TrimSpace(upstreamErr.Message)
+	if message == "" {
+		message = strings.TrimSpace(fallback)
+	}
+	return common.CooldownCause{HTTPStatus: statusCode, ReasonCode: cooldownReasonCodeFor(statusCode, upstreamErr), ReasonMessage: trimCooldownMessage(message)}
 }
 
 func isNonRetryableInvalidRequest(statusCode int, upstreamErr upstreamErrorInfo) bool {

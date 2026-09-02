@@ -1,12 +1,42 @@
 package service
 
 import (
+	"NewAPI-Gateway/common"
 	"context"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestCooldownReasonCodeFor(t *testing.T) {
+	cases := []struct {
+		status int
+		err    upstreamErrorInfo
+		want   string
+	}{
+		{500, upstreamErrorInfo{}, common.CooldownReasonUpstream5xx},
+		{408, upstreamErrorInfo{}, common.CooldownReasonUpstream408},
+		{429, upstreamErrorInfo{Code: "rate_limit_exceeded"}, common.CooldownReasonRateLimited},
+		{403, upstreamErrorInfo{Code: "permission_denied"}, common.CooldownReasonPermissionDenied},
+		{404, upstreamErrorInfo{Message: "model not found"}, common.CooldownReasonModelNotFound},
+		{400, upstreamErrorInfo{}, common.CooldownReasonUpstream4xx},
+		{0, upstreamErrorInfo{}, common.CooldownReasonUnknown},
+	}
+	for _, tc := range cases {
+		if got := cooldownReasonCodeFor(tc.status, tc.err); got != tc.want {
+			t.Errorf("got %q want %q", got, tc.want)
+		}
+	}
+}
+
+func TestBuildCooldownCauseTruncatesUTF8Message(t *testing.T) {
+	cause := buildCooldownCause(500, upstreamErrorInfo{Message: strings.Repeat("界", 300)}, "")
+	if cause.ReasonCode != common.CooldownReasonUpstream5xx || cause.HTTPStatus != 500 || len([]rune(cause.ReasonMessage)) != common.CoolDownCauseMessageLimit()+1 {
+		t.Fatalf("unexpected cause: %+v", cause)
+	}
+}
 
 func TestShouldMarkUnsupportedModel_AcrossAll4xx(t *testing.T) {
 	cases := []struct {

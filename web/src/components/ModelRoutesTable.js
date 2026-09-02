@@ -329,6 +329,33 @@ const getCooldownReasonColor = (reason) => {
     }
 };
 
+const COOLDOWN_REASON_LABELS = {
+    unknown: '未知原因',
+    upstream_4xx: '上游 4xx 错误',
+    upstream_5xx: '上游 5xx 错误',
+    upstream_408: '上游请求超时 (408)',
+    network_error: '网络错误',
+    stream_timeout: '流式超时',
+    stream_read_error: '流式读取失败',
+    model_not_found: '模型不存在',
+    permission_denied: '权限被拒绝',
+    rate_limited: '上游限流',
+    invalid_request: '请求参数无效',
+    convert_error: '格式转换失败',
+    empty_response: '上游返回空响应',
+};
+
+const getCooldownCauseSummary = (route) => {
+    const code = route.cooldown_cause_reason_code;
+    if (!code) return '';
+    const parts = [COOLDOWN_REASON_LABELS[code] || code];
+    const status = Number(route.cooldown_cause_http_status);
+    if (Number.isFinite(status) && status > 0) parts.push(`HTTP ${status}`);
+    const count = Number(route.cooldown_trigger_count);
+    if (Number.isFinite(count) && count > 1) parts.push(`连续失败 ${count} 次`);
+    return parts.join(' · ');
+};
+
 const renderCooldownStatus = (route) => {
     const inCooldown = route.cooldown_in_cooldown;
     const reason = route.cooldown_reason;
@@ -368,6 +395,8 @@ const renderCooldownStatus = (route) => {
     const reasonLabel = getCooldownReasonLabel(reason);
     const reasonColor = getCooldownReasonColor(reason);
     const timeLabel = formatCooldownTime(remainingSecs);
+    const causeSummary = getCooldownCauseSummary(route);
+    const causeDetail = route.cooldown_cause_message || '';
 
     return (
         <div style={{ lineHeight: 1.35 }}>
@@ -377,6 +406,11 @@ const renderCooldownStatus = (route) => {
             {timeLabel && (
                 <div style={{ ...helperTextStyle, marginTop: '0.18rem', color: 'var(--error)' }}>
                     剩余: {timeLabel}
+                </div>
+            )}
+            {causeSummary && (
+                <div title={causeDetail} style={{ ...helperTextStyle, marginTop: '0.18rem', color: 'var(--error)' }}>
+                    {causeSummary}
                 </div>
             )}
         </div>

@@ -29,6 +29,59 @@ type RouteCooldownConfig struct {
 	TokenMaxSeconds  int
 }
 
+// CooldownCause captures diagnostic context for a cooldown trigger.
+// It does not affect cooldown duration or selection behavior.
+type CooldownCause struct {
+	HTTPStatus    int
+	ReasonCode    string
+	ReasonMessage string
+	TriggeredAt   time.Time
+}
+
+const (
+	CooldownReasonUnknown          = "unknown"
+	CooldownReasonUpstream4xx      = "upstream_4xx"
+	CooldownReasonUpstream5xx      = "upstream_5xx"
+	CooldownReasonUpstream408      = "upstream_408"
+	CooldownReasonNetworkError     = "network_error"
+	CooldownReasonStreamTimeout    = "stream_timeout"
+	CooldownReasonStreamReadError  = "stream_read_error"
+	CooldownReasonModelNotFound    = "model_not_found"
+	CooldownReasonPermissionDenied = "permission_denied"
+	CooldownReasonRateLimited      = "rate_limited"
+	CooldownReasonInvalidRequest   = "invalid_request"
+	CooldownReasonConvertError     = "convert_error"
+	CooldownReasonEmptyResponse    = "empty_response"
+)
+
+const cooldownCauseMessageLimit = 200
+
+// CoolDownCauseMessageLimit returns the maximum number of runes retained in a
+// diagnostic cause message (excluding the trailing ellipsis).
+func CoolDownCauseMessageLimit() int { return cooldownCauseMessageLimit }
+
+func sanitizeCooldownCause(cause CooldownCause, now time.Time) CooldownCause {
+	if !hasCooldownCause(cause) {
+		return CooldownCause{}
+	}
+	if cause.TriggeredAt.IsZero() {
+		cause.TriggeredAt = now
+	}
+	cause.ReasonMessage = strings.TrimSpace(cause.ReasonMessage)
+	if len([]rune(cause.ReasonMessage)) > cooldownCauseMessageLimit {
+		cause.ReasonMessage = string([]rune(cause.ReasonMessage)[:cooldownCauseMessageLimit]) + "…"
+	}
+	return cause
+}
+
+func hasCooldownCause(cause CooldownCause) bool {
+	return cause.HTTPStatus != 0 || strings.TrimSpace(cause.ReasonCode) != "" || strings.TrimSpace(cause.ReasonMessage) != "" || !cause.TriggeredAt.IsZero()
+}
+
+func stateHasCooldownCause(httpStatus int, reasonCode, reasonMessage string, triggeredAt time.Time) bool {
+	return httpStatus != 0 || reasonCode != "" || reasonMessage != "" || !triggeredAt.IsZero()
+}
+
 type routeCooldownKey struct {
 	providerTokenId int
 	modelName       string
@@ -40,17 +93,38 @@ type routeCooldownState struct {
 	lastFailureTime     time.Time
 
 	halfOpenInFlight int
+
+	lastHTTPStatus    int
+	lastReasonCode    string
+	lastReasonMessage string
+	lastTriggeredAt   time.Time
+	triggerCount      int
 }
 
 type tokenCooldownState struct {
 	consecutiveFailures int
 	cooldownUntil       time.Time
 	lastFailureTime     time.Time
+
+	lastHTTPStatus    int
+	lastReasonCode    string
+	lastReasonMessage string
+	lastTriggeredAt   time.Time
+	triggerCount      int
+}
+
+type unsupportedRecord struct {
+	until         time.Time
+	httpStatus    int
+	reasonCode    string
+	reasonMessage string
+	triggeredAt   time.Time
+	triggerCount  int
 }
 
 type RouteCooldownPermit struct {
-	manager *RouteCooldownManager
-	key     routeCooldownKey
+	manager  *RouteCooldownManager
+	key      routeCooldownKey
 	halfOpen bool
 	released bool
 }
@@ -67,7 +141,7 @@ type RouteCooldownManager struct {
 
 	routeStates map[routeCooldownKey]*routeCooldownState
 	tokenStates map[int]*tokenCooldownState
-	unsupported map[routeCooldownKey]time.Time
+	unsupported map[routeCooldownKey]*unsupportedRecord
 
 	configProvider func() RouteCooldownConfig
 	now            func() time.Time
@@ -91,12 +165,12 @@ func newRouteCooldownManager(configProvider func() RouteCooldownConfig, nowFn fu
 		randFn = rand.Float64
 	}
 	return &RouteCooldownManager{
-		routeStates:     make(map[routeCooldownKey]*routeCooldownState),
-		tokenStates:     make(map[int]*tokenCooldownState),
-		unsupported:     make(map[routeCooldownKey]time.Time),
-		configProvider:  configProvider,
-		now:             nowFn,
-		randFloat64:     randFn,
+		routeStates:    make(map[routeCooldownKey]*routeCooldownState),
+		tokenStates:    make(map[int]*tokenCooldownState),
+		unsupported:    make(map[routeCooldownKey]*unsupportedRecord),
+		configProvider: configProvider,
+		now:            nowFn,
+		randFloat64:    randFn,
 	}
 }
 
@@ -151,11 +225,11 @@ func (m *RouteCooldownManager) TryAcquireRouteAttempt(providerTokenId int, model
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if until, ok := m.unsupported[key]; ok {
-		if !now.Before(until) {
+	if rec, ok := m.unsupported[key]; ok {
+		if !now.Before(rec.until) {
 			delete(m.unsupported, key)
 		} else {
-			return nil, until.Sub(now), false
+			return nil, rec.until.Sub(now), false
 		}
 	}
 
@@ -245,10 +319,14 @@ func (m *RouteCooldownManager) RecordRouteSuccess(providerTokenId int, modelName
 }
 
 func (m *RouteCooldownManager) RecordRouteFailure(providerTokenId int, modelName string) {
-	m.RecordRouteFailureWithMinimum(providerTokenId, modelName, 0)
+	m.RecordRouteFailureWithMinimumAndCause(providerTokenId, modelName, 0, CooldownCause{})
 }
 
 func (m *RouteCooldownManager) RecordRouteFailureWithMinimum(providerTokenId int, modelName string, minCooldownSeconds int) {
+	m.RecordRouteFailureWithMinimumAndCause(providerTokenId, modelName, minCooldownSeconds, CooldownCause{})
+}
+
+func (m *RouteCooldownManager) RecordRouteFailureWithMinimumAndCause(providerTokenId int, modelName string, minCooldownSeconds int, cause CooldownCause) {
 	cfg := m.configProvider()
 	if !cfg.Enabled {
 		return
@@ -262,6 +340,7 @@ func (m *RouteCooldownManager) RecordRouteFailureWithMinimum(providerTokenId int
 	}
 
 	now := m.now()
+	cause = sanitizeCooldownCause(cause, now)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -285,6 +364,7 @@ func (m *RouteCooldownManager) RecordRouteFailureWithMinimum(providerTokenId int
 	state.consecutiveFailures++
 	state.lastFailureTime = now
 	state.halfOpenInFlight = 0
+	state.triggerCount++
 
 	minFailures := cfg.MinConsecutiveFailures
 	if minFailures <= 0 {
@@ -307,18 +387,29 @@ func (m *RouteCooldownManager) RecordRouteFailureWithMinimum(providerTokenId int
 		duration = minCooldownSeconds
 	}
 	state.cooldownUntil = now.Add(time.Duration(duration) * time.Second)
+	if hasCooldownCause(cause) {
+		state.lastHTTPStatus = cause.HTTPStatus
+		state.lastReasonCode = cause.ReasonCode
+		state.lastReasonMessage = cause.ReasonMessage
+		state.lastTriggeredAt = cause.TriggeredAt
+	}
 }
 
 func (m *RouteCooldownManager) RecordTokenFailure(providerTokenId int) {
-	m.RecordTokenFailureWithMinimum(providerTokenId, 0)
+	m.RecordTokenFailureWithMinimumAndCause(providerTokenId, 0, CooldownCause{})
 }
 
 func (m *RouteCooldownManager) RecordTokenFailureWithMinimum(providerTokenId int, minCooldownSeconds int) {
+	m.RecordTokenFailureWithMinimumAndCause(providerTokenId, minCooldownSeconds, CooldownCause{})
+}
+
+func (m *RouteCooldownManager) RecordTokenFailureWithMinimumAndCause(providerTokenId int, minCooldownSeconds int, cause CooldownCause) {
 	cfg := m.configProvider()
 	if !cfg.Enabled {
 		return
 	}
 	now := m.now()
+	cause = sanitizeCooldownCause(cause, now)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -340,6 +431,7 @@ func (m *RouteCooldownManager) RecordTokenFailureWithMinimum(providerTokenId int
 
 	state.consecutiveFailures++
 	state.lastFailureTime = now
+	state.triggerCount++
 
 	duration := computeCooldownDurationSeconds(
 		cfg.TokenBaseSeconds,
@@ -353,9 +445,19 @@ func (m *RouteCooldownManager) RecordTokenFailureWithMinimum(providerTokenId int
 		duration = minCooldownSeconds
 	}
 	state.cooldownUntil = now.Add(time.Duration(duration) * time.Second)
+	if hasCooldownCause(cause) {
+		state.lastHTTPStatus = cause.HTTPStatus
+		state.lastReasonCode = cause.ReasonCode
+		state.lastReasonMessage = cause.ReasonMessage
+		state.lastTriggeredAt = cause.TriggeredAt
+	}
 }
 
 func (m *RouteCooldownManager) MarkUnsupportedModel(providerTokenId int, modelName string) {
+	m.MarkUnsupportedModelWithCause(providerTokenId, modelName, CooldownCause{})
+}
+
+func (m *RouteCooldownManager) MarkUnsupportedModelWithCause(providerTokenId int, modelName string, cause CooldownCause) {
 	cfg := m.configProvider()
 	if !cfg.Enabled {
 		return
@@ -372,17 +474,28 @@ func (m *RouteCooldownManager) MarkUnsupportedModel(providerTokenId int, modelNa
 		return
 	}
 	now := m.now()
+	cause = sanitizeCooldownCause(cause, now)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.unsupported[key] = now.Add(ttl)
+	rec := &unsupportedRecord{until: now.Add(ttl), triggerCount: 1}
+	if previous, ok := m.unsupported[key]; ok {
+		rec.triggerCount = previous.triggerCount + 1
+	}
+	if hasCooldownCause(cause) {
+		rec.httpStatus = cause.HTTPStatus
+		rec.reasonCode = cause.ReasonCode
+		rec.reasonMessage = cause.ReasonMessage
+		rec.triggeredAt = cause.TriggeredAt
+	}
+	m.unsupported[key] = rec
 }
 
 func (m *RouteCooldownManager) isUnsupportedLocked(key routeCooldownKey, now time.Time) bool {
-	until, ok := m.unsupported[key]
+	rec, ok := m.unsupported[key]
 	if !ok {
 		return false
 	}
-	if !now.Before(until) {
+	if !now.Before(rec.until) {
 		delete(m.unsupported, key)
 		return false
 	}
@@ -516,18 +629,18 @@ func computeCooldownDurationSeconds(baseSeconds int, multiplier float64, maxSeco
 }
 
 const (
-	cooldownEnabledOptionKey            = "CooldownEnabled"
-	cooldownBaseSecondsOptionKey        = "CooldownBaseSeconds"
-	cooldownMultiplierOptionKey         = "CooldownMultiplier"
-	cooldownMaxSecondsOptionKey         = "CooldownMaxSeconds"
-	cooldownDecayMinutesOptionKey       = "CooldownDecayMinutes"
-	minConsecutiveFailuresOptionKey     = "MinConsecutiveFailures"
-	failureWindowSecondsOptionKey       = "FailureWindowSeconds"
-	cooldownJitterRatioOptionKey        = "CooldownJitterRatio"
-	halfOpenMaxInFlightOptionKey        = "HalfOpenMaxInFlight"
-	unsupportedModelTTLHoursOptionKey   = "UnsupportedModelTTLHours"
-	tokenCooldownBaseSecondsOptionKey   = "TokenCooldownBaseSeconds"
-	tokenCooldownMaxSecondsOptionKey    = "TokenCooldownMaxSeconds"
+	cooldownEnabledOptionKey          = "CooldownEnabled"
+	cooldownBaseSecondsOptionKey      = "CooldownBaseSeconds"
+	cooldownMultiplierOptionKey       = "CooldownMultiplier"
+	cooldownMaxSecondsOptionKey       = "CooldownMaxSeconds"
+	cooldownDecayMinutesOptionKey     = "CooldownDecayMinutes"
+	minConsecutiveFailuresOptionKey   = "MinConsecutiveFailures"
+	failureWindowSecondsOptionKey     = "FailureWindowSeconds"
+	cooldownJitterRatioOptionKey      = "CooldownJitterRatio"
+	halfOpenMaxInFlightOptionKey      = "HalfOpenMaxInFlight"
+	unsupportedModelTTLHoursOptionKey = "UnsupportedModelTTLHours"
+	tokenCooldownBaseSecondsOptionKey = "TokenCooldownBaseSeconds"
+	tokenCooldownMaxSecondsOptionKey  = "TokenCooldownMaxSeconds"
 )
 
 func LoadRouteCooldownConfig() RouteCooldownConfig {
@@ -621,11 +734,29 @@ func parseOptionFloatInRange(raw string, fallback float64, min float64, max floa
 
 // RouteCooldownStatus represents the cooldown status of a route for API response
 type RouteCooldownStatus struct {
-	InCooldown     bool   `json:"in_cooldown"`      // Whether the route is currently in cooldown
-	Reason         string `json:"reason"`          // Reason for cooldown: "", "route", "token", "unsupported"
-	RemainingSecs  int    `json:"remaining_secs"`  // Remaining cooldown time in seconds
-	HalfOpen       bool   `json:"half_open"`       // Whether in half-open state
-	HalfOpenInflight int  `json:"half_open_inflight"` // Number of in-flight requests in half-open state
+	InCooldown       bool   `json:"in_cooldown"`        // Whether the route is currently in cooldown
+	Reason           string `json:"reason"`             // Reason for cooldown: "", "route", "token", "unsupported"
+	RemainingSecs    int    `json:"remaining_secs"`     // Remaining cooldown time in seconds
+	HalfOpen         bool   `json:"half_open"`          // Whether in half-open state
+	HalfOpenInflight int    `json:"half_open_inflight"` // Number of in-flight requests in half-open state
+	CauseHTTPStatus  int    `json:"cause_http_status,omitempty"`
+	CauseReasonCode  string `json:"cause_reason_code,omitempty"`
+	CauseMessage     string `json:"cause_message,omitempty"`
+	CauseTriggeredAt int64  `json:"cause_triggered_at,omitempty"`
+	TriggerCount     int    `json:"trigger_count,omitempty"`
+}
+
+func fillCooldownCauseStatus(result *RouteCooldownStatus, httpStatus int, reasonCode, message string, triggeredAt time.Time, triggerCount int) {
+	if !stateHasCooldownCause(httpStatus, reasonCode, message, triggeredAt) {
+		return
+	}
+	result.CauseHTTPStatus = httpStatus
+	result.CauseReasonCode = reasonCode
+	result.CauseMessage = message
+	if !triggeredAt.IsZero() {
+		result.CauseTriggeredAt = triggeredAt.Unix()
+	}
+	result.TriggerCount = triggerCount
 }
 
 // GetRouteCooldownStatus returns the current cooldown status for a route
@@ -643,16 +774,17 @@ func (m *RouteCooldownManager) GetRouteCooldownStatus(providerTokenId int, model
 	defer m.mu.Unlock()
 
 	// Check unsupported model first (highest priority, blocks everything)
-	if until, ok := m.unsupported[routeCooldownKey{providerTokenId: providerTokenId, modelName: normalizedModel}]; ok {
-		if !now.Before(until) {
+	if rec, ok := m.unsupported[routeCooldownKey{providerTokenId: providerTokenId, modelName: normalizedModel}]; ok {
+		if !now.Before(rec.until) {
 			delete(m.unsupported, routeCooldownKey{providerTokenId: providerTokenId, modelName: normalizedModel})
 		} else {
 			result.InCooldown = true
 			result.Reason = "unsupported"
-			result.RemainingSecs = int(until.Sub(now).Seconds())
+			result.RemainingSecs = int(rec.until.Sub(now).Seconds())
 			if result.RemainingSecs < 0 {
 				result.RemainingSecs = 0
 			}
+			fillCooldownCauseStatus(result, rec.httpStatus, rec.reasonCode, rec.reasonMessage, rec.triggeredAt, rec.triggerCount)
 			return result
 		}
 	}
@@ -667,6 +799,7 @@ func (m *RouteCooldownManager) GetRouteCooldownStatus(providerTokenId int, model
 			if result.RemainingSecs < 0 {
 				result.RemainingSecs = 0
 			}
+			fillCooldownCauseStatus(result, state.lastHTTPStatus, state.lastReasonCode, state.lastReasonMessage, state.lastTriggeredAt, state.triggerCount)
 			return result
 		}
 		if state.consecutiveFailures <= 0 && !now.Before(state.cooldownUntil) {
@@ -686,6 +819,7 @@ func (m *RouteCooldownManager) GetRouteCooldownStatus(providerTokenId int, model
 				result.RemainingSecs = 0
 			}
 			result.HalfOpenInflight = state.halfOpenInFlight
+			fillCooldownCauseStatus(result, state.lastHTTPStatus, state.lastReasonCode, state.lastReasonMessage, state.lastTriggeredAt, state.triggerCount)
 			return result
 		}
 
@@ -695,6 +829,7 @@ func (m *RouteCooldownManager) GetRouteCooldownStatus(providerTokenId int, model
 			result.HalfOpen = true
 			result.HalfOpenInflight = state.halfOpenInFlight
 			result.RemainingSecs = 0
+			fillCooldownCauseStatus(result, state.lastHTTPStatus, state.lastReasonCode, state.lastReasonMessage, state.lastTriggeredAt, state.triggerCount)
 		}
 
 		if state.consecutiveFailures <= 0 && !now.Before(state.cooldownUntil) {

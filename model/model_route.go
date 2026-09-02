@@ -265,6 +265,11 @@ type ModelRouteOverviewItem struct {
 	CooldownRemainingSecs    int    `json:"cooldown_remaining_secs"`
 	CooldownHalfOpen         bool   `json:"cooldown_half_open"`
 	CooldownHalfOpenInflight int    `json:"cooldown_half_open_inflight"`
+	CooldownCauseHTTPStatus  int    `json:"cooldown_cause_http_status,omitempty"`
+	CooldownCauseReasonCode  string `json:"cooldown_cause_reason_code,omitempty"`
+	CooldownCauseMessage     string `json:"cooldown_cause_message,omitempty"`
+	CooldownCauseTriggeredAt int64  `json:"cooldown_cause_triggered_at,omitempty"`
+	CooldownTriggerCount     int    `json:"cooldown_trigger_count,omitempty"`
 }
 
 type modelRouteOverviewRow struct {
@@ -1513,6 +1518,11 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 		item.CooldownRemainingSecs = cooldownStatus.RemainingSecs
 		item.CooldownHalfOpen = cooldownStatus.HalfOpen
 		item.CooldownHalfOpenInflight = cooldownStatus.HalfOpenInflight
+		item.CooldownCauseHTTPStatus = cooldownStatus.CauseHTTPStatus
+		item.CooldownCauseReasonCode = cooldownStatus.CauseReasonCode
+		item.CooldownCauseMessage = cooldownStatus.CauseMessage
+		item.CooldownCauseTriggeredAt = cooldownStatus.CauseTriggeredAt
+		item.CooldownTriggerCount = cooldownStatus.TriggerCount
 	}
 
 	return items, nil
