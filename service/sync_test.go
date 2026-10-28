@@ -2,10 +2,33 @@ package service
 
 import (
 	"NewAPI-Gateway/model"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
 )
+
+func TestFetchOpenAIModelsDoesNotDuplicateV1Path(t *testing.T) {
+	var requestedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"test-model"}]}`))
+	}))
+	defer server.Close()
+
+	models, err := fetchOpenAIModels(server.URL+"/v1", "test-key")
+	if err != nil {
+		t.Fatalf("fetchOpenAIModels() error = %v", err)
+	}
+	if requestedPath != "/v1/models" {
+		t.Fatalf("requested path = %q, want %q", requestedPath, "/v1/models")
+	}
+	if want := []string{"test-model"}; !reflect.DeepEqual(models, want) {
+		t.Fatalf("models = %v, want %v", models, want)
+	}
+}
 
 func TestCollectRequiredTokenGroups(t *testing.T) {
 	pricingList := []*model.ModelPricing{

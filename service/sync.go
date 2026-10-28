@@ -157,7 +157,11 @@ func syncKeyOnlyProvider(provider *model.Provider) error {
 }
 
 func fetchOpenAIModels(baseURL string, apiKey string) ([]string, error) {
-	url := strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/v1/models"
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	url := baseURL + "/v1/models"
+	if strings.HasSuffix(baseURL, "/v1") {
+		url = baseURL + "/models"
+	}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
