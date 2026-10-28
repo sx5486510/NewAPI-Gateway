@@ -9,7 +9,7 @@ import {
     Edit,
     GitBranch
 } from 'lucide-react';
-import { API, showError, showSuccess } from '../../helpers';
+import { API, showError, showSuccess, runProviderSync } from '../../helpers';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../components/ui/Table';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
@@ -97,13 +97,18 @@ const ProviderDetail = () => {
     const syncProvider = async () => {
         setSyncing(true);
         try {
-            const res = await API.post(`/api/provider/${id}/sync`);
-            const { success, message } = res.data;
-            if (success) {
-                showSuccess('同步任务已启动，请稍后刷新查看结果');
-                setTimeout(() => { loadAll(); setSyncing(false); }, 3000);
-            } else { showError(message); setSyncing(false); }
-        } catch (e) { showError('同步失败'); setSyncing(false); }
+            const result = await runProviderSync(id, { API });
+            if (result.ok) {
+                showSuccess(result.message || '同步成功');
+            } else {
+                showError(result.message || '同步失败');
+            }
+        } catch (e) {
+            showError('同步失败');
+        } finally {
+            await loadAll();
+            setSyncing(false);
+        }
     };
 
     const checkinProvider = async () => {

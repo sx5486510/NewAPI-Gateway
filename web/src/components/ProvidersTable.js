@@ -10,7 +10,7 @@ import {
   Download,
   Upload
 } from 'lucide-react';
-import { API, showError, showSuccess, timestamp2string } from '../helpers';
+import { API, showError, showSuccess, timestamp2string, runProviderSync } from '../helpers';
 import { PROVIDERS_PER_PAGE } from '../constants';
 import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
 import Button from './ui/Button';
@@ -158,12 +158,12 @@ const ProvidersTable = () => {
   };
 
   const syncProvider = async (id) => {
-    const res = await API.post(`/api/provider/${id}/sync`);
-    const { success, message } = res.data;
-    if (success) {
-      showSuccess('同步任务已启动');
+    const result = await runProviderSync(id, { API });
+    if (result.ok) {
+      showSuccess(result.message || '同步成功');
+      reloadProviders();
     } else {
-      showError(message);
+      showError(result.message || '同步失败');
     }
   };
 

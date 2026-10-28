@@ -85,6 +85,7 @@ func SetApiRouter(router *gin.Engine) {
 			providerRoute.PUT("/", controller.UpdateProvider)
 			providerRoute.DELETE("/:id", controller.DeleteProvider)
 			providerRoute.POST("/:id/sync", controller.SyncProviderHandler)
+			providerRoute.GET("/:id/sync/status", controller.GetProviderSyncStatus)
 			providerRoute.POST("/:id/checkin", controller.CheckinProviderHandler)
 			providerRoute.GET("/:id/tokens", controller.GetProviderTokens)
 			providerRoute.GET("/status", controller.GetProviderStatus)

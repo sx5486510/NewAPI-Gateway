@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -352,6 +353,72 @@ func DeleteProvider(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
 
+// providerSyncJob tracks the async sync task of a single provider so the
+// frontend can poll for the final result (including failures).
+type providerSyncJob struct {
+	ProviderId int    `json:"provider_id"`
+	Status     string `json:"status"` // running | success | failed
+	Message    string `json:"message"`
+	StartedAt  int64  `json:"started_at"`
+	FinishedAt int64  `json:"finished_at"`
+}
+
+var (
+	providerSyncJobsMu sync.Mutex
+	providerSyncJobs   = make(map[int]*providerSyncJob)
+)
+
+// startProviderSync marks a provider sync as running. It returns false when a
+// sync for the same provider is already in flight.
+func startProviderSync(providerId int) (*providerSyncJob, bool) {
+	providerSyncJobsMu.Lock()
+	defer providerSyncJobsMu.Unlock()
+	if job, ok := providerSyncJobs[providerId]; ok && job.Status == "running" {
+		return copyProviderSyncJob(job), false
+	}
+	job := &providerSyncJob{
+		ProviderId: providerId,
+		Status:     "running",
+		Message:    "同步中",
+		StartedAt:  time.Now().Unix(),
+	}
+	providerSyncJobs[providerId] = job
+	return copyProviderSyncJob(job), true
+}
+
+func finishProviderSync(providerId int, err error) {
+	providerSyncJobsMu.Lock()
+	defer providerSyncJobsMu.Unlock()
+	job, ok := providerSyncJobs[providerId]
+	if !ok {
+		job = &providerSyncJob{ProviderId: providerId}
+		providerSyncJobs[providerId] = job
+	}
+	job.FinishedAt = time.Now().Unix()
+	if err != nil {
+		job.Status = "failed"
+		job.Message = err.Error()
+		return
+	}
+	job.Status = "success"
+	job.Message = "同步成功"
+}
+
+func getProviderSyncJob(providerId int) *providerSyncJob {
+	providerSyncJobsMu.Lock()
+	defer providerSyncJobsMu.Unlock()
+	job, ok := providerSyncJobs[providerId]
+	if !ok {
+		return nil
+	}
+	return copyProviderSyncJob(job)
+}
+
+func copyProviderSyncJob(job *providerSyncJob) *providerSyncJob {
+	cloned := *job
+	return &cloned
+}
+
 func SyncProviderHandler(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -363,12 +430,39 @@ func SyncProviderHandler(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "供应商不存在"})
 		return
 	}
+	job, started := startProviderSync(provider.Id)
+	if !started {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "该供应商正在同步中，请稍后查看结果",
+			"data":    job,
+		})
+		return
+	}
 	go func() {
-		if err := service.SyncProvider(provider); err != nil {
-			common.SysLog("sync provider failed: " + err.Error())
+		syncErr := service.SyncProvider(provider)
+		if syncErr != nil {
+			common.SysLog("sync provider failed: " + syncErr.Error())
 		}
+		finishProviderSync(provider.Id, syncErr)
 	}()
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "同步任务已启动"})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "同步任务已启动", "data": job})
+}
+
+// GetProviderSyncStatus reports the result of the latest sync task so the
+// frontend can surface failures instead of assuming success.
+func GetProviderSyncStatus(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的 ID"})
+		return
+	}
+	job := getProviderSyncJob(id)
+	if job == nil {
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"status": "idle"}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": job})
 }
 
 func CheckinProviderHandler(c *gin.Context) {

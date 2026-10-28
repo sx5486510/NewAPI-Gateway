@@ -36,36 +36,37 @@ func SyncProvider(provider *model.Provider) error {
 	}
 
 	client := NewUpstreamClient(provider.BaseURL, provider.AccessToken, provider.UserID)
-	success := true
+	failures := make([]string, 0, 4)
 
 	// 1. Sync pricing
 	if err := syncPricing(client, provider); err != nil {
 		common.SysLog(fmt.Sprintf("sync pricing failed for provider %s: %v", provider.Name, err))
-		success = false
+		failures = append(failures, fmt.Sprintf("定价同步失败: %v", err))
 	}
 
 	// 2. Sync tokens
 	if err := syncTokens(client, provider); err != nil {
 		common.SysLog(fmt.Sprintf("sync tokens failed for provider %s: %v", provider.Name, err))
-		success = false
+		failures = append(failures, fmt.Sprintf("令牌同步失败: %v", err))
 	}
 
 	// 3. Sync balance
 	if err := syncBalance(client, provider); err != nil {
 		common.SysLog(fmt.Sprintf("sync balance failed for provider %s: %v", provider.Name, err))
-		success = false
+		failures = append(failures, fmt.Sprintf("余额同步失败: %v", err))
 	}
 
 	// 4. Rebuild routes for this provider
 	if err := RebuildProviderRoutes(provider.Id); err != nil {
 		common.SysLog(fmt.Sprintf("rebuild routes failed for provider %s: %v", provider.Name, err))
-		success = false
+		failures = append(failures, fmt.Sprintf("路由重建失败: %v", err))
 	}
 
-	if success {
-		provider.UpdateLastSyncedTime()
+	if len(failures) > 0 {
+		return fmt.Errorf("%s", strings.Join(failures, "；"))
 	}
 
+	provider.UpdateLastSyncedTime()
 	return nil
 }
 

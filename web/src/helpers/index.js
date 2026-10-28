@@ -4,3 +4,4 @@ export * from './utils';
 export * from './api';
 export * from './cpa-management';
 export * from './async-pool';
+export * from './provider-sync';

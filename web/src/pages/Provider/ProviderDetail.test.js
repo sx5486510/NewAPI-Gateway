@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import ProviderDetail from './ProviderDetail';
-import { API } from '../../helpers';
+import { API, showError, runProviderSync } from '../../helpers';
 
 jest.mock('react-router-dom', () => ({
   useParams: () => ({ id: '7' }),
@@ -17,6 +17,7 @@ jest.mock('../../helpers', () => ({
   },
   showError: jest.fn(),
   showSuccess: jest.fn(),
+  runProviderSync: jest.fn(),
 }));
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
@@ -117,5 +118,28 @@ describe('ProviderDetail token client restrictions', () => {
     const modal = document.body.querySelector('.modal-content') || document.body;
     expect(modal.textContent).not.toContain('客户端限制');
     expect(modal.querySelector('.provider-token-client-toggle')).toBeNull();
+  });
+
+  it('surfaces a failed sync to the user', async () => {
+    runProviderSync.mockResolvedValue({
+      ok: false,
+      status: 'failed',
+      message: '定价同步失败: status 502',
+    });
+
+    await act(async () => {
+      root.render(<ProviderDetail />);
+    });
+
+    const syncButton = Array.from(container.querySelectorAll('button')).find(
+      (btn) => btn.textContent.trim() === '同步'
+    );
+    expect(syncButton).toBeTruthy();
+    await act(async () => {
+      syncButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(runProviderSync).toHaveBeenCalledWith('7', expect.objectContaining({ API }));
+    expect(showError).toHaveBeenCalledWith('定价同步失败: status 502');
   });
 });
