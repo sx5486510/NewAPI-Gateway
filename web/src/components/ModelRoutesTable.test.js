@@ -613,4 +613,29 @@ describe('ModelRoutesTable', () => {
     saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(API.post).not.toHaveBeenCalled();
   });
+
+  it('resets a single route health and cooldown from the row action button', async () => {
+    window.confirm = jest.fn(() => true);
+    await act(async () => root.render(<ModelRoutesTable />));
+
+    const resetButton = document.querySelector('.routes-reset-button');
+    expect(resetButton).not.toBeNull();
+    expect(resetButton.textContent).toContain('重置');
+
+    await act(async () => resetButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(API.post).toHaveBeenCalledWith('/api/route/1/reset');
+  });
+
+  it('does not reset a route when the confirmation is dismissed', async () => {
+    window.confirm = jest.fn(() => false);
+    await act(async () => root.render(<ModelRoutesTable />));
+
+    const resetButton = document.querySelector('.routes-reset-button');
+    await act(async () => resetButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(API.post).not.toHaveBeenCalled();
+  });
 });

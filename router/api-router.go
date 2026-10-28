@@ -115,6 +115,7 @@ func SetApiRouter(router *gin.Engine) {
 			routeGroup.GET("/overview", controller.GetModelRouteOverview)
 			routeGroup.GET("/models", controller.GetAllModels)
 			routeGroup.PUT("/:id", controller.UpdateRoute)
+			routeGroup.POST("/:id/reset", controller.ResetRouteHealth)
 			routeGroup.POST("/batch-update", controller.BatchUpdateRoutes)
 			routeGroup.POST("/rebuild", controller.RebuildRoutes)
 			routeGroup.POST("/cleanup-orphans", controller.CleanupOrphanRoutes)

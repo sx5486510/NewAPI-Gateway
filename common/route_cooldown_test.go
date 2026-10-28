@@ -400,3 +400,62 @@ func TestRouteCooldownManager_CauseMessageIsUTF8SafeAndBounded(t *testing.T) {
 		t.Fatalf("invalid or unexpected message: %q", status.CauseMessage)
 	}
 }
+
+func TestRouteCooldownManager_ResetRouteStateClearsRouteTokenAndUnsupported(t *testing.T) {
+	clock := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+	mgr := newRouteCooldownManager(func() RouteCooldownConfig {
+		return RouteCooldownConfig{
+			Enabled:                true,
+			BaseSeconds:            60,
+			Multiplier:             2,
+			MaxSeconds:             600,
+			MinConsecutiveFailures: 1,
+			UnsupportedModelHours:  24,
+			TokenBaseSeconds:       600,
+			TokenMaxSeconds:        7200,
+		}
+	}, func() time.Time { return clock }, func() float64 { return 0.5 })
+
+	// 路由冷却 + 不支持模型记录 + 令牌冷却
+	mgr.RecordRouteFailureWithMinimumAndCause(7, "gpt-x", 0, CooldownCause{HTTPStatus: 500, ReasonCode: CooldownReasonUpstream5xx})
+	mgr.MarkUnsupportedModel(7, "gpt-x")
+	mgr.RecordTokenFailure(7)
+
+	if mgr.IsRouteSelectable(7, "gpt-x") {
+		t.Fatalf("expected route blocked before reset")
+	}
+
+	cleared := mgr.ResetRouteState(7, "gpt-x")
+	if !cleared {
+		t.Fatalf("expected token cooldown to be reported as cleared")
+	}
+	if !mgr.IsRouteSelectable(7, "gpt-x") {
+		t.Fatalf("expected route selectable right after reset")
+	}
+	status := mgr.GetRouteCooldownStatus(7, "gpt-x")
+	if status.InCooldown || status.Reason != "" || status.HalfOpen || status.CauseReasonCode != "" {
+		t.Fatalf("expected clean cooldown status after reset, got %+v", *status)
+	}
+	if mgr.ResetRouteState(7, "gpt-x") {
+		t.Fatalf("expected no token cooldown to clear on second reset")
+	}
+}
+
+func TestRouteCooldownManager_ResetRouteStateKeepsOtherRoutes(t *testing.T) {
+	clock := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+	mgr := newRouteCooldownManager(func() RouteCooldownConfig {
+		return RouteCooldownConfig{Enabled: true, BaseSeconds: 60, Multiplier: 2, MaxSeconds: 600, MinConsecutiveFailures: 1, UnsupportedModelHours: 24}
+	}, func() time.Time { return clock }, func() float64 { return 0.5 })
+
+	mgr.RecordRouteFailure(1, "model-a")
+	mgr.RecordRouteFailure(2, "model-b")
+
+	mgr.ResetRouteState(1, "model-a")
+
+	if !mgr.IsRouteSelectable(1, "model-a") {
+		t.Fatalf("expected reset route to be selectable")
+	}
+	if mgr.IsRouteSelectable(2, "model-b") {
+		t.Fatalf("expected untouched route to stay in cooldown")
+	}
+}

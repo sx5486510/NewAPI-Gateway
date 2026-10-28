@@ -77,6 +77,30 @@ func BatchUpdateRoutes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
 
+// ResetRouteHealth 重置单条路由的健康度、失败统计与冷却状态，
+// 使其可以立即重新参与模型路由选择。
+func ResetRouteHealth(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "无效的 ID"})
+		return
+	}
+	route, err := model.ResetModelRouteHealth(id)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	tokenCooldownCleared := common.GlobalRouteCooldown.ResetRouteState(route.ProviderTokenId, route.ModelName)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"health_reset_at":        route.HealthResetAt,
+			"token_cooldown_cleared": tokenCooldownCleared,
+		},
+	})
+}
+
 func GetModelRouteOverview(c *gin.Context) {
 	modelName := strings.TrimSpace(c.Query("model"))
 	providerId, _ := strconv.Atoi(c.Query("provider_id"))

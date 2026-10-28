@@ -318,6 +318,28 @@ func (m *RouteCooldownManager) RecordRouteSuccess(providerTokenId int, modelName
 	delete(m.unsupported, key)
 }
 
+// ResetRouteState clears every in-memory cooldown artifact that keeps a route
+// out of the routing list: route-level failure counters, the unsupported-model
+// record and the token-level cooldown owned by the same provider token.
+// It reports whether a token-level cooldown was actually cleared.
+func (m *RouteCooldownManager) ResetRouteState(providerTokenId int, modelName string) bool {
+	key := routeCooldownKey{
+		providerTokenId: providerTokenId,
+		modelName:       normalizeCooldownModelName(modelName),
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if key.modelName != "" {
+		delete(m.routeStates, key)
+		delete(m.unsupported, key)
+	}
+	_, tokenHadState := m.tokenStates[providerTokenId]
+	delete(m.tokenStates, providerTokenId)
+	return tokenHadState
+}
+
 func (m *RouteCooldownManager) RecordRouteFailure(providerTokenId int, modelName string) {
 	m.RecordRouteFailureWithMinimumAndCause(providerTokenId, modelName, 0, CooldownCause{})
 }

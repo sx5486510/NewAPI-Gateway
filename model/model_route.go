@@ -86,6 +86,9 @@ type ModelRoute struct {
 	BlockClients          bool   `json:"block_clients" gorm:"default:false"`
 	SystemPromptId        *int   `json:"system_prompt_id" gorm:"index"`
 	ConvertMessagesToChat bool   `json:"convert_messages_to_chat" gorm:"default:false"`
+	// HealthResetAt 是健康度统计基线（Unix 秒）。大于 0 时，早于该时间戳的
+	// usage_logs 不再计入该路由的成功/失败次数与健康值。
+	HealthResetAt int64 `json:"health_reset_at" gorm:"default:0"`
 }
 
 // IsClientAllowed checks if a route allows the specified client type.
@@ -1074,7 +1077,59 @@ func loadRecentUsageCostByTokenModel(tokenIds []int, modelNames []string, usageW
 	return usageLookup, nil
 }
 
-func loadRouteHealthStatsByTokenModel(tokenIds []int, modelNames []string) (map[string]routeHealthStats, error) {
+const (
+	routeHealthSuccessCondition = "(status = 1 AND (error_message IS NULL OR TRIM(error_message) = ''))"
+	routeHealthErrorCondition   = "(status <> 1 OR (error_message IS NOT NULL AND TRIM(error_message) <> ''))"
+)
+
+type routeHealthResetBaseline struct {
+	ProviderTokenId int
+	ModelName       string
+	ResetAt         int64
+}
+
+// loadRouteHealthResetBaselines 返回当前整点小时内被手动重置过的路由基线。
+// 这些路由的健康统计需要从重置时间点重新累计。
+func loadRouteHealthResetBaselines(tokenIds []int, modelNames []string, hourStart int64) ([]routeHealthResetBaseline, error) {
+	baselines := make([]routeHealthResetBaseline, 0)
+	if len(tokenIds) == 0 || len(modelNames) == 0 {
+		return baselines, nil
+	}
+
+	type resetRow struct {
+		ProviderTokenId int    `gorm:"column:provider_token_id"`
+		ModelName       string `gorm:"column:model_name"`
+		HealthResetAt   int64  `gorm:"column:health_reset_at"`
+	}
+
+	seen := make(map[string]bool)
+	for _, tokenBatch := range chunkInts(tokenIds, sqlitePairInChunkSize) {
+		for _, modelBatch := range chunkStrings(modelNames, sqlitePairInChunkSize) {
+			var rows []resetRow
+			if err := DB.Model(&ModelRoute{}).
+				Select("provider_token_id, model_name, health_reset_at").
+				Where("provider_token_id IN ? AND model_name IN ? AND health_reset_at > ?", tokenBatch, modelBatch, hourStart).
+				Scan(&rows).Error; err != nil {
+				return nil, err
+			}
+			for _, row := range rows {
+				key := routeUsageKey(row.ProviderTokenId, row.ModelName)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				baselines = append(baselines, routeHealthResetBaseline{
+					ProviderTokenId: row.ProviderTokenId,
+					ModelName:       row.ModelName,
+					ResetAt:         row.HealthResetAt,
+				})
+			}
+		}
+	}
+	return baselines, nil
+}
+
+func queryRouteHealthStats(since int64, tokenIds []int, modelNames []string) (map[string]routeHealthStats, error) {
 	statsLookup := make(map[string]routeHealthStats)
 	if len(tokenIds) == 0 || len(modelNames) == 0 {
 		return statsLookup, nil
@@ -1088,10 +1143,6 @@ func loadRouteHealthStatsByTokenModel(tokenIds []int, modelNames []string) (map[
 		SampleCount     int64  `gorm:"column:sample_count"`
 	}
 
-	const successCondition = "(status = 1 AND (error_message IS NULL OR TRIM(error_message) = ''))"
-	const errorCondition = "(status <> 1 OR (error_message IS NOT NULL AND TRIM(error_message) <> ''))"
-
-	since := time.Now().Truncate(time.Hour).Unix()
 	for _, tokenBatch := range chunkInts(tokenIds, sqlitePairInChunkSize) {
 		for _, modelBatch := range chunkStrings(modelNames, sqlitePairInChunkSize) {
 			var rows []healthRow
@@ -1099,8 +1150,8 @@ func loadRouteHealthStatsByTokenModel(tokenIds []int, modelNames []string) (map[
 				Select(
 					"provider_token_id",
 					"model_name",
-					"SUM(CASE WHEN "+successCondition+" THEN 1 ELSE 0 END) AS success_count",
-					"SUM(CASE WHEN "+errorCondition+" THEN 1 ELSE 0 END) AS error_count",
+					"SUM(CASE WHEN "+routeHealthSuccessCondition+" THEN 1 ELSE 0 END) AS success_count",
+					"SUM(CASE WHEN "+routeHealthErrorCondition+" THEN 1 ELSE 0 END) AS error_count",
 					"COUNT(*) AS sample_count",
 				).
 				Where("created_at >= ? AND provider_token_id IN ? AND model_name IN ?", since, tokenBatch, modelBatch).
@@ -1119,6 +1170,77 @@ func loadRouteHealthStatsByTokenModel(tokenIds []int, modelNames []string) (map[
 			}
 		}
 	}
+	return statsLookup, nil
+}
+
+// queryRouteHealthStatForKey 统计单个路由在重置基线之后的健康数据。
+// 基线为开区间：与重置同一秒的日志视为已被重置清除。
+func queryRouteHealthStatForKey(since int64, providerTokenId int, modelName string) (routeHealthStats, error) {
+	type healthRow struct {
+		SuccessCount int64 `gorm:"column:success_count"`
+		ErrorCount   int64 `gorm:"column:error_count"`
+		SampleCount  int64 `gorm:"column:sample_count"`
+	}
+	var rows []healthRow
+	if err := DB.Table("usage_logs").
+		Select(
+			"SUM(CASE WHEN "+routeHealthSuccessCondition+" THEN 1 ELSE 0 END) AS success_count",
+			"SUM(CASE WHEN "+routeHealthErrorCondition+" THEN 1 ELSE 0 END) AS error_count",
+			"COUNT(*) AS sample_count",
+		).
+		Where("created_at > ? AND provider_token_id = ? AND model_name = ?", since, providerTokenId, modelName).
+		Scan(&rows).Error; err != nil {
+		return routeHealthStats{}, err
+	}
+	if len(rows) == 0 {
+		return routeHealthStats{}, nil
+	}
+	row := rows[0]
+	return routeHealthStats{
+		SuccessCount: row.SuccessCount,
+		ErrorCount:   row.ErrorCount,
+		SampleCount:  row.SampleCount,
+		HealthValue:  -row.ErrorCount,
+	}, nil
+}
+
+func loadRouteHealthStatsByTokenModel(tokenIds []int, modelNames []string) (map[string]routeHealthStats, error) {
+	statsLookup := make(map[string]routeHealthStats)
+	if len(tokenIds) == 0 || len(modelNames) == 0 {
+		return statsLookup, nil
+	}
+
+	hourStart := time.Now().Truncate(time.Hour).Unix()
+	resetBaselines, err := loadRouteHealthResetBaselines(tokenIds, modelNames, hourStart)
+	if err != nil {
+		return nil, err
+	}
+
+	resetKeys := make(map[string]bool, len(resetBaselines))
+	for _, baseline := range resetBaselines {
+		resetKeys[routeUsageKey(baseline.ProviderTokenId, baseline.ModelName)] = true
+	}
+
+	hourStats, err := queryRouteHealthStats(hourStart, tokenIds, modelNames)
+	if err != nil {
+		return nil, err
+	}
+	for key, stat := range hourStats {
+		if resetKeys[key] {
+			continue
+		}
+		statsLookup[key] = stat
+	}
+
+	// 被重置过的路由只统计重置时间之后的日志。
+	for _, baseline := range resetBaselines {
+		stat, err := queryRouteHealthStatForKey(baseline.ResetAt, baseline.ProviderTokenId, baseline.ModelName)
+		if err != nil {
+			return nil, err
+		}
+		statsLookup[routeUsageKey(baseline.ProviderTokenId, baseline.ModelName)] = stat
+	}
+
 	return statsLookup, nil
 }
 
@@ -1214,6 +1336,27 @@ func UpdateModelRouteFields(id int, updates map[string]interface{}) error {
 		}
 		return updateModelRouteFieldsWithDB(tx, id, updates)
 	})
+}
+
+// ResetModelRouteHealth 把当前时间写为该路由的健康统计基线，返回重置后的路由。
+// 健康值/成功数/失败数均由 usage_logs 实时聚合，基线时间戳让此前的记录不再参与统计。
+func ResetModelRouteHealth(id int) (*ModelRoute, error) {
+	if id <= 0 {
+		return nil, errors.New("无效的路由 ID")
+	}
+	var route ModelRoute
+	if err := DB.First(&route, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("模型路由不存在")
+		}
+		return nil, err
+	}
+	resetAt := time.Now().Unix()
+	if err := updateModelRouteFieldsWithDB(DB, id, map[string]interface{}{"health_reset_at": resetAt}); err != nil {
+		return nil, err
+	}
+	route.HealthResetAt = resetAt
+	return &route, nil
 }
 
 func BatchUpdateModelRoutes(patches []ModelRoutePatch) error {

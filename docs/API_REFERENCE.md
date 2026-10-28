@@ -232,6 +232,25 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | PUT | `/api/route/:id` | 更新单条路由状态（旧版 priority/weight 字段保留兼容但不影响路由） |
 | POST | `/api/route/batch-update` | 批量更新路由 |
 | POST | `/api/route/rebuild` | 触发全量路由重建 |
+| POST | `/api/route/:id/reset` | 重置单条路由的健康度、失败数据与冷却状态 |
+
+### 重置单条路由状态
+
+`POST /api/route/:id/reset` 用于把一条路由从“冷却 / 半开 / 模型不支持”等不可用状态中拉回，可立即重新参与模型路由选择：
+
+- 健康统计基线写入 `model_routes.health_reset_at`（Unix 秒），此前落在 `usage_logs` 中的成功/失败记录不再计入该路由的健康值与成功/失败数。
+- 清空该路由的内存冷却状态：路由级冷却、连续失败计数、`unsupported` 模型记录。
+- 同时清空该路由所属令牌的令牌级冷却（令牌冷却按令牌生效，会影响同令牌下的其它路由）。
+
+返回示例：
+
+```json
+{
+  "success": true,
+  "message": "",
+  "data": { "health_reset_at": 1793000000, "token_cooldown_cleared": true }
+}
+```
 
 ### 路由系统提示词绑定
 

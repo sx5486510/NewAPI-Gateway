@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCcw, RotateCcw, Save, Search, Trash2 } from 'lucide-react';
+import { Eraser, RefreshCcw, RotateCcw, Save, Search, Trash2 } from 'lucide-react';
 import { API, copy, showError, showSuccess } from '../helpers';
 import { Table, Thead, Tbody, Tr, Th, Td } from './ui/Table';
 import Button from './ui/Button';
@@ -432,6 +432,7 @@ const ModelRoutesTable = () => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [cleaning, setCleaning] = useState(false);
+    const [resettingRouteId, setResettingRouteId] = useState(null);
     const [searchKeyword, setSearchKeyword] = useState('');
     const [providerFilter, setProviderFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState('all');
@@ -849,6 +850,33 @@ const ModelRoutesTable = () => {
         }
     };
 
+    const resetRouteHealth = async (route) => {
+        if (!route.id) {
+            showError('缺少路由 ID，无法重置');
+            return;
+        }
+        const routeLabel = `${route.provider_name || `供应商 #${route.provider_id}`} / ${route.model_name || ''}`;
+        if (!window.confirm(`确定重置该路由的健康度、失败数据与冷却状态吗？\n${routeLabel}`)) return;
+
+        setResettingRouteId(route.id);
+        try {
+            const res = await API.post(`/api/route/${route.id}/reset`);
+            const { success, message, data } = res.data;
+            if (success) {
+                showSuccess(data?.token_cooldown_cleared
+                    ? '已重置健康度、失败数据、路由冷却与令牌冷却'
+                    : '已重置健康度、失败数据与冷却状态');
+                await loadOverview(false);
+            } else {
+                showError(message || '重置失败');
+            }
+        } catch (e) {
+            showError('重置失败');
+        } finally {
+            setResettingRouteId(null);
+        }
+    };
+
     const rebuildRoutes = async () => {
         const res = await API.post('/api/route/rebuild');
         const { success, message } = res.data;
@@ -1098,9 +1126,9 @@ const ModelRoutesTable = () => {
                                 </div>
 
                                 <div className="routes-detail-scroller">
-                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '1040px' : '1300px'}>
+                                <Table tableStyle={{ tableLayout: 'fixed' }} minWidth={ultraCompact ? '1120px' : '1380px'}>
                                     <colgroup>
-                                        <col style={{ width: '14%' }} />
+                                        <col style={{ width: '13%' }} />
                                         <col style={{ width: '9%' }} />
                                         <col style={{ width: '10%' }} />
                                         <col style={{ width: '7%' }} />
@@ -1108,9 +1136,10 @@ const ModelRoutesTable = () => {
                                         <col style={{ width: '11%' }} />
                                         <col style={{ width: '11%' }} />
                                         <col style={{ width: '9%' }} />
-                                        <col style={{ width: '12%' }} />
-                                        <col style={{ width: '10%' }} />
-                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '11%' }} />
+                                        <col style={{ width: '9%' }} />
+                                        <col style={{ width: '9%' }} />
+                                        <col style={{ width: '7%' }} />
                                     </colgroup>
                                     <Thead>
                                         <Tr>
@@ -1125,19 +1154,20 @@ const ModelRoutesTable = () => {
                                             <Th style={stickyHeaderCellStyle}>系统提示词</Th>
                                             <Th style={stickyHeaderCellStyle}>客户端限制</Th>
                                             <Th style={stickyHeaderCellStyle}>协议转换</Th>
+                                            <Th style={stickyHeaderCellStyle}>操作</Th>
                                         </Tr>
                                     </Thead>
                                     <Tbody>
                                         {selectedGroupedRoutes.length === 0 ? (
                                             <Tr>
-                                                <Td colSpan={11} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
+                                                <Td colSpan={12} style={{ textAlign: 'center', color: 'var(--text-secondary)', ...cellMiddleStyle }}>
                                                     当前模型没有符合条件的路由
                                                 </Td>
                                             </Tr>
                                         ) : selectedGroupedRoutes.map((group) => (
                                             <React.Fragment key={group.key}>
                                                 <Tr style={{ backgroundColor: 'var(--gray-50)' }}>
-                                                    <Td colSpan={11} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
+                                                    <Td colSpan={12} style={{ ...cellMiddleStyle, paddingTop: '0.95rem', paddingBottom: '0.95rem' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                             <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>候选路由</div>
                                                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -1385,6 +1415,21 @@ const ModelRoutesTable = () => {
                                                                         提示：CC 客户端当前可能无法使用该路由
                                                                     </div>
                                                                 )}
+                                                            </Td>
+                                                            <Td style={cellMiddleStyle}>
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className="routes-reset-button"
+                                                                    icon={Eraser}
+                                                                    loading={resettingRouteId === route.id}
+                                                                    disabled={saving || resettingRouteId === route.id}
+                                                                    title="重置健康度、失败数据与冷却状态"
+                                                                    onClick={() => resetRouteHealth(route)}
+                                                                >
+                                                                    重置
+                                                                </Button>
                                                             </Td>
                                                         </Tr>
                                                     );
