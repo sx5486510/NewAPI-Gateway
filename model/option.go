@@ -61,6 +61,7 @@ func InitOptionMap() {
 	common.OptionMap["RoutingHealthAdjustmentEnabled"] = "true"
 	common.OptionMap["RoutingPriceGuardEnabled"] = "true"
 	common.OptionMap["RoutingPriceGuardMaxUnitPrice"] = "75"
+	common.OptionMap["CooldownEnabled"] = "true"
 	// Embedded CPA (CLIProxyAPI) settings. Only base fields are managed here;
 	// upstream credentials come from the CPA auth directory (OAuth login).
 	common.OptionMap["CPAEnabled"] = "false"

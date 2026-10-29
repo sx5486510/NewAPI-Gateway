@@ -31,6 +31,7 @@ const SystemSetting = () => {
     RoutingHealthAdjustmentEnabled: 'true',
     RoutingPriceGuardEnabled: 'true',
     RoutingPriceGuardMaxUnitPrice: '75',
+    CooldownEnabled: 'true',
     LLMTraceEnabled: 'false',
     StripSystemReminderEnabled: 'false',
   });
@@ -89,6 +90,7 @@ const SystemSetting = () => {
       case 'RegisterEnabled':
       case 'RoutingHealthAdjustmentEnabled':
       case 'RoutingPriceGuardEnabled':
+      case 'CooldownEnabled':
       case 'StripSystemReminderEnabled':
       case 'LLMTraceEnabled':
       case 'ProxyEnabled':
@@ -479,6 +481,20 @@ const SystemSetting = () => {
             disabled={inputs.RoutingPriceGuardEnabled !== 'true'}
           />
         </div>
+
+        <div style={{ borderTop: '1px dashed var(--border-color)', margin: '1rem 0' }}></div>
+        <div style={{ marginBottom: '0.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>路由冷却</div>
+        <div style={{ marginBottom: '0.75rem' }}>
+          <Checkbox
+            checked={inputs.CooldownEnabled === 'true'}
+            label='启用路由冷却'
+            name='CooldownEnabled'
+            onChange={handleCheckboxChange}
+          />
+        </div>
+        <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+          开启后，连续失败的路由会被临时移出候选池：5xx / 408 / 网络错误触发路由级冷却（默认 30 秒起，指数退避，最长 30 分钟）；4xx 触发令牌级冷却（默认 600 秒起，最长 2 小时，影响同令牌下全部模型）；模型不存在或无权限则标记为不可用并冷却 24 小时。冷却状态保存在进程内存中，重启后清空；关闭开关后所有路由立即恢复可选。
+        </p>
 
         <div style={{ borderTop: '1px dashed var(--border-color)', margin: '1rem 0' }}></div>
         <div style={{ marginBottom: '0.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>故障健康（Beta）参数</div>

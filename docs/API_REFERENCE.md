@@ -139,6 +139,7 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 | `RoutingBaseWeightFactor` | float | `0.2` | `0 ~ 10` | 占比贡献中的基础占比系数 |
 | `RoutingValueScoreFactor` | float | `0.8` | `0 ~ 10` | 占比贡献中的性价比系数 |
 | `RoutingHealthAdjustmentEnabled` | bool | `true` | `true/false` | 是否启用按健康值优先选择模型 |
+| `CooldownEnabled` | bool | `true` | `true/false` | 是否启用路由冷却（失败路由临时移出候选池）；其余冷却细项见下方说明 |
 
 占比贡献公式：
 
@@ -146,6 +147,22 @@ GET /v1beta/models/xxx?key=ag-xxxxxxxx
 - 若无有效 `value_score`，回退为等概率基础贡献
 - 健康优选开启时，每个渠道模型按“当前整点小时内失败次数”计算健康值：初始 `0`，每失败 1 次减 `1`
 - 先按健康值从高到低排序；健康值相同的路由再按 `contribution` 做加权随机不放回
+
+路由冷却细项（无 Web UI，通过 `PUT /api/option/` 调整，读取逻辑见 `common/route_cooldown.go:LoadRouteCooldownConfig`）：
+
+| Key | 默认值 | 说明 |
+| --- | --- | --- |
+| `CooldownBaseSeconds` | `30` | 路由级冷却基数（秒） |
+| `CooldownMultiplier` | `2` | 连续失败退避倍率 |
+| `CooldownMaxSeconds` | `1800` | 路由级冷却上限（秒） |
+| `CooldownDecayMinutes` | `10` | 每 N 分钟连续失败计数 -1 |
+| `MinConsecutiveFailures` | `1` | 触发冷却所需的最少连续失败次数 |
+| `FailureWindowSeconds` | `0` | 失败计数窗口，`0` 表示不重置 |
+| `CooldownJitterRatio` | `0.1` | 冷却时长抖动比例 |
+| `HalfOpenMaxInFlight` | `1` | 半开状态允许的并发探测数 |
+| `UnsupportedModelTTLHours` | `24` | 模型不存在/无权限的冷却时长（小时） |
+| `TokenCooldownBaseSeconds` | `600` | 令牌级冷却基数（秒） |
+| `TokenCooldownMaxSeconds` | `7200` | 令牌级冷却上限（秒） |
 
 ## Provider 相关 API（Session，`AdminAuth + NoTokenAuth`）
 

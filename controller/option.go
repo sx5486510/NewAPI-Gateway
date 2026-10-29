@@ -137,6 +137,15 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "CooldownEnabled":
+		normalized := strings.TrimSpace(strings.ToLower(option.Value))
+		if normalized != "true" && normalized != "false" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "路由冷却开关必须是 true 或 false",
+			})
+			return
+		}
 	case "RoutingPriceGuardMaxUnitPrice":
 		value, err := strconv.ParseFloat(strings.TrimSpace(option.Value), 64)
 		if err != nil || value <= 0 || value > 1000000 {
