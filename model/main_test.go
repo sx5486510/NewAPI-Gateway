@@ -1,11 +1,44 @@
 package model
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestBuildSQLiteDSNAppendsPragmas(t *testing.T) {
+	plain := buildSQLiteDSN("gateway.db")
+	if plain != "gateway.db?_busy_timeout=5000&_synchronous=NORMAL&_journal_mode=WAL" {
+		t.Fatalf("unexpected plain dsn: %s", plain)
+	}
+	withParams := buildSQLiteDSN("file:gw.db?cache=shared")
+	if withParams != "file:gw.db?cache=shared&_busy_timeout=5000&_synchronous=NORMAL&_journal_mode=WAL" {
+		t.Fatalf("unexpected dsn with existing params: %s", withParams)
+	}
+}
+
+func TestConfigureSQLiteConnectionAppliesPool(t *testing.T) {
+	t.Setenv("SQL_MAX_OPEN_CONNS", "")
+	dbPath := filepath.Join(t.TempDir(), "pool.db")
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("sql db: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	if err := configureSQLiteConnection(db); err != nil {
+		t.Fatalf("configure sqlite: %v", err)
+	}
+	if got := sqlDB.Stats().MaxOpenConnections; got != sqliteMaxOpenConnsDefault {
+		t.Fatalf("expected max open conns %d, got %d", sqliteMaxOpenConnsDefault, got)
+	}
+}
 
 func TestRunMigrationsRepairsDuplicatesAndCreatesUniqueIndexes(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

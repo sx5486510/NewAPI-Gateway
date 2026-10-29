@@ -34,6 +34,11 @@ type requestRecorder struct {
 	applied  int64
 	finished bool
 
+	// ready is closed once the in-flight rows exist (or the insert gave up).
+	// Every writer waits on it inside its own goroutine, so the request path
+	// never blocks on the pending insert.
+	ready chan struct{}
+
 	usageLogID int64
 	traceID    int64
 
@@ -67,14 +72,20 @@ type requestRecorderInput struct {
 	RequestBody     []byte
 }
 
-// newRequestRecorder writes the in-flight rows synchronously (they are small)
-// so the request shows up in the log/audit pages immediately.
+// newRequestRecorder creates the in-flight rows for a request.
+//
+// The insert runs off the request goroutine: it used to be synchronous and sat
+// in front of the upstream call, so every request paid a full database commit
+// (tens of milliseconds with the rollback journal) before its first byte went
+// out. Ordering is preserved by r.ready — the final update and every progress
+// patch wait for the insert to finish before touching the row.
 //
 // It never returns nil: if the insert fails the recorder degrades to
 // "write once at the end", which is the previous behaviour.
 func newRequestRecorder(input requestRecorderInput) *requestRecorder {
 	now := time.Now()
 	recorder := &requestRecorder{
+		ready:            make(chan struct{}),
 		aggToken:         input.AggToken,
 		provider:         input.Provider,
 		token:            input.Token,
@@ -99,8 +110,29 @@ func newRequestRecorder(input requestRecorderInput) *requestRecorder {
 		recorder.userAgent = strings.TrimSpace(input.Context.GetHeader("User-Agent"))
 	}
 
-	recorder.insertPending()
+	recorder.insertPendingAsync()
 	return recorder
+}
+
+// insertPendingAsync writes the pending usage log / trace in the background and
+// closes r.ready when it is done. It is tracked by pendingLLMTraces so shutdown
+// and tests can drain it instead of racing the goroutine.
+func (r *requestRecorder) insertPendingAsync() {
+	pendingLLMTraces.Add(1)
+	go func() {
+		defer pendingLLMTraces.Done()
+		defer close(r.ready)
+		r.insertPending()
+	}()
+}
+
+// awaitPendingInsert blocks until the pending rows exist or the insert failed.
+// Production code never calls it on the request goroutine.
+func (r *requestRecorder) awaitPendingInsert() {
+	if r == nil || r.ready == nil {
+		return
+	}
+	<-r.ready
 }
 
 func (r *requestRecorder) insertPending() {
@@ -173,7 +205,7 @@ func (r *requestRecorder) MarkFirstToken(firstTokenMs int) {
 
 // ShouldUpdateProgress reports whether a progressive refresh is due.
 func (r *requestRecorder) ShouldUpdateProgress() bool {
-	if r == nil || r.usageLogID <= 0 {
+	if r == nil {
 		return false
 	}
 	r.mu.Lock()
@@ -187,7 +219,7 @@ func (r *requestRecorder) ShouldUpdateProgress() bool {
 // UpdateProgress refreshes the partial token counts / elapsed time of an
 // in-flight request so a long stream stays visible and up to date.
 func (r *requestRecorder) UpdateProgress(usage usageMetrics, responseIsStream bool, firstTokenMs int, responseTimeMs int) {
-	if r == nil || r.usageLogID <= 0 {
+	if r == nil {
 		return
 	}
 	r.mu.Lock()
@@ -251,6 +283,10 @@ func (r *requestRecorder) Finish(input recordFinishInput) {
 }
 
 func (r *requestRecorder) writeFinal(input recordFinishInput) {
+	// The pending insert may still be in flight; wait for it so the final
+	// values patch that row instead of racing it.
+	r.awaitPendingInsert()
+
 	// Serialize against any in-flight progress write so the final values are
 	// always the last ones applied.
 	r.mu.Lock()
@@ -426,6 +462,8 @@ func (r *requestRecorder) patch(usageValues map[string]interface{}, traceValues 
 	pendingLLMTraces.Add(1)
 	go func() {
 		defer pendingLLMTraces.Done()
+
+		r.awaitPendingInsert()
 
 		r.mu.Lock()
 		defer r.mu.Unlock()

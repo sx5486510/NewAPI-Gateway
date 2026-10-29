@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -82,12 +83,51 @@ func ValidateAggToken(key string) (*AggregatedToken, *User, error) {
 		return nil, nil, errors.New("令牌所属用户已被封禁")
 	}
 
-	// Update accessed time asynchronously
-	go func() {
-		DB.Model(token).Update("accessed_at", time.Now().Unix())
-	}()
+	// Refresh the "last used" timestamp, but at most once a minute per token.
+	// Writing it on every request turned the auth middleware into a writer and
+	// queued every request behind the single SQLite write lock.
+	if shouldFlushAggTokenAccessedAt(token.Id, time.Now().Unix()) {
+		go func() {
+			DB.Model(token).Update("accessed_at", time.Now().Unix())
+		}()
+	}
 
 	return token, user, nil
+}
+
+// aggTokenAccessedAtIntervalSeconds throttles the accessed_at write. The UI only
+// shows minute-level granularity, so a coarser timestamp is harmless.
+const aggTokenAccessedAtIntervalSeconds = 60
+
+var (
+	aggTokenAccessedAtMu   sync.Mutex
+	aggTokenAccessedAtSeen = make(map[int]int64)
+)
+
+// shouldFlushAggTokenAccessedAt reports whether this token's accessed_at is due
+// for a write, and reserves the slot when it is.
+//
+// Reserving before the write means a burst of concurrent requests on the same
+// token produces one UPDATE instead of one per request; without it the check
+// would race and every request in the burst would still write.
+func shouldFlushAggTokenAccessedAt(tokenId int, now int64) bool {
+	if tokenId <= 0 {
+		return false
+	}
+	aggTokenAccessedAtMu.Lock()
+	defer aggTokenAccessedAtMu.Unlock()
+	if last, ok := aggTokenAccessedAtSeen[tokenId]; ok && now-last < aggTokenAccessedAtIntervalSeconds {
+		return false
+	}
+	aggTokenAccessedAtSeen[tokenId] = now
+	return true
+}
+
+// resetAggTokenAccessedAtForTest clears the throttle state. Only for use in tests.
+func resetAggTokenAccessedAtForTest() {
+	aggTokenAccessedAtMu.Lock()
+	defer aggTokenAccessedAtMu.Unlock()
+	aggTokenAccessedAtSeen = make(map[int]int64)
 }
 
 // IsModelAllowed checks if the requested model is allowed by this token

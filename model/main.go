@@ -4,6 +4,7 @@ import (
 	"NewAPI-Gateway/common"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"gorm.io/driver/mysql"
@@ -240,6 +241,75 @@ func GetDBInfo() (driver string, sqlitePath string) {
 	return driver, sqlitePath
 }
 
+const (
+	// sqliteBusyTimeoutMs makes a writer wait for the write lock instead of
+	// failing immediately with SQLITE_BUSY. Without it, concurrent requests
+	// surface "database is locked" errors as soon as two writes overlap.
+	sqliteBusyTimeoutMs = 5000
+
+	// sqliteMaxOpenConnsDefault keeps the pool small on purpose: SQLite
+	// serialises writers, so a large pool only increases lock contention and
+	// memory pressure. Readers still run concurrently under WAL.
+	sqliteMaxOpenConnsDefault = 8
+)
+
+// buildSQLiteDSN appends the PRAGMAs that must be applied on every connection.
+//
+// journal_mode, synchronous and busy_timeout are connection-scoped, so they
+// cannot be applied once with a single PRAGMA statement on a pooled handle —
+// the go-sqlite3 driver applies DSN parameters per connection instead.
+//
+// WAL is the important one: the default rollback journal needs four fsyncs per
+// commit, which made every usage-log write cost tens of milliseconds and
+// serialised the whole gateway on a single write lock.
+func buildSQLiteDSN(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = common.SQLitePath
+	}
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return path + sep + fmt.Sprintf(
+		"_busy_timeout=%d&_synchronous=NORMAL&_journal_mode=WAL",
+		sqliteBusyTimeoutMs,
+	)
+}
+
+// configureSQLiteConnection sizes the pool and logs the journal mode that
+// actually took effect (WAL silently degrades on filesystems that do not
+// support it, e.g. some network shares).
+func configureSQLiteConnection(db *gorm.DB) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+
+	maxOpen := sqliteMaxOpenConnsDefault
+	if raw := strings.TrimSpace(os.Getenv("SQL_MAX_OPEN_CONNS")); raw != "" {
+		if parsed, convErr := strconv.Atoi(raw); convErr == nil && parsed > 0 {
+			maxOpen = parsed
+		} else {
+			common.SysLog("invalid SQL_MAX_OPEN_CONNS, falling back to default: " + raw)
+		}
+	}
+	sqlDB.SetMaxOpenConns(maxOpen)
+	sqlDB.SetMaxIdleConns(maxOpen)
+
+	var journalMode string
+	if err := db.Raw("PRAGMA journal_mode").Scan(&journalMode).Error; err != nil {
+		common.SysLog("failed to read sqlite journal_mode: " + err.Error())
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(journalMode), "wal") {
+		common.SysLog(fmt.Sprintf("sqlite journal_mode=%s (expected wal: WAL is unavailable on this filesystem)", journalMode))
+		return nil
+	}
+	common.SysLog(fmt.Sprintf("sqlite tuned: journal_mode=wal busy_timeout=%dms max_open_conns=%d", sqliteBusyTimeoutMs, maxOpen))
+	return nil
+}
+
 func InitDB() (err error) {
 	var db *gorm.DB
 
@@ -280,9 +350,14 @@ func InitDB() (err error) {
 		if dsn != "" {
 			sqlitePath = dsn
 		}
-		db, err = gorm.Open(sqlite.Open(sqlitePath), &gorm.Config{
+		db, err = gorm.Open(sqlite.Open(buildSQLiteDSN(sqlitePath)), &gorm.Config{
 			PrepareStmt: true, // precompile SQL
 		})
+		if err == nil {
+			if poolErr := configureSQLiteConnection(db); poolErr != nil {
+				common.SysLog("failed to configure sqlite connection pool: " + poolErr.Error())
+			}
+		}
 		if configuredDriver == "" && dsn == "" {
 			common.SysLog("SQL_DSN not set, using SQLite as database")
 		} else {
