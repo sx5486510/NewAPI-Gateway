@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Search, RefreshCw, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
+import { Search, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { API, showError } from '../helpers';
 import { ITEMS_PER_PAGE } from '../constants';
 import Card from './ui/Card';
@@ -110,18 +110,25 @@ const renderCacheValue = (log) => {
   );
 };
 
+const AUTO_REFRESH_INTERVAL = 10000;
+
+// status: 1 = success, 0 = failed, 2 = in-flight (still being written)
+const isPendingLog = (log) => Number(log?.status) === 2;
+
 const buildSummaryFromLogs = (logs, isErrorLog) => {
+  const activeLogs = logs.filter((log) => !isPendingLog(log));
   const total = logs.length;
-  const successCount = logs.filter((log) => !isErrorLog(log)).length;
-  const errorCount = total - successCount;
+  const pendingCount = total - activeLogs.length;
+  const successCount = activeLogs.filter((log) => !isErrorLog(log)).length;
+  const errorCount = activeLogs.length - successCount;
   const inputTokens = logs.reduce((sum, log) => sum + Number(log.prompt_tokens || 0), 0);
   const outputTokens = logs.reduce((sum, log) => sum + Number(log.completion_tokens || 0), 0);
   const cacheTokens = logs.reduce((sum, log) => sum + Number(log.cache_tokens || 0), 0);
   const totalCost = logs.reduce((sum, log) => sum + Number(log.cost_usd || 0), 0);
-  const avgLatency = total
-    ? Math.round(logs.reduce((sum, log) => sum + Number(log.response_time_ms || 0), 0) / total)
+  const avgLatency = activeLogs.length
+    ? Math.round(activeLogs.reduce((sum, log) => sum + Number(log.response_time_ms || 0), 0) / activeLogs.length)
     : 0;
-  return { total, successCount, errorCount, inputTokens, outputTokens, cacheTokens, totalCost, avgLatency };
+  return { total, successCount, errorCount, pendingCount, inputTokens, outputTokens, cacheTokens, totalCost, avgLatency };
 };
 
 const LogsTable = ({ selfOnly }) => {
@@ -136,14 +143,19 @@ const LogsTable = ({ selfOnly }) => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewTab, setViewTab] = useState('all');
   const [serverSummary, setServerSummary] = useState(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const isErrorLog = useCallback(
     (log) =>
-      Number(log?.status) !== 1 || (log?.error_message && String(log.error_message).trim() !== ''),
+      !isPendingLog(log) &&
+      (Number(log?.status) !== 1 || (log?.error_message && String(log.error_message).trim() !== '')),
     []
   );
 
-  const loadLogs = useCallback(async () => {
-    setLoading(true);
+  const loadLogs = useCallback(async (options) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const endpoint = selfOnly ? '/api/log/self' : '/api/log/';
       const params = new URLSearchParams();
@@ -195,7 +207,8 @@ const LogsTable = ({ selfOnly }) => {
               outputTokens: Number(nextSummary.output_tokens || 0),
               cacheTokens: Number(nextSummary.cache_tokens || 0),
               totalCost: Number(nextSummary.total_cost || 0),
-              avgLatency: Number(nextSummary.avg_latency || 0)
+              avgLatency: Number(nextSummary.avg_latency || 0),
+              pendingCount: Number(nextSummary.pending_count || 0)
             });
           } else {
             setServerSummary(null);
@@ -205,9 +218,13 @@ const LogsTable = ({ selfOnly }) => {
         showError(message);
       }
     } catch (e) {
-      showError('加载日志失败');
+      if (!silent) {
+        showError('加载日志失败');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, [page, selfOnly, keyword, providerFilter, statusFilter, viewTab]);
 
@@ -218,6 +235,19 @@ const LogsTable = ({ selfOnly }) => {
   useEffect(() => {
     loadLogs();
   }, [loadLogs]);
+
+  // In-flight requests keep changing, so poll quietly while the page is open.
+  useEffect(() => {
+    if (!autoRefresh) {
+      return undefined;
+    }
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadLogs({ silent: true });
+      }
+    }, AUTO_REFRESH_INTERVAL);
+    return () => clearInterval(timer);
+  }, [autoRefresh, loadLogs]);
 
   const providers = useMemo(() => {
     const options = [...providerOptions];
@@ -326,15 +356,25 @@ const LogsTable = ({ selfOnly }) => {
           <div className='logs-title'>{selfOnly ? '我的调用日志' : '全部调用日志'}</div>
           <div className='logs-subtitle'>直观卡片视图，支持供应商和错误日志快速筛选</div>
         </div>
-        <Button
-          variant='secondary'
-          size='sm'
-          icon={RefreshCw}
-          onClick={loadLogs}
-          disabled={loading}
-        >
-          刷新
-        </Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <label className='logs-auto-refresh'>
+            <input
+              type='checkbox'
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+            />
+            自动刷新
+          </label>
+          <Button
+            variant='secondary'
+            size='sm'
+            icon={RefreshCw}
+            onClick={() => loadLogs()}
+            disabled={loading}
+          >
+            刷新
+          </Button>
+        </div>
       </div>
 
       <div className='logs-filter-bar'>
@@ -365,6 +405,7 @@ const LogsTable = ({ selfOnly }) => {
           <option value='all'>全部状态</option>
           <option value='success'>仅成功</option>
           <option value='error'>仅失败</option>
+          <option value='pending'>仅进行中</option>
         </select>
       </div>
 
@@ -394,6 +435,9 @@ const LogsTable = ({ selfOnly }) => {
         <Badge color='green'>花费 {formatCost(summary.totalCost)}</Badge>
         <Badge color='green'>成功 {summary.successCount}</Badge>
         <Badge color='red'>失败 {summary.errorCount}</Badge>
+        {Number(summary.pendingCount || 0) > 0 && (
+          <Badge color='blue'>进行中 {summary.pendingCount}</Badge>
+        )}
         <Badge color='gray'>平均耗时 {summary.avgLatency}ms</Badge>
       </div>
 
@@ -411,7 +455,15 @@ const LogsTable = ({ selfOnly }) => {
                   <span className='log-provider'>@ {log.provider_name || '未知供应商'}</span>
                 </div>
                 <div className='log-card-state'>
-                  {!isErrorLog(log) ? (
+                  {isPendingLog(log) ? (
+                    <>
+                      <Badge color='blue'>
+                        <Loader2 size={12} style={{ marginRight: '0.25rem' }} />
+                        进行中
+                      </Badge>
+                      <span className='log-time'>{formatTime(log.created_at)}</span>
+                    </>
+                  ) : !isErrorLog(log) ? (
                     <Badge color='green'>
                       <CheckCircle2 size={12} style={{ marginRight: '0.25rem' }} />
                       成功
@@ -429,7 +481,7 @@ const LogsTable = ({ selfOnly }) => {
                       )}
                     </>
                   )}
-                  <span className='log-time'>{formatTime(log.created_at)}</span>
+                  {!isPendingLog(log) && <span className='log-time'>{formatTime(log.created_at)}</span>}
                 </div>
               </div>
 

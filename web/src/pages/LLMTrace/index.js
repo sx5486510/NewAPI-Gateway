@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Eye, RefreshCw, Search, Shield, Trash2 } from 'lucide-react';
+import { AlertTriangle, Eye, Loader2, RefreshCw, Search, Shield, Trash2 } from 'lucide-react';
 import { API, showError, showSuccess } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import Badge from '../../components/ui/Badge';
@@ -69,6 +69,8 @@ const getRiskTagText = (tag) => {
   return tagMap[tag] || tag;
 };
 
+const AUTO_REFRESH_INTERVAL = 10000;
+
 const isInvalidSSEResponse = (trace) => String(trace?.error_message || '').includes('invalid SSE response:');
 
 const LLMTrace = () => {
@@ -82,9 +84,13 @@ const LLMTrace = () => {
   const [selectedTrace, setSelectedTrace] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
-  const loadTraces = useCallback(async () => {
-    setLoading(true);
+  const loadTraces = useCallback(async (options) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const params = new URLSearchParams();
       params.set('p', String(page));
@@ -101,15 +107,21 @@ const LLMTrace = () => {
       const res = await API.get(`/api/llm-trace/?${params.toString()}`);
       const { success, data, message } = res.data;
       if (!success) {
-        showError(message);
+        if (!silent) {
+          showError(message);
+        }
         return;
       }
       setTraces(Array.isArray(data?.items) ? data.items : []);
       setTotal(Number(data?.total || 0));
     } catch (e) {
-      showError('加载审计记录失败');
+      if (!silent) {
+        showError('加载审计记录失败');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, [keyword, page, status, riskLevel]);
 
@@ -120,6 +132,19 @@ const LLMTrace = () => {
   useEffect(() => {
     loadTraces();
   }, [loadTraces]);
+
+  // In-flight requests keep changing, so poll quietly while the page is open.
+  useEffect(() => {
+    if (!autoRefresh) {
+      return undefined;
+    }
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadTraces({ silent: true });
+      }
+    }, AUTO_REFRESH_INTERVAL);
+    return () => clearInterval(timer);
+  }, [autoRefresh, loadTraces]);
 
   const openTrace = async (trace) => {
     setDetailLoading(true);
@@ -167,8 +192,16 @@ const LLMTrace = () => {
     <>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.5rem' }}>
         <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0 }}>LLM 上下文审计</h2>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <Button icon={RefreshCw} variant='secondary' onClick={loadTraces} disabled={loading}>刷新</Button>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <label className='logs-auto-refresh'>
+            <input
+              type='checkbox'
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+            />
+            自动刷新
+          </label>
+          <Button icon={RefreshCw} variant='secondary' onClick={() => loadTraces()} disabled={loading}>刷新</Button>
           <Button icon={Trash2} variant='danger' onClick={clearTraces} disabled={clearing}>清空记录</Button>
         </div>
       </div>
@@ -186,6 +219,7 @@ const LLMTrace = () => {
             <option value='all'>全部状态</option>
             <option value='success'>成功</option>
             <option value='error'>失败</option>
+            <option value='pending'>进行中</option>
           </select>
           <select className='filter-select' value={riskLevel} onChange={(e) => setRiskLevel(e.target.value)}>
             <option value='all'>全部风险</option>
@@ -218,9 +252,16 @@ const LLMTrace = () => {
                       )}
                     </div>
                     <div className='log-card-state'>
-                      <Badge color={Number(trace.status_code) >= 400 || trace.error_message ? 'red' : 'green'}>
-                        {Number(trace.status_code) || '-'}
-                      </Badge>
+                      {trace.in_progress ? (
+                        <Badge color='blue'>
+                          <Loader2 size={12} style={{ marginRight: '0.25rem' }} />
+                          进行中
+                        </Badge>
+                      ) : (
+                        <Badge color={Number(trace.status_code) >= 400 || trace.error_message ? 'red' : 'green'}>
+                          {Number(trace.status_code) || '-'}
+                        </Badge>
+                      )}
                       {isInvalidSSEResponse(trace) && <Badge color='orange'>INVALID SSE</Badge>}
                       <span className='log-time'>{formatTime(trace.created_at)}</span>
                     </div>
@@ -320,6 +361,11 @@ const LLMTrace = () => {
                   )}
                 </div>
               </section>
+            )}
+            {selectedTrace.in_progress && (
+              <div className='logs-empty' style={{ padding: '0.5rem' }}>
+                该请求仍在进行中，响应内容与审计结果将在结束后补全
+              </div>
             )}
             <details className='trace-collapse-container'>
               <summary className='trace-collapse-summary'>

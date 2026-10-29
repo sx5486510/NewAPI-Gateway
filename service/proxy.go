@@ -184,6 +184,22 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 	bodyBytes = stripSystemReminders(bodyBytes)
 	requestedStream := extractRequestedStream(bodyBytes)
 
+	// Create the log/audit rows right away so an in-flight request is visible
+	// before the upstream answers. Everything missing is patched later.
+	recorder := newRequestRecorder(requestRecorderInput{
+		AggToken:        aggToken,
+		Provider:        provider,
+		Token:           token,
+		Context:         c,
+		RequestId:       requestId,
+		ModelName:       resolvedModel,
+		Method:          c.Request.Method,
+		Path:            c.Request.URL.Path,
+		RequestedStream: requestedStream,
+		RequestBody:     bodyBytes,
+	})
+	defer recorder.EnsureFinished()
+
 	// 2. Construct upstream URL
 	upstreamURL := strings.TrimRight(provider.BaseURL, "/") + effectivePath
 	if c.Request.URL.RawQuery != "" {
@@ -272,32 +288,12 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 		}
 		errorMsg := buildErrorMessage(errorText, c, bodyBytes)
 		logProxyErrorTrace(c, requestId, provider, token, errorMsg)
-		logUsage(
-			aggToken,
-			provider,
-			token,
-			c,
-			requestId,
-			usageMetrics{ModelName: c.GetString("request_model")},
-			requestedStream,
-			false,
-			0,
-			0,
-			errorMsg,
-		)
-		captureLLMTraceAsync(llmTraceInput{
-			AggToken:        aggToken,
-			Provider:        provider,
-			Token:           token,
-			Context:         c,
-			RequestId:       requestId,
-			ModelName:       c.GetString("request_model"),
-			Method:          c.Request.Method,
-			Path:            c.Request.URL.Path,
-			StatusCode:      http.StatusBadGateway,
-			RequestedStream: requestedStream,
-			RequestBody:     bodyBytes,
-			ErrorMessage:    errorMsg,
+		recorder.Finish(recordFinishInput{
+			Usage:            usageMetrics{ModelName: c.GetString("request_model")},
+			StatusCode:       http.StatusBadGateway,
+			ResponseIsStream: false,
+			ErrorMessage:     errorMsg,
+			RequestBody:      bodyBytes,
 		})
 		outcome := classifyProxyRequestError(err, c, timeoutReason)
 		if outcome.RecordRouteFailure {
@@ -329,25 +325,14 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 		errorMsg := buildErrorMessage(fmt.Sprintf("upstream status %d: %s", resp.StatusCode, string(respBody)), c, bodyBytes)
 		logProxyErrorTrace(c, requestId, provider, token, errorMsg)
 		elapsed := time.Since(startTime).Milliseconds()
-		logUsage(
-			aggToken, provider, token, c, requestId,
-			usage, requestedStream, responseIsStream, 0, int(elapsed), errorMsg,
-		)
-		captureLLMTraceAsync(llmTraceInput{
-			AggToken:         aggToken,
-			Provider:         provider,
-			Token:            token,
-			Context:          c,
-			RequestId:        requestId,
-			ModelName:        usage.ModelName,
-			Method:           c.Request.Method,
-			Path:             c.Request.URL.Path,
+		recorder.Finish(recordFinishInput{
+			Usage:            usage,
 			StatusCode:       resp.StatusCode,
-			RequestedStream:  requestedStream,
 			ResponseIsStream: responseIsStream,
+			ResponseTimeMs:   int(elapsed),
+			ErrorMessage:     errorMsg,
 			RequestBody:      bodyBytes,
 			ResponseBody:     respBody,
-			ErrorMessage:     errorMsg,
 		})
 
 		upstreamErr := extractUpstreamErrorInfo(respBody)
@@ -476,6 +461,7 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			currentUsage, hasData := extractUsageAndModelFromSSELine(line)
 			if hasData && firstTokenMs == 0 {
 				firstTokenMs = int(time.Since(startTime).Milliseconds())
+				recorder.MarkFirstToken(firstTokenMs)
 			}
 			if currentUsage.PromptTokens > streamUsage.PromptTokens {
 				streamUsage.PromptTokens = currentUsage.PromptTokens
@@ -495,6 +481,12 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			if ok {
 				flusher.Flush()
 			}
+
+			// Keep the in-flight record fresh so a long stream stays visible
+			// with up-to-date token counts instead of appearing only at the end.
+			if recorder.ShouldUpdateProgress() {
+				recorder.UpdateProgress(streamUsage, true, firstTokenMs, int(time.Since(startTime).Milliseconds()))
+			}
 		}
 		if scanErr := scanner.Err(); scanErr != nil {
 			if reason := loadStreamTimeoutReason(&streamTimeoutReason); reason != "" {
@@ -510,25 +502,14 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			convErrorMsg := buildErrorMessage(errorMsg, c, bodyBytes)
 			logProxyErrorTrace(c, requestId, provider, token, convErrorMsg)
 			elapsed := time.Since(startTime).Milliseconds()
-			logUsage(
-				aggToken, provider, token, c, requestId,
-				usageMetrics{ModelName: resolvedModel}, requestedStream, true, 0, int(elapsed), convErrorMsg,
-			)
-			captureLLMTraceAsync(llmTraceInput{
-				AggToken:         aggToken,
-				Provider:         provider,
-				Token:            token,
-				Context:          c,
-				RequestId:        requestId,
-				ModelName:        resolvedModel,
-				Method:           c.Request.Method,
-				Path:             c.Request.URL.Path,
+			recorder.Finish(recordFinishInput{
+				Usage:            usageMetrics{ModelName: resolvedModel},
 				StatusCode:       resp.StatusCode,
-				RequestedStream:  requestedStream,
 				ResponseIsStream: true,
+				ResponseTimeMs:   int(elapsed),
+				ErrorMessage:     convErrorMsg,
 				RequestBody:      bodyBytes,
 				ResponseBody:     []byte(streamCapture.String()),
-				ErrorMessage:     convErrorMsg,
 			})
 			resetProxyResponseHeadersForRetry(c)
 			return &ProxyAttemptError{
@@ -564,25 +545,15 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			streamUsage.ModelName = c.GetString("request_model")
 		}
 		elapsed := time.Since(startTime).Milliseconds()
-		logUsage(
-			aggToken, provider, token, c, requestId,
-			streamUsage, requestedStream, true, firstTokenMs, int(elapsed), errorMsg,
-		)
-		captureLLMTraceAsync(llmTraceInput{
-			AggToken:         aggToken,
-			Provider:         provider,
-			Token:            token,
-			Context:          c,
-			RequestId:        requestId,
-			ModelName:        streamUsage.ModelName,
-			Method:           c.Request.Method,
-			Path:             c.Request.URL.Path,
+		recorder.Finish(recordFinishInput{
+			Usage:            streamUsage,
 			StatusCode:       resp.StatusCode,
-			RequestedStream:  requestedStream,
 			ResponseIsStream: true,
+			FirstTokenMs:     firstTokenMs,
+			ResponseTimeMs:   int(elapsed),
+			ErrorMessage:     errorMsg,
 			RequestBody:      bodyBytes,
 			ResponseBody:     []byte(streamCapture.String()),
-			ErrorMessage:     errorMsg,
 		})
 		switch streamRouteOutcome(routeErrorMsg, clientCanceled, streamCompleted) {
 		case streamRouteOutcomeFailure:
@@ -597,28 +568,12 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			errorMsg := buildErrorMessage("failed to read upstream response body: "+readErr.Error(), c, bodyBytes)
 			logProxyErrorTrace(c, requestId, provider, token, errorMsg)
 			elapsed := time.Since(startTime).Milliseconds()
-			logUsage(
-				aggToken, provider, token, c, requestId,
-				usageMetrics{ModelName: c.GetString("request_model")},
-				requestedStream,
-				false,
-				0,
-				int(elapsed),
-				errorMsg,
-			)
-			captureLLMTraceAsync(llmTraceInput{
-				AggToken:        aggToken,
-				Provider:        provider,
-				Token:           token,
-				Context:         c,
-				RequestId:       requestId,
-				ModelName:       c.GetString("request_model"),
-				Method:          c.Request.Method,
-				Path:            c.Request.URL.Path,
-				StatusCode:      http.StatusBadGateway,
-				RequestedStream: requestedStream,
-				RequestBody:     bodyBytes,
-				ErrorMessage:    errorMsg,
+			recorder.Finish(recordFinishInput{
+				Usage:            usageMetrics{ModelName: c.GetString("request_model")},
+				StatusCode:       http.StatusBadGateway,
+				ResponseTimeMs:   int(elapsed),
+				ErrorMessage:     errorMsg,
+				RequestBody:      bodyBytes,
 			})
 			common.GlobalRouteCooldown.RecordRouteFailureWithMinimumAndCause(token.Id, resolvedModel, 0, common.CooldownCause{ReasonCode: common.CooldownReasonNetworkError, ReasonMessage: trimCooldownMessage(readErr.Error())})
 			return &ProxyAttemptError{
@@ -650,25 +605,13 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			if convErr != nil {
 				convErrorMsg := buildErrorMessage("failed to convert upstream response to Anthropic format: "+convErr.Error(), c, bodyBytes)
 				logProxyErrorTrace(c, requestId, provider, token, convErrorMsg)
-				logUsage(
-					aggToken, provider, token, c, requestId,
-					usage, requestedStream, false, 0, int(elapsed), convErrorMsg,
-				)
-				captureLLMTraceAsync(llmTraceInput{
-					AggToken:         aggToken,
-					Provider:         provider,
-					Token:            token,
-					Context:          c,
-					RequestId:        requestId,
-					ModelName:        usage.ModelName,
-					Method:           c.Request.Method,
-					Path:             c.Request.URL.Path,
+				recorder.Finish(recordFinishInput{
+					Usage:            usage,
 					StatusCode:       resp.StatusCode,
-					RequestedStream:  requestedStream,
-					ResponseIsStream: false,
+					ResponseTimeMs:   int(elapsed),
+					ErrorMessage:     convErrorMsg,
 					RequestBody:      bodyBytes,
 					ResponseBody:     respBody,
-					ErrorMessage:     convErrorMsg,
 				})
 				common.GlobalRouteCooldown.RecordRouteFailureWithMinimumAndCause(token.Id, resolvedModel, 0, common.CooldownCause{ReasonCode: common.CooldownReasonConvertError, ReasonMessage: trimCooldownMessage(convErr.Error())})
 				return &ProxyAttemptError{
@@ -684,25 +627,13 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 		c.Status(resp.StatusCode)
 		_, _ = c.Writer.Write(finalRespBody)
 
-		logUsage(
-			aggToken, provider, token, c, requestId,
-			usage, requestedStream, false, 0, int(elapsed), errorMsg,
-		)
-		captureLLMTraceAsync(llmTraceInput{
-			AggToken:         aggToken,
-			Provider:         provider,
-			Token:            token,
-			Context:          c,
-			RequestId:        requestId,
-			ModelName:        usage.ModelName,
-			Method:           c.Request.Method,
-			Path:             c.Request.URL.Path,
+		recorder.Finish(recordFinishInput{
+			Usage:            usage,
 			StatusCode:       resp.StatusCode,
-			RequestedStream:  requestedStream,
-			ResponseIsStream: false,
+			ResponseTimeMs:   int(elapsed),
+			ErrorMessage:     errorMsg,
 			RequestBody:      bodyBytes,
 			ResponseBody:     finalRespBody,
-			ErrorMessage:     errorMsg,
 		})
 		if errorMsg != "" {
 			common.GlobalRouteCooldown.RecordRouteFailureWithMinimumAndCause(token.Id, resolvedModel, 0, buildCooldownCause(resp.StatusCode, extractUpstreamErrorInfo(respBody), errorMsg))
@@ -875,66 +806,6 @@ func getRequestBodyBytes(c *gin.Context) ([]byte, error) {
 	c.Set("proxy_request_body", bodyBytes)
 	c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	return bodyBytes, nil
-}
-
-func logUsage(aggToken *model.AggregatedToken, provider *model.Provider, token *model.ProviderToken,
-	c *gin.Context, requestId string, usage usageMetrics, requestedStream bool, responseIsStream bool, firstTokenMs int,
-	responseTimeMs int, errorMsg string) {
-
-	status := 1
-	if errorMsg != "" {
-		status = 0
-	}
-
-	// Extract error key information
-	httpStatus, errorType, upstreamHost := extractErrorKeyInfo(errorMsg)
-
-	// Try to extract model from request path or body
-	if usage.ModelName == "" {
-		usage.ModelName = c.GetString("request_model")
-	}
-	if usage.CostUSD <= 0 {
-		usage.CostUSD = estimateUsageCostUSD(
-			provider.Id,
-			usage.ModelName,
-			usage.PromptTokens,
-			usage.CompletionTokens,
-		)
-	}
-
-	log := &model.UsageLog{
-		UserId:                aggToken.UserId,
-		AggregatedTokenId:     aggToken.Id,
-		ProviderId:            provider.Id,
-		ProviderName:          provider.Name,
-		ProviderTokenId:       token.Id,
-		TokenGroupName:        strings.TrimSpace(token.GroupName),
-		ModelName:             usage.ModelName,
-		CompletionTokens:      usage.CompletionTokens,
-		CacheTokens:           usage.CacheTokens,
-		CacheCreationTokens:   usage.CacheCreationTokens,
-		CacheCreation5mTokens: usage.CacheCreation5mTokens,
-		CacheCreation1hTokens: usage.CacheCreation1hTokens,
-		ResponseTimeMs:        responseTimeMs,
-		FirstTokenMs:          firstTokenMs,
-		IsStream:              responseIsStream,
-		RequestedStream:       requestedStream,
-		ResponseIsStream:      responseIsStream,
-		CostUSD:               usage.CostUSD,
-		Status:                status,
-		ErrorMessage:          errorMsg,
-		ErrorHttpStatus:       httpStatus,
-		ErrorType:             errorType,
-		UpstreamHost:          upstreamHost,
-		ClientIp:              c.ClientIP(),
-		UserAgent:             strings.TrimSpace(c.GetHeader("User-Agent")),
-		RequestId:             requestId,
-	}
-	go func() {
-		if err := log.Insert(); err != nil {
-			common.SysLog(fmt.Sprintf("failed to insert usage log: %v", err))
-		}
-	}()
 }
 
 func extractRequestedStream(body []byte) bool {

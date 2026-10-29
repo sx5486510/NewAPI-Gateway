@@ -9,11 +9,19 @@ import (
 var syncTicker *time.Ticker
 var checkinTimer *time.Timer
 var refreshTicker *time.Ticker
+var reapTicker *time.Ticker
 var stopCron chan bool
 
 const (
 	dailyCheckinHour   = 0
 	dailyCheckinMinute = 5
+)
+
+// pendingReapInterval / pendingReapAfter control how abandoned in-flight
+// records (process restart, hard disconnect) get finalized.
+const (
+	pendingReapInterval = 10 * time.Minute
+	pendingReapAfter    = 15 * time.Minute
 )
 
 // StartCronJobs starts background sync and checkin tasks
@@ -26,10 +34,14 @@ func StartCronJobs() {
 	checkinTimer = time.NewTimer(durationUntilNextCheckin(time.Now()))
 	// Refresh expiring tokens every 2 minutes
 	refreshTicker = time.NewTicker(2 * time.Minute)
+	// Finalize abandoned in-flight log/audit rows
+	reapTicker = time.NewTicker(pendingReapInterval)
 
 	// Catch up one run on startup
 	go CheckinAllProviders()
 	go RefreshExpiringTokens()
+	// A restart means no request can still be in flight.
+	go ReapAllPendingRecords()
 
 	go func() {
 		for {
@@ -41,9 +53,12 @@ func StartCronJobs() {
 				checkinTimer.Reset(durationUntilNextCheckin(time.Now()))
 			case <-refreshTicker.C:
 				RefreshExpiringTokens()
+			case <-reapTicker.C:
+				reapStalePendingRecords(time.Now().Add(-pendingReapAfter).Unix())
 			case <-stopCron:
 				syncTicker.Stop()
 				refreshTicker.Stop()
+				reapTicker.Stop()
 				if !checkinTimer.Stop() {
 					select {
 					case <-checkinTimer.C:
@@ -55,7 +70,7 @@ func StartCronJobs() {
 		}
 	}()
 
-	common.SysLog("cron jobs started: sync every 5m, checkin daily at 00:05 local time, refresh tokens every 2m")
+	common.SysLog("cron jobs started: sync every 5m, checkin daily at 00:05 local time, refresh tokens every 2m, reap pending records every 10m")
 }
 
 // StopCronJobs stops background tasks

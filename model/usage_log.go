@@ -2,10 +2,21 @@ package model
 
 import (
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
+)
+
+// Usage log status values.
+//
+// A row is created as soon as the request is accepted (Pending) and patched
+// as the request progresses; it is only Success/Failed once the request ends.
+const (
+	UsageLogStatusFailed  = 0
+	UsageLogStatusSuccess = 1
+	UsageLogStatusPending = 2
 )
 
 type UsageLog struct {
@@ -38,40 +49,44 @@ type UsageLog struct {
 	UserAgent             string  `json:"user_agent" gorm:"type:varchar(512)"`
 	RequestId             string  `json:"request_id" gorm:"type:varchar(64);index"`
 	CreatedAt             int64   `json:"created_at" gorm:"index"`
+	UpdatedAt             int64   `json:"updated_at" gorm:"index"`
 }
 
 func (l *UsageLog) Insert() error {
-	l.CreatedAt = time.Now().Unix()
-	return DB.Model(&UsageLog{}).Create(map[string]interface{}{
-		"user_id":                 l.UserId,
-		"aggregated_token_id":     l.AggregatedTokenId,
-		"provider_id":             l.ProviderId,
-		"provider_name":           l.ProviderName,
-		"provider_token_id":       l.ProviderTokenId,
-		"token_group_name":        l.TokenGroupName,
-		"model_name":              l.ModelName,
-		"prompt_tokens":           l.PromptTokens,
-		"completion_tokens":       l.CompletionTokens,
-		"cache_tokens":            l.CacheTokens,
-		"cache_creation_tokens":   l.CacheCreationTokens,
-		"cache_creation5m_tokens": l.CacheCreation5mTokens,
-		"cache_creation1h_tokens": l.CacheCreation1hTokens,
-		"response_time_ms":        l.ResponseTimeMs,
-		"first_token_ms":          l.FirstTokenMs,
-		"is_stream":               l.IsStream,
-		"requested_stream":        l.RequestedStream,
-		"response_is_stream":      l.ResponseIsStream,
-		"cost_usd":                l.CostUSD,
-		"status":                  l.Status,
-		"error_message":           l.ErrorMessage,
-		"error_http_status":       l.ErrorHttpStatus,
-		"error_type":              l.ErrorType,
-		"upstream_host":           l.UpstreamHost,
-		"client_ip":               l.ClientIp,
-		"user_agent":              l.UserAgent,
-		"request_id":              l.RequestId,
-		"created_at":              l.CreatedAt,
-	}).Error
+	now := time.Now().Unix()
+	if l.CreatedAt == 0 {
+		l.CreatedAt = now
+	}
+	if l.UpdatedAt == 0 {
+		l.UpdatedAt = l.CreatedAt
+	}
+	// Struct create (instead of a map) so the auto increment id is back-filled
+	// into l.Id — progressive updates patch the row by id.
+	return DB.Create(l).Error
+}
+
+// UpdateUsageLog patches an existing usage log row. Only the given columns are
+// written; updated_at is refreshed so stale-row detection stays accurate.
+func UpdateUsageLog(id int64, values map[string]interface{}) error {
+	if id <= 0 || len(values) == 0 {
+		return nil
+	}
+	values["updated_at"] = time.Now().Unix()
+	return DB.Model(&UsageLog{}).Where("id = ?", id).Updates(values).Error
+}
+
+// MarkStaleUsageLogsFailed finalizes usage logs that were still pending after
+// cutoff: the process most likely died or the client vanished before the
+// request could be completed.
+func MarkStaleUsageLogsFailed(cutoff int64, message string) (int64, error) {
+	result := DB.Model(&UsageLog{}).
+		Where("status = ? AND COALESCE(NULLIF(updated_at, 0), created_at) < ?", UsageLogStatusPending, cutoff).
+		Updates(map[string]interface{}{
+			"status":        UsageLogStatusFailed,
+			"error_message": message,
+			"updated_at":    time.Now().Unix(),
+		})
+	return result.RowsAffected, result.Error
 }
 
 type UsageLogQuery struct {
@@ -88,6 +103,7 @@ type UsageLogSummary struct {
 	Total        int64   `json:"total"`
 	SuccessCount int64   `json:"success_count"`
 	ErrorCount   int64   `json:"error_count"`
+	PendingCount int64   `json:"pending_count"`
 	InputTokens  int64   `json:"input_tokens"`
 	OutputTokens int64   `json:"output_tokens"`
 	CacheTokens  int64   `json:"cache_tokens"`
@@ -110,16 +126,23 @@ func applyUsageLogFilters(db *gorm.DB, query UsageLogQuery) *gorm.DB {
 		)
 	}
 
-	isErrorCondition := "(status <> 1 OR (error_message IS NOT NULL AND TRIM(error_message) <> ''))"
-	isSuccessCondition := "(status = 1 AND (error_message IS NULL OR TRIM(error_message) = ''))"
+	// Pending rows are in-flight requests: they are neither success nor error.
+	isPendingCondition := "status = " + strconv.Itoa(UsageLogStatusPending)
+	isErrorCondition := "status = " + strconv.Itoa(UsageLogStatusFailed)
+	isSuccessCondition := "status = " + strconv.Itoa(UsageLogStatusSuccess)
 	if query.ViewTab == "error" {
 		db = db.Where(isErrorCondition)
+	}
+	if query.ViewTab == "pending" {
+		db = db.Where(isPendingCondition)
 	}
 	switch query.Status {
 	case "success":
 		db = db.Where(isSuccessCondition)
 	case "error":
 		db = db.Where(isErrorCondition)
+	case "pending":
+		db = db.Where(isPendingCondition)
 	}
 	return db
 }
@@ -160,13 +183,15 @@ func QueryUsageLogProviders(query UsageLogQuery) ([]string, error) {
 }
 
 func QueryUsageLogSummary(query UsageLogQuery) (UsageLogSummary, error) {
-	isErrorCondition := "(status <> 1 OR (error_message IS NOT NULL AND TRIM(error_message) <> ''))"
-	isSuccessCondition := "(status = 1 AND (error_message IS NULL OR TRIM(error_message) = ''))"
+	isPendingCondition := "status = " + strconv.Itoa(UsageLogStatusPending)
+	isErrorCondition := "status = " + strconv.Itoa(UsageLogStatusFailed)
+	isSuccessCondition := "status = " + strconv.Itoa(UsageLogStatusSuccess)
 
 	type usageLogSummaryRaw struct {
 		Total        int64
 		SuccessCount int64
 		ErrorCount   int64
+		PendingCount int64
 		InputTokens  int64
 		OutputTokens int64
 		CacheTokens  int64
@@ -180,11 +205,14 @@ func QueryUsageLogSummary(query UsageLogQuery) (UsageLogSummary, error) {
 			"COUNT(*) AS total",
 			"SUM(CASE WHEN "+isSuccessCondition+" THEN 1 ELSE 0 END) AS success_count",
 			"SUM(CASE WHEN "+isErrorCondition+" THEN 1 ELSE 0 END) AS error_count",
+			"SUM(CASE WHEN "+isPendingCondition+" THEN 1 ELSE 0 END) AS pending_count",
 			"COALESCE(SUM(prompt_tokens), 0) AS input_tokens",
 			"COALESCE(SUM(completion_tokens), 0) AS output_tokens",
 			"COALESCE(SUM(cache_tokens), 0) AS cache_tokens",
 			"COALESCE(SUM(cost_usd), 0) AS total_cost",
-			"COALESCE(AVG(response_time_ms), 0) AS avg_latency",
+			// In-flight requests only carry a partial duration, keep them out
+			// of the average latency so the number stays meaningful.
+			"COALESCE(AVG(CASE WHEN "+isPendingCondition+" THEN NULL ELSE response_time_ms END), 0) AS avg_latency",
 		).
 		Scan(&raw).Error
 	if err != nil {
@@ -195,6 +223,7 @@ func QueryUsageLogSummary(query UsageLogQuery) (UsageLogSummary, error) {
 		Total:        raw.Total,
 		SuccessCount: raw.SuccessCount,
 		ErrorCount:   raw.ErrorCount,
+		PendingCount: raw.PendingCount,
 		InputTokens:  raw.InputTokens,
 		OutputTokens: raw.OutputTokens,
 		CacheTokens:  raw.CacheTokens,
@@ -243,6 +272,7 @@ type DashboardStats struct {
 	TotalRequests    int64               `json:"total_requests"`
 	SuccessRequests  int64               `json:"success_requests"`
 	FailedRequests   int64               `json:"failed_requests"`
+	PendingRequests  int64               `json:"pending_requests"`
 	TotalProviders   int64               `json:"total_providers"`
 	TotalModels      int64               `json:"total_models"`
 	TotalRoutes      int64               `json:"total_routes"`
@@ -288,8 +318,9 @@ func GetDashboardStats() (*DashboardStats, error) {
 
 	// Total counts
 	DB.Model(&UsageLog{}).Count(&stats.TotalRequests)
-	DB.Model(&UsageLog{}).Where("status = 1 AND (error_message = '' OR error_message IS NULL)").Count(&stats.SuccessRequests)
-	stats.FailedRequests = stats.TotalRequests - stats.SuccessRequests
+	DB.Model(&UsageLog{}).Where("status = ?", UsageLogStatusSuccess).Count(&stats.SuccessRequests)
+	DB.Model(&UsageLog{}).Where("status = ?", UsageLogStatusFailed).Count(&stats.FailedRequests)
+	DB.Model(&UsageLog{}).Where("status = ?", UsageLogStatusPending).Count(&stats.PendingRequests)
 	stats.TotalProviders = CountProviders()
 	stats.TotalRoutes = CountModelRoutes()
 

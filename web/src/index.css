@@ -508,6 +508,21 @@ button {
   color: var(--text-primary);
 }
 
+.logs-auto-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.logs-auto-refresh input {
+  cursor: pointer;
+  margin: 0;
+}
+
 .logs-subtitle {
   font-size: 0.78rem;
   color: var(--text-muted);
