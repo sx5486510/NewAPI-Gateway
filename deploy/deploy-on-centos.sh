@@ -480,6 +480,17 @@ if systemctl is-active --quiet "${SERVICE_NAME}"; then
     echo -e "${GREEN}  Deployment completed${NC}"
     echo -e "${GREEN}========================================${NC}"
     echo ""
+
+    # Self-check: verify ldflags version injection took effect. A mismatch
+    # means the running binary was not built by this script (e.g. a stale
+    # copy with plain go build), so version and build time stay at defaults.
+    BINARY_VERSION=$("${INSTALL_DIR}/bin/${BINARY_NAME}" --version 2>/dev/null | head -n1 || true)
+    echo "  Binary version: ${BINARY_VERSION:-unknown} (expected ${GIT_VERSION})"
+    if [ -z "${BINARY_VERSION}" ] || [ "${BINARY_VERSION}" != "${GIT_VERSION}" ]; then
+        echo -e "${YELLOW}  Warning: binary version mismatch — this build was not created with the ldflags injection above.${NC}"
+        echo -e "${YELLOW}  Version and build time in Web UI will fall back to defaults.${NC}"
+    fi
+    echo ""
     echo "Service info:"
     echo "  Name: ${SERVICE_NAME}"
     echo "  Install dir: ${INSTALL_DIR}"
