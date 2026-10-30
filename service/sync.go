@@ -654,6 +654,14 @@ func RebuildProviderRoutes(providerId int) error {
 
 	blocklist := loadModelBlocklist()
 
+	// Load the provider's alias mapping once: blocking an alias source
+	// also blocks the original model it resolves to.
+	providerRow, _ := model.GetProviderById(providerId)
+	aliasSources := make(map[string][]string)
+	if providerRow != nil {
+		aliasSources = BuildModelAliasSources(model.ParseProviderAliasMapping(providerRow.ModelAliasMapping))
+	}
+
 	tokens, err := model.GetEnabledProviderTokensByProviderId(providerId)
 	if err != nil {
 		return err
@@ -699,7 +707,7 @@ func RebuildProviderRoutes(providerId int) error {
 			if allowedModels != nil && !allowedModels[modelName] {
 				continue
 			}
-			if IsModelBlocked(blocklist, modelName) {
+			if IsModelBlockedWithAliases(blocklist, modelName, aliasSources) {
 				blockedModels[modelName] = true
 				continue
 			}
@@ -724,8 +732,8 @@ func RebuildProviderRoutes(providerId int) error {
 	}
 
 	providerLabel := fmt.Sprintf("%d", providerId)
-	if p, err := model.GetProviderById(providerId); err == nil && p != nil && p.Name != "" {
-		providerLabel = p.Name
+	if providerRow != nil && providerRow.Name != "" {
+		providerLabel = providerRow.Name
 	}
 	if len(blockedModels) > 0 {
 		blockedList := make([]string, 0, len(blockedModels))

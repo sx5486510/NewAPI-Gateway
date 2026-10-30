@@ -64,6 +64,107 @@ func TestIsModelBlocked(t *testing.T) {
 	}
 }
 
+func TestBuildModelAliasSources(t *testing.T) {
+	mapping := map[string]string{
+		"my-alias":  "DeepSeek-V4.1-Flash",
+		" other ":   " deepseek-v4.1-flash ",
+		"":          "orphan",
+		"orphan-2":  "",
+	}
+	got := BuildModelAliasSources(mapping)
+	want := map[string][]string{
+		"deepseek-v4.1-flash": {"my-alias", "other"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("BuildModelAliasSources() = %#v, want %#v", got, want)
+	}
+}
+
+func TestIsModelBlockedWithAliases(t *testing.T) {
+	aliasSources := map[string][]string{
+		"deepseek-v4.1-flash": {"my-alias"},
+	}
+	cases := []struct {
+		name     string
+		patterns []string
+		model    string
+		want     bool
+	}{
+		{name: "direct match unchanged", patterns: []string{"deepseek-v4*"}, model: "deepseek-v4.1-flash", want: true},
+		{name: "blocked via alias", patterns: []string{"my-alias"}, model: "deepseek-v4.1-flash", want: true},
+		{name: "alias pattern with wildcard", patterns: []string{"my-*"}, model: "deepseek-v4.1-flash", want: true},
+		{name: "unrelated alias no match", patterns: []string{"other-alias"}, model: "deepseek-v4.1-flash", want: false},
+		{name: "nil alias map behaves as direct", patterns: []string{"deepseek-v4*"}, model: "deepseek-v4.1-flash", want: true},
+		{name: "no match at all", patterns: []string{"glm-*"}, model: "deepseek-v4.1-flash", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lookup := aliasSources
+			if tc.name == "nil alias map behaves as direct" {
+				lookup = nil
+			}
+			got := IsModelBlockedWithAliases(tc.patterns, tc.model, lookup)
+			if got != tc.want {
+				t.Fatalf("IsModelBlockedWithAliases(%#v, %q) = %v, want %v", tc.patterns, tc.model, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRebuildProviderRoutesSkipsBlocklistedAliasTargets(t *testing.T) {
+	setupRebuildBlocklistTestDB(t)
+
+	provider := &model.Provider{
+		Id:                3,
+		Name:              "alias-provider",
+		Status:            1,
+		ModelAliasMapping: `{"my-alias":"deepseek-v4.1-flash"}`,
+	}
+	if err := model.DB.Create(provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	token := &model.ProviderToken{
+		ProviderId:      provider.Id,
+		UpstreamTokenId: 9,
+		SkKey:           "sk-test",
+		Name:            "auto-sync-default",
+		GroupName:       "default",
+		Status:          1,
+	}
+	if err := model.DB.Create(token).Error; err != nil {
+		t.Fatalf("create token: %v", err)
+	}
+	pricing := &model.ModelPricing{
+		ModelName:    "deepseek-v4.1-flash",
+		ProviderId:   provider.Id,
+		EnableGroups: `["default"]`,
+	}
+	if err := model.DB.Create(pricing).Error; err != nil {
+		t.Fatalf("create pricing: %v", err)
+	}
+
+	// Blocking the alias source removes the route of the original name.
+	common.OptionMap["RouteModelBlocklist"] = "my-alias"
+	if err := RebuildProviderRoutes(provider.Id); err != nil {
+		t.Fatalf("RebuildProviderRoutes() error = %v", err)
+	}
+	var count int64
+	model.DB.Model(&model.ModelRoute{}).Where("provider_id = ?", provider.Id).Count(&count)
+	if count != 0 {
+		t.Fatalf("route count with blocked alias = %d, want 0", count)
+	}
+
+	// Blocking an unrelated pattern leaves the route in place.
+	common.OptionMap["RouteModelBlocklist"] = "unrelated-*"
+	if err := RebuildProviderRoutes(provider.Id); err != nil {
+		t.Fatalf("RebuildProviderRoutes() error = %v", err)
+	}
+	model.DB.Model(&model.ModelRoute{}).Where("provider_id = ?", provider.Id).Count(&count)
+	if count != 1 {
+		t.Fatalf("route count with unrelated blocklist = %d, want 1", count)
+	}
+}
+
 func setupRebuildBlocklistTestDB(t *testing.T) {
 	t.Helper()
 

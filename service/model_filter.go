@@ -55,6 +55,42 @@ func IsModelBlocked(patterns []string, modelName string) bool {
 	return false
 }
 
+// BuildModelAliasSources builds a lookup from alias target (the original
+// model name) to the alias sources that resolve to it. Target names are
+// lowercased for case-insensitive lookup against route model names.
+func BuildModelAliasSources(mapping map[string]string) map[string][]string {
+	sources := make(map[string][]string)
+	for source, target := range mapping {
+		source = strings.ToLower(strings.TrimSpace(source))
+		target = strings.ToLower(strings.TrimSpace(target))
+		if source == "" || target == "" {
+			continue
+		}
+		sources[target] = append(sources[target], source)
+	}
+	return sources
+}
+
+// IsModelBlockedWithAliases reports whether modelName matches the blocklist
+// either directly or through an alias: when an alias source that resolves to
+// modelName is blocked, the underlying route is blocked as well. aliasSources
+// comes from BuildModelAliasSources and may be nil.
+func IsModelBlockedWithAliases(patterns []string, modelName string, aliasSources map[string][]string) bool {
+	if IsModelBlocked(patterns, modelName) {
+		return true
+	}
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	if name == "" {
+		return false
+	}
+	for _, alias := range aliasSources[name] {
+		if IsModelBlocked(patterns, alias) {
+			return true
+		}
+	}
+	return false
+}
+
 // matchBlocklistPattern matches name against pattern containing '*' wildcards.
 func matchBlocklistPattern(pattern string, name string) bool {
 	if !strings.Contains(pattern, "*") {
