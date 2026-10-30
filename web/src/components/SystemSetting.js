@@ -290,9 +290,9 @@ const SystemSetting = () => {
     const invalid = nextBlocklist
       .split(/[\n,]+/)
       .map((item) => item.trim())
-      .find((item) => item && !/^[A-Za-z0-9\-_.\*]+$/.test(item));
+      .find((item) => item && !/^[A-Za-z0-9\-_.\/\*]+$/.test(item));
     if (invalid) {
-      showError(`屏蔽模式 "${invalid}" 含有不支持的字符（只允许字母、数字、-、_、. 和 *）`);
+      showError(`屏蔽模式 "${invalid}" 含有不支持的字符（只允许字母、数字、-、_、.、/ 和 *）`);
       return;
     }
     await updateOption('RouteModelBlocklist', nextBlocklist);
@@ -537,7 +537,7 @@ const SystemSetting = () => {
       <Card padding="1.5rem">
         <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>模型屏蔽列表</h3>
         <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          屏蔽老旧或不符合预期的模型：命中的模型在重建路由表时会被直接跳过，不会进入路由列表。每行一个模式，支持 <code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>*</code> 通配符，匹配不区分大小写。例如 <code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>gpt-4-*</code> 屏蔽整个 gpt-4 系列，<code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>*-preview</code> 屏蔽所有 preview 版本。留空表示不过滤。屏蔽只影响路由表，不会删除模型定价数据，解除屏蔽后自动恢复。保存后会自动在后台重建全部路由。
+          屏蔽老旧或不符合预期的模型：命中的模型在重建路由表时会被直接跳过，不会进入路由列表。每行一个模式，支持 <code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>*</code> 通配符，匹配不区分大小写。例如 <code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>gpt-4-*</code> 屏蔽整个 gpt-4 系列，<code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>*-preview</code> 屏蔽所有 preview 版本。带供应商前缀的模型（如 <code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>openai/gpt-oss-20b</code>）也按去掉前缀后的名字参与匹配，因此 <code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>gpt-oss*</code> 同样能屏蔽它。留空表示不过滤。屏蔽只影响路由表，不会删除模型定价数据，解除屏蔽后自动恢复。保存后会自动在后台重建全部路由。
         </p>
         <Textarea
           label='屏蔽模式（每行一个，最多 500 条）'

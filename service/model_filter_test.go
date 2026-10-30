@@ -53,6 +53,11 @@ func TestIsModelBlocked(t *testing.T) {
 		{name: "double wildcard", patterns: []string{"gpt*4*"}, model: "gpt-4-turbo", want: true},
 		{name: "double wildcard overlap rejected", patterns: []string{"a*a"}, model: "a", want: false},
 		{name: "empty pattern only matches empty", patterns: []string{""}, model: "gpt-4o", want: false},
+		{name: "vendor prefix stripped for suffix match", patterns: []string{"gpt-oss*"}, model: "openai/gpt-oss-20b", want: true},
+		{name: "vendor prefix stripped for exact match", patterns: []string{"gpt-oss-20b"}, model: "openai/gpt-oss-20b", want: true},
+		{name: "vendor prefix no false match", patterns: []string{"gpt-oss*"}, model: "openai/gpt-4o", want: false},
+		{name: "full prefixed pattern still works", patterns: []string{"openai/*"}, model: "openai/gpt-oss-20b", want: true},
+		{name: "prefix name itself matches", patterns: []string{"openai/gpt-oss*"}, model: "openai/gpt-oss-20b", want: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -217,13 +217,13 @@ func validateModelBlocklistOption(raw string) string {
 			return "屏蔽列表最多支持 500 条模式"
 		}
 		for _, r := range pattern {
-			if r == '*' || r == '-' || r == '_' || r == '.' ||
+			if r == '*' || r == '-' || r == '_' || r == '.' || r == '/' ||
 				(r >= '0' && r <= '9') ||
 				(r >= 'a' && r <= 'z') ||
 				(r >= 'A' && r <= 'Z') {
 				continue
 			}
-			return fmt.Sprintf("屏蔽模式 %q 含有不支持的字符（只允许字母、数字、-、_、. 和 *）", pattern)
+			return fmt.Sprintf("屏蔽模式 %q 含有不支持的字符（只允许字母、数字、-、_、.、/ 和 *）", pattern)
 		}
 	}
 	return ""

@@ -35,6 +35,8 @@ func ParseModelBlocklist(raw string) []string {
 // it contains '*' wildcards and the name matches the resulting glob, where
 // each '*' matches any (possibly empty) sequence of characters.
 // Patterns are lowercased defensively, so un-normalized input works too.
+// Vendor-prefixed names (e.g. "openai/gpt-oss-20b") also match via their
+// suffix after the last '/', so pattern "gpt-oss*" blocks that name too.
 func IsModelBlocked(patterns []string, modelName string) bool {
 	if len(patterns) == 0 {
 		return false
@@ -43,6 +45,16 @@ func IsModelBlocked(patterns []string, modelName string) bool {
 	if name == "" {
 		return false
 	}
+	if idx := strings.LastIndex(name, "/"); idx >= 0 && idx+1 < len(name) {
+		if suffix := name[idx+1:]; suffix != name {
+			return matchBlocklistPatterns(patterns, name) || matchBlocklistPatterns(patterns, suffix)
+		}
+	}
+	return matchBlocklistPatterns(patterns, name)
+}
+
+// matchBlocklistPatterns reports whether name matches any of the patterns.
+func matchBlocklistPatterns(patterns []string, name string) bool {
 	for _, pattern := range patterns {
 		pattern = strings.ToLower(strings.TrimSpace(pattern))
 		if pattern == "" {
