@@ -3,7 +3,9 @@ package controller
 import (
 	"NewAPI-Gateway/common"
 	"NewAPI-Gateway/model"
+	"NewAPI-Gateway/service"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -164,6 +166,14 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "RouteModelBlocklist":
+		if msg := validateModelBlocklistOption(option.Value); msg != "" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": msg,
+			})
+			return
+		}
 	}
 	err = model.UpdateOption(option.Key, option.Value)
 	if err != nil {
@@ -173,11 +183,50 @@ func UpdateOption(c *gin.Context) {
 		})
 		return
 	}
+	// Persisted blocklist changes take effect immediately by rebuilding
+	// the route table for all providers in the background.
+	if option.Key == "RouteModelBlocklist" {
+		go service.RebuildAllRoutes()
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
 	})
 	return
+}
+
+// validateModelBlocklistOption validates the RouteModelBlocklist option value.
+// Each line (or comma-separated entry) may contain letters, digits and
+// "-_. *" characters, and the list is capped at 500 entries.
+// Returns an empty string when the value is valid, or a user-facing error message.
+func validateModelBlocklistOption(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == ','
+	})
+	count := 0
+	for _, field := range fields {
+		pattern := strings.TrimSpace(field)
+		if pattern == "" {
+			continue
+		}
+		count++
+		if count > 500 {
+			return "屏蔽列表最多支持 500 条模式"
+		}
+		for _, r := range pattern {
+			if r == '*' || r == '-' || r == '_' || r == '.' ||
+				(r >= '0' && r <= '9') ||
+				(r >= 'a' && r <= 'z') ||
+				(r >= 'A' && r <= 'Z') {
+				continue
+			}
+			return fmt.Sprintf("屏蔽模式 %q 含有不支持的字符（只允许字母、数字、-、_、. 和 *）", pattern)
+		}
+	}
+	return ""
 }
 
 func TestProxy(c *gin.Context) {

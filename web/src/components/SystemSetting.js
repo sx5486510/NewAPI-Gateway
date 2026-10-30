@@ -3,6 +3,7 @@ import { API, removeTrailingSlash, showError, showSuccess } from '../helpers';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Card from './ui/Card';
+import Textarea from './ui/Textarea';
 
 const SystemSetting = () => {
   let [inputs, setInputs] = useState({
@@ -34,6 +35,7 @@ const SystemSetting = () => {
     CooldownEnabled: 'true',
     LLMTraceEnabled: 'false',
     StripSystemReminderEnabled: 'false',
+    RouteModelBlocklist: '',
   });
   const [originInputs, setOriginInputs] = useState({});
   const [dbInfo, setDbInfo] = useState({ driver: '', sqlitePath: '' });
@@ -127,7 +129,8 @@ const SystemSetting = () => {
       name === 'RoutingUsageWindowHours' ||
       name === 'RoutingBaseWeightFactor' ||
       name === 'RoutingValueScoreFactor' ||
-      name === 'RoutingPriceGuardMaxUnitPrice'
+      name === 'RoutingPriceGuardMaxUnitPrice' ||
+      name === 'RouteModelBlocklist'
     ) {
       setInputs((inputs) => ({ ...inputs, [name]: value }));
     } else {
@@ -275,6 +278,25 @@ const SystemSetting = () => {
     if (originInputs['RoutingPriceGuardMaxUnitPrice'] !== nextPriceGuardMaxUnitPrice) {
       await updateOption('RoutingPriceGuardMaxUnitPrice', nextPriceGuardMaxUnitPrice);
     }
+  };
+
+  const submitModelBlocklist = async () => {
+    const nextBlocklist = String(inputs.RouteModelBlocklist || '');
+    if (originInputs['RouteModelBlocklist'] === nextBlocklist) {
+      return;
+    }
+    // Client-side sanity check: allowed chars are letters, digits, "-_. *"
+    // plus line separators; the server performs the authoritative validation.
+    const invalid = nextBlocklist
+      .split(/[\n,]+/)
+      .map((item) => item.trim())
+      .find((item) => item && !/^[A-Za-z0-9\-_.\*]+$/.test(item));
+    if (invalid) {
+      showError(`屏蔽模式 "${invalid}" 含有不支持的字符（只允许字母、数字、-、_、. 和 *）`);
+      return;
+    }
+    await updateOption('RouteModelBlocklist', nextBlocklist);
+    showSuccess('模型屏蔽列表已保存，路由重建已在后台启动');
   };
 
   const Checkbox = ({ label, name, checked, onChange }) => (
@@ -510,6 +532,23 @@ const SystemSetting = () => {
           当前规则固定为“按本小时失败次数扣减健康值”，每到下一个整点小时自动重置为 0；这里不再提供惩罚系数、奖励系数、倍率上下限等旧参数配置。
         </p>
         <Button onClick={submitRoutingTuning} variant="secondary" disabled={loading}>保存路由策略参数</Button>
+      </Card>
+
+      <Card padding="1.5rem">
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>模型屏蔽列表</h3>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+          屏蔽老旧或不符合预期的模型：命中的模型在重建路由表时会被直接跳过，不会进入路由列表。每行一个模式，支持 <code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>*</code> 通配符，匹配不区分大小写。例如 <code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>gpt-4-*</code> 屏蔽整个 gpt-4 系列，<code style={{ backgroundColor: 'var(--gray-200)', padding: '0.1rem 0.25rem' }}>*-preview</code> 屏蔽所有 preview 版本。留空表示不过滤。屏蔽只影响路由表，不会删除模型定价数据，解除屏蔽后自动恢复。保存后会自动在后台重建全部路由。
+        </p>
+        <Textarea
+          label='屏蔽模式（每行一个，最多 500 条）'
+          placeholder={'例如：\ngpt-4-*\n*-preview\ndall-e-2'}
+          value={inputs.RouteModelBlocklist}
+          name='RouteModelBlocklist'
+          onChange={handleInputChange}
+          rows={8}
+          style={{ fontFamily: 'monospace' }}
+        />
+        <Button onClick={submitModelBlocklist} variant="secondary" disabled={loading}>保存并重建路由</Button>
       </Card>
 
       <Card padding="1.5rem">

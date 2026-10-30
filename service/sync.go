@@ -635,13 +635,24 @@ func clearProviderSyncState(provider *model.Provider) error {
 	return nil
 }
 
+func loadModelBlocklist() []string {
+	common.OptionMapRWMutex.RLock()
+	raw := common.Interface2String(common.OptionMap["RouteModelBlocklist"])
+	common.OptionMapRWMutex.RUnlock()
+	return ParseModelBlocklist(raw)
+}
+
 // RebuildProviderRoutes rebuilds model routes for a specific provider
 // Logic: for each provider_token, find its group_name, then find all models
 // whose pricing.enable_groups contains that group_name → create route entries
+// Models matching the RouteModelBlocklist option are skipped entirely, so
+// blocked models never enter the route table.
 func RebuildProviderRoutes(providerId int) error {
 	lock := providerRebuildLock(providerId)
 	lock.Lock()
 	defer lock.Unlock()
+
+	blocklist := loadModelBlocklist()
 
 	tokens, err := model.GetEnabledProviderTokensByProviderId(providerId)
 	if err != nil {
@@ -669,6 +680,7 @@ func RebuildProviderRoutes(providerId int) error {
 	// Generate routes
 	var routes []model.ModelRoute
 	routeSet := make(map[string]bool) // deduplicate
+	blockedModels := make(map[string]bool)
 	for _, token := range tokens {
 		models, ok := groupModels[normalizeTokenGroupName(token.GroupName)]
 		if !ok {
@@ -685,6 +697,10 @@ func RebuildProviderRoutes(providerId int) error {
 
 		for _, modelName := range models {
 			if allowedModels != nil && !allowedModels[modelName] {
+				continue
+			}
+			if IsModelBlocked(blocklist, modelName) {
+				blockedModels[modelName] = true
 				continue
 			}
 			key := fmt.Sprintf("%s|%d", modelName, token.Id)
@@ -710,6 +726,14 @@ func RebuildProviderRoutes(providerId int) error {
 	providerLabel := fmt.Sprintf("%d", providerId)
 	if p, err := model.GetProviderById(providerId); err == nil && p != nil && p.Name != "" {
 		providerLabel = p.Name
+	}
+	if len(blockedModels) > 0 {
+		blockedList := make([]string, 0, len(blockedModels))
+		for name := range blockedModels {
+			blockedList = append(blockedList, name)
+		}
+		sort.Strings(blockedList)
+		common.SysLog(fmt.Sprintf("skipped %d blocked models for provider %s: %s", len(blockedList), providerLabel, strings.Join(blockedList, ", ")))
 	}
 	common.SysLog(fmt.Sprintf("rebuilt %d routes for provider %s", len(routes), providerLabel))
 	return nil
