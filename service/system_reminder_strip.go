@@ -8,9 +8,11 @@ import (
 	"strings"
 )
 
-// systemReminderTagPattern matches Claude Code's <system-reminder>...</system-reminder>
-// blocks. (?s) makes '.' match newlines so multi-line reminder content is captured.
-var systemReminderTagPattern = regexp.MustCompile(`(?s)<system-reminder>.*?</system-reminder>`)
+// systemReminderTagPattern matches <system-reminder>...</system-reminder> blocks,
+// including the attributed form used by CLI clients (for example
+// <system-reminder data-role="user-context">). (?s) makes '.' match newlines so
+// multi-line reminder content is captured.
+var systemReminderTagPattern = regexp.MustCompile(`(?s)<system-reminder(?:\s[^>]*)?>.*?</system-reminder>`)
 
 // stripSystemReminders removes <system-reminder>...</system-reminder> blocks from
 // every string value in the JSON request body before it is forwarded upstream.

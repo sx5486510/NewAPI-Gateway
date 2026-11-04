@@ -104,6 +104,32 @@ func TestStripSystemRemindersHandlesMultipleBlocks(t *testing.T) {
 	}
 }
 
+func TestStripSystemRemindersRemovesAttributedCLIBlocks(t *testing.T) {
+	old := common.StripSystemReminderEnabled
+	common.StripSystemReminderEnabled = true
+	defer func() { common.StripSystemReminderEnabled = old }()
+	// Real CLI requests wrap user context in attributed system-reminder tags.
+	body := []byte(`{"model":"deepseek-v4.1-flash","messages":[{"role":"system","content":"You are ENI"},{"role":"user","content":"<system-reminder data-role=\"user-context\">\n<user_info>OS Version: win32</user_info>\n<identity_context>SOUL.md: 阿禾</identity_context>\n<product_identity>You are WorkBuddy</product_identity>\n</system-reminder>\n<system-reminder data-role=\"additional-data\">\n<current_time>2026-11-04</current_time>\n</system-reminder>\n<user_query>你是谁</user_query>"}]}`)
+	got := stripSystemReminders(body)
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(got, &payload); err != nil {
+		t.Fatalf("output is not valid JSON: %v, body=%s", err, got)
+	}
+	messages := payload["messages"].([]interface{})
+	systemText := messages[0].(map[string]interface{})["content"].(string)
+	if systemText != "You are ENI" {
+		t.Fatalf("system message changed: %q", systemText)
+	}
+	userText := messages[1].(map[string]interface{})["content"].(string)
+	if containsSystemReminder(userText) || contains(userText, "WorkBuddy") || contains(userText, "阿禾") {
+		t.Fatalf("client identity context survived: %q", userText)
+	}
+	if !contains(userText, "<user_query>你是谁</user_query>") {
+		t.Fatalf("user query was removed: %q", userText)
+	}
+}
+
 func TestStripSystemRemindersInvalidJSONReturnsOriginal(t *testing.T) {
 	body := []byte(`not json but mentions system-reminder`)
 	got := stripSystemReminders(body)
