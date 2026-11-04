@@ -1,13 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Eye, Loader2, RefreshCw, Search, Shield, Trash2 } from 'lucide-react';
-import { API, showError, showSuccess } from '../../helpers';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Check, Copy, Eye, Loader2, RefreshCw, Search, Shield, Trash2 } from 'lucide-react';
+import { API, copy, showError, showSuccess } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
-import { formatTraceContent } from './formatTraceContent';
+import { buildFullTraceText, formatTraceContent } from './formatTraceContent';
 
 const formatTime = (ts) => {
   if (!ts) {
@@ -73,6 +73,52 @@ const AUTO_REFRESH_INTERVAL = 10000;
 
 const isInvalidSSEResponse = (trace) => String(trace?.error_message || '').includes('invalid SSE response:');
 
+// navigator.clipboard is unavailable on plain-HTTP deployments, so keep a DOM fallback.
+const writeToClipboard = async (text) => {
+  if (await copy(text)) {
+    return true;
+  }
+  let textarea;
+  try {
+    textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '0';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    return document.execCommand('copy');
+  } catch (e) {
+    return false;
+  } finally {
+    if (textarea) {
+      document.body.removeChild(textarea);
+    }
+  }
+};
+
+// Nested in <summary>: prevent the click from toggling the <details> element.
+const CopyButton = ({ label, text, sectionKey, copiedKey, onCopy }) => {
+  const copied = copiedKey === sectionKey;
+  return (
+    <button
+      type='button'
+      className='trace-copy-btn'
+      title={`一键复制${label}`}
+      disabled={!text || text === '-'}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onCopy(sectionKey, text, label);
+      }}
+    >
+      {copied ? <Check size={14} /> : <Copy size={14} />}
+      <span>{copied ? '已复制' : '复制'}</span>
+    </button>
+  );
+};
+
 const LLMTrace = () => {
   const [traces, setTraces] = useState([]);
   const [total, setTotal] = useState(0);
@@ -85,6 +131,22 @@ const LLMTrace = () => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+
+  const [copiedKey, setCopiedKey] = useState(null);
+  const copyTimerRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(copyTimerRef.current), []);
+
+  // formatTraceContent scans for embedded JSON; compute once so rendering + copying share it.
+  const requestText = useMemo(() => formatTraceContent(selectedTrace?.request_body), [selectedTrace]);
+  const responseText = useMemo(() => formatTraceContent(selectedTrace?.response_body), [selectedTrace]);
+  const errorText = useMemo(() => formatTraceContent(selectedTrace?.error_message), [selectedTrace]);
+
+  const fullTraceText = useMemo(() => buildFullTraceText([
+    ['请求', requestText],
+    ['响应', responseText],
+    ...(selectedTrace?.error_message ? [['错误', errorText]] : []),
+  ]), [requestText, responseText, errorText, selectedTrace]);
 
   const loadTraces = useCallback(async (options) => {
     const silent = options?.silent === true;
@@ -183,6 +245,18 @@ const LLMTrace = () => {
     } finally {
       setClearing(false);
     }
+  };
+
+  const handleCopy = async (key, text, label) => {
+    const ok = await writeToClipboard(text);
+    if (!ok) {
+      showError(`复制${label}失败，请检查浏览器剪贴板权限`);
+      return;
+    }
+    showSuccess(key === 'all' ? '已复制全部记录' : `${label}已复制`);
+    setCopiedKey(key);
+    clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopiedKey(null), 1600);
   };
 
   const canGoNext = (page + 1) * ITEMS_PER_PAGE < total;
@@ -336,6 +410,17 @@ const LLMTrace = () => {
       <Modal isOpen={isDetailOpen} onClose={() => setSelectedTrace(null)} title='LLM 上下文详情'>
         {selectedTrace && (
           <div style={{ display: 'grid', gap: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button
+                size='sm'
+                variant='secondary'
+                icon={copiedKey === 'all' ? Check : Copy}
+                disabled={!fullTraceText}
+                onClick={() => handleCopy('all', fullTraceText, '全部记录')}
+              >
+                {copiedKey === 'all' ? '已复制全部' : '复制全部'}
+              </Button>
+            </div>
             {selectedTrace.auto_reviewed && (
               <section>
                 <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -371,23 +456,26 @@ const LLMTrace = () => {
               <summary className='trace-collapse-summary'>
                 <span className='trace-collapse-arrow'>▶</span>
                 请求
+                <CopyButton label='请求' text={requestText} sectionKey='request' copiedKey={copiedKey} onCopy={handleCopy} />
               </summary>
-              <pre className='log-json-detail' style={{ marginTop: '0.75rem', marginBottom: 0 }}>{formatTraceContent(selectedTrace.request_body)}</pre>
+              <pre className='log-json-detail' style={{ marginTop: '0.75rem', marginBottom: 0 }}>{requestText}</pre>
             </details>
             <details open className='trace-collapse-container'>
               <summary className='trace-collapse-summary'>
                 <span className='trace-collapse-arrow'>▶</span>
                 响应
+                <CopyButton label='响应' text={responseText} sectionKey='response' copiedKey={copiedKey} onCopy={handleCopy} />
               </summary>
-              <pre className='log-json-detail' style={{ marginTop: '0.75rem', marginBottom: 0 }}>{formatTraceContent(selectedTrace.response_body)}</pre>
+              <pre className='log-json-detail' style={{ marginTop: '0.75rem', marginBottom: 0 }}>{responseText}</pre>
             </details>
             {selectedTrace.error_message && (
               <details className='trace-collapse-container'>
                 <summary className='trace-collapse-summary' style={{ color: 'var(--error)' }}>
                   <span className='trace-collapse-arrow'>▶</span>
                   错误
+                  <CopyButton label='错误' text={errorText} sectionKey='error' copiedKey={copiedKey} onCopy={handleCopy} />
                 </summary>
-                <pre className='log-json-detail' style={{ marginTop: '0.75rem', marginBottom: 0 }}>{formatTraceContent(selectedTrace.error_message)}</pre>
+                <pre className='log-json-detail' style={{ marginTop: '0.75rem', marginBottom: 0 }}>{errorText}</pre>
               </details>
             )}
           </div>

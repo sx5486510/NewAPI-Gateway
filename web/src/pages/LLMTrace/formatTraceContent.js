@@ -48,3 +48,9 @@ export const formatTraceContent = (value) => {
     return [before, formatJson(embeddedJson.value), after].filter(Boolean).join('\n');
   }
 };
+
+// Sections are [label, formattedText] pairs; empty placeholders are skipped.
+export const buildFullTraceText = (sections) => sections
+  .filter(([, text]) => text && text !== '-')
+  .map(([label, text]) => `===== ${label} =====\n${text}`)
+  .join('\n\n');
