@@ -156,6 +156,40 @@ func newRouteSystemPromptProxyContext(body string) (*gin.Context, *httptest.Resp
 	return c, recorder
 }
 
+func TestProxyBoundRouteStripsClientIdentityBlocksWithoutGlobalSwitch(t *testing.T) {
+	setupRouteSystemPromptProxyTest(t)
+	oldStrip := common.StripSystemReminderEnabled
+	common.StripSystemReminderEnabled = false
+	defer func() { common.StripSystemReminderEnabled = oldStrip }()
+
+	prompt := model.SystemPrompt{Name: "preset", ModelName: "gpt-4", Content: "ROUTE PRESET"}
+	if err := model.DB.Create(&prompt).Error; err != nil {
+		t.Fatal(err)
+	}
+	var upstreamBody []byte
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[]}`))
+	}))
+	defer upstream.Close()
+
+	body := `{"model":"client-model","messages":[{"role":"system","content":"CLIENT SYSTEM PROMPT"},{"role":"user","content":"<system-reminder data-role=\"user-context\"><product_identity>You are WorkBuddy</product_identity></system-reminder><user_query>你是谁</user_query>"}]}`
+	c, _ := newRouteSystemPromptProxyContext(body)
+	route := model.ModelRoute{Id: 3, ModelName: "gpt-4", SystemPromptId: &prompt.Id}
+	if err := ProxyToUpstream(c, route, &model.ProviderToken{Id: 103, SkKey: "key-three"}, &model.Provider{Id: 13, Name: "upstream", BaseURL: upstream.URL}); err != nil {
+		t.Fatalf("ProxyToUpstream: %v", err)
+	}
+	for _, forbidden := range []string{"WorkBuddy", "system-reminder", "CLIENT SYSTEM PROMPT"} {
+		if strings.Contains(string(upstreamBody), forbidden) {
+			t.Fatalf("%q survived in upstream body: %s", forbidden, upstreamBody)
+		}
+	}
+	if !strings.Contains(string(upstreamBody), "ROUTE PRESET") || !strings.Contains(string(upstreamBody), "你是谁") {
+		t.Fatalf("preset or user query missing: %s", upstreamBody)
+	}
+}
+
 func assertSingleRoutePrompt(t *testing.T, body []byte, want, forbidden string) {
 	t.Helper()
 	if strings.Count(string(body), want) != 1 || strings.Contains(string(body), forbidden) {

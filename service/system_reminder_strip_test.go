@@ -150,6 +150,26 @@ func TestStripSystemRemindersDisabledReturnsOriginal(t *testing.T) {
 	}
 }
 
+func TestStripSystemRemindersForcedIgnoresDisabledSwitch(t *testing.T) {
+	old := common.StripSystemReminderEnabled
+	common.StripSystemReminderEnabled = false
+	defer func() { common.StripSystemReminderEnabled = old }()
+
+	body := []byte(`{"messages":[{"role":"user","content":"<system-reminder data-role=\"user-context\">You are WorkBuddy</system-reminder><user_query>你是谁</user_query>"}]}`)
+	got := stripSystemRemindersForced(body)
+	var payload map[string]interface{}
+	if err := json.Unmarshal(got, &payload); err != nil {
+		t.Fatalf("output is not valid JSON: %v, body=%s", err, got)
+	}
+	text := payload["messages"].([]interface{})[0].(map[string]interface{})["content"].(string)
+	if containsSystemReminder(text) || contains(text, "WorkBuddy") {
+		t.Fatalf("attributed block survived forced strip: %q", text)
+	}
+	if !contains(text, "<user_query>你是谁</user_query>") {
+		t.Fatalf("user query was removed: %q", text)
+	}
+}
+
 func containsSystemReminder(s string) bool {
 	return contains(s, "system-reminder")
 }

@@ -27,6 +27,14 @@ func stripSystemReminders(body []byte) []byte {
 	if !common.StripSystemReminderEnabled {
 		return body
 	}
+	return stripSystemRemindersForced(body)
+}
+
+// stripSystemRemindersForced removes the blocks regardless of the global
+// compatibility switch. A route with a bound system prompt uses this path: the
+// administrator preset is authoritative, so client identity blocks must not
+// compete with it even when the switch is off for other routes.
+func stripSystemRemindersForced(body []byte) []byte {
 	if len(body) == 0 || !bytes.Contains(body, []byte("system-reminder")) {
 		return body
 	}

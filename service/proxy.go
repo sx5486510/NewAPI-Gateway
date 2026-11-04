@@ -181,7 +181,13 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 			Retryable: true,
 		}
 	}
-	bodyBytes = stripSystemReminders(bodyBytes)
+	if route.SystemPromptId != nil {
+		// A bound preset is authoritative: strip client identity/context blocks
+		// even when the global compatibility switch is off.
+		bodyBytes = stripSystemRemindersForced(bodyBytes)
+	} else {
+		bodyBytes = stripSystemReminders(bodyBytes)
+	}
 	requestedStream := extractRequestedStream(bodyBytes)
 
 	// Create the log/audit rows right away so an in-flight request is visible
