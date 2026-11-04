@@ -1,5 +1,7 @@
 # Route System Prompt Injection Design
 
+> **变更记录（2026-11-04）**：注入语义已从「插入并保留客户端 system」改为「替换」——网关先删除 `messages` 中所有 `role: system` 的消息，再把路由绑定的预设作为唯一一条 `system` 置于首位，其余消息保持原顺序。原因是多条 system 会造成指令冲突/预设被覆盖、部分上游报错或静默忽略后续 system，以及重复 token 开销。下文 §Scope、§Proxy Data Flow、§Testing、§Acceptance Criteria 中「保留客户端 system」「预设排在客户端 system 之前」等描述均为旧行为；当前行为以 `docs/API_REFERENCE.md` 的「Relay 注入行为」及 `service/system_prompt_injection.go` 为准。
+
 ## Objective
 
 Add administrator-managed system prompt presets to NewAPI Gateway. Each preset belongs to exactly one model name. Each model route may select at most one compatible preset, with no preset selected by default. For OpenAI `POST /v1/chat/completions` requests, the gateway inserts the selected preset as the first system message while preserving all client messages.

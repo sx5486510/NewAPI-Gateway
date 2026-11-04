@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 const routeSystemPromptInvalidRequestMessage = "invalid messages in chat completions request"
@@ -65,10 +66,31 @@ func injectRouteSystemPrompt(method, path string, body []byte, content string) (
 	if err != nil {
 		return nil, err
 	}
-	messages = append([]json.RawMessage{gatewayMessage}, messages...)
+	// The route preset replaces every client-provided system message, leaving a
+	// single authoritative system message for the upstream. Non-system messages
+	// keep their original relative order; non-object entries pass through.
+	messages = replaceClientSystemMessages(messages, gatewayMessage)
 	request["messages"], err = json.Marshal(messages)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(request)
+}
+
+// replaceClientSystemMessages returns the preset followed by all client
+// messages whose role is not "system". A message that cannot be decoded as an
+// object is kept unchanged rather than silently dropped.
+func replaceClientSystemMessages(messages []json.RawMessage, preset json.RawMessage) []json.RawMessage {
+	result := make([]json.RawMessage, 0, len(messages)+1)
+	result = append(result, preset)
+	for _, message := range messages {
+		var header struct {
+			Role string `json:"role"`
+		}
+		if err := json.Unmarshal(message, &header); err == nil && strings.EqualFold(header.Role, "system") {
+			continue
+		}
+		result = append(result, message)
+	}
+	return result
 }

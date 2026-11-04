@@ -401,7 +401,7 @@ Cookie: session=<admin-session>
 
 ### Relay 注入行为
 
-路由绑定的系统提示词只应用于路径和方法完全匹配的 `POST /v1/chat/completions`。网关将其作为第一条 `system` 消息插入，客户端原有的 `messages` 按原顺序完整保留。未绑定路由以及其他方法或路径（包括相似路径和其他 Relay 协议）保持原有转发行为不变。
+路由绑定的系统提示词只应用于路径和方法完全匹配的 `POST /v1/chat/completions`。网关会**替换**客户端的所有 `system` 消息：先移除 `messages` 中全部 `role` 为 `system` 的消息（忽略大小写），再将绑定的系统提示词作为唯一一条 `system` 消息置于 `messages` 首位；其余消息保持原有内容和相对顺序，其他顶层字段不变。这样上游始终只收到一条 `system` 消息。未绑定路由以及其他方法或路径（包括相似路径和其他 Relay 协议）保持原有转发行为不变。
 
 ## 日志与统计 API
 

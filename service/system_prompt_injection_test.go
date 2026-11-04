@@ -69,7 +69,7 @@ func TestRouteSystemPromptRetryUsesOriginalBodyPerRoute(t *testing.T) {
 	if err := model.DB.Create(&second).Error; err != nil {
 		t.Fatal(err)
 	}
-	original := []byte(`{"model":"client-model","messages":[{"role":"user","content":"hello"}]}`)
+	original := []byte(`{"model":"client-model","messages":[{"role":"system","content":"client system"},{"role":"user","content":"hello"}]}`)
 
 	firstBody, err := prepareRouteRequestBody(http.MethodPost, "/v1/chat/completions", original, model.ModelRoute{ModelName: "gpt-4", SystemPromptId: &first.Id})
 	if err != nil {
@@ -79,11 +79,14 @@ func TestRouteSystemPromptRetryUsesOriginalBodyPerRoute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare second route: %v", err)
 	}
-	if string(original) != `{"model":"client-model","messages":[{"role":"user","content":"hello"}]}` {
+	if string(original) != `{"model":"client-model","messages":[{"role":"system","content":"client system"},{"role":"user","content":"hello"}]}` {
 		t.Fatalf("original body mutated: %s", original)
 	}
 	assertRoutePromptMessages(t, firstBody, "first preset", "hello")
 	assertRoutePromptMessages(t, secondBody, "second preset", "hello")
+	if strings.Contains(string(firstBody), "client system") || strings.Contains(string(secondBody), "client system") {
+		t.Fatalf("client system survived replacement: %s / %s", firstBody, secondBody)
+	}
 	if string(secondBody) == string(firstBody) {
 		t.Fatal("route-specific bodies unexpectedly equal")
 	}
@@ -161,12 +164,14 @@ func assertRoutePromptMessages(t *testing.T, body []byte, wantPrompt, wantUser s
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Model != "gpt-4" || len(decoded.Messages) != 2 || decoded.Messages[0].Content != wantPrompt || decoded.Messages[1].Content != wantUser {
+	if decoded.Model != "gpt-4" || len(decoded.Messages) != 2 ||
+		decoded.Messages[0].Role != "system" || decoded.Messages[0].Content != wantPrompt ||
+		decoded.Messages[1].Role != "user" || decoded.Messages[1].Content != wantUser {
 		t.Fatalf("unexpected prepared body: %s", body)
 	}
 }
 
-func TestRouteSystemPromptPrependsMessageAndPreservesRequest(t *testing.T) {
+func TestRouteSystemPromptReplacesClientSystemMessageAndPreservesRequest(t *testing.T) {
 	content := "first line\nquoted: \"你好\""
 	body := []byte(`{"model":"gpt-4","temperature":0.25,"metadata":{"key":"value"},"messages":[{"role":"system","content":"client system"},{"role":"user","content":"hello"}]}`)
 
@@ -184,14 +189,51 @@ func TestRouteSystemPromptPrependsMessageAndPreservesRequest(t *testing.T) {
 	}
 	want := []map[string]any{
 		{"role": "system", "content": content},
-		{"role": "system", "content": "client system"},
 		{"role": "user", "content": "hello"},
 	}
 	if !reflect.DeepEqual(messages, want) {
 		t.Fatalf("messages = %#v, want %#v", messages, want)
 	}
+	if strings.Contains(string(got), "client system") {
+		t.Fatalf("client system message was not replaced: %s", got)
+	}
 	if string(decoded["temperature"]) != "0.25" || string(decoded["metadata"]) != `{"key":"value"}` || string(decoded["model"]) != `"gpt-4"` {
 		t.Fatalf("top-level fields not preserved: %s", got)
+	}
+}
+
+func TestRouteSystemPromptReplacesEveryClientSystemMessage(t *testing.T) {
+	body := []byte(`{"model":"gpt-4","messages":[{"role":"system","content":"first client system"},{"role":"user","content":"u1"},{"role":"SYSTEM","content":"second client system"},{"role":"system","content":[{"type":"text","text":"third client system"}]},{"role":"assistant","content":"a1"},"opaque"]}`)
+
+	got, err := injectRouteSystemPrompt(http.MethodPost, "/v1/chat/completions", body, "preset")
+	if err != nil {
+		t.Fatalf("injectRouteSystemPrompt: %v", err)
+	}
+	var decoded struct {
+		Messages []json.RawMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(got, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Messages) != 4 {
+		t.Fatalf("messages = %s, want 4", decoded.Messages)
+	}
+	var first map[string]string
+	if err := json.Unmarshal(decoded.Messages[0], &first); err != nil {
+		t.Fatal(err)
+	}
+	if first["role"] != "system" || first["content"] != "preset" {
+		t.Fatalf("first message = %s, want route preset", decoded.Messages[0])
+	}
+	for i, want := range []string{`"content":"u1"`, `"content":"a1"`, `"opaque"`} {
+		if !strings.Contains(string(decoded.Messages[i+1]), want) {
+			t.Fatalf("messages[%d] = %s, want %s", i+1, decoded.Messages[i+1], want)
+		}
+	}
+	for _, removed := range []string{"first client system", "second client system", "third client system"} {
+		if strings.Contains(string(got), removed) {
+			t.Fatalf("client system message %q survived: %s", removed, got)
+		}
 	}
 }
 

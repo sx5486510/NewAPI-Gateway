@@ -43,7 +43,7 @@ func TestProxyRouteSystemPromptRetryUsesOnlyCurrentRoutePresetAndTracesSentBody(
 	}))
 	defer secondUpstream.Close()
 
-	c, recorder := newRouteSystemPromptProxyContext(`{"model":"client-model","messages":[{"role":"user","content":"hello"}]}`)
+	c, recorder := newRouteSystemPromptProxyContext(`{"model":"client-model","messages":[{"role":"system","content":"CLIENT SYSTEM PROMPT"},{"role":"user","content":"hello"}]}`)
 	firstRoute := model.ModelRoute{Id: 1, ModelName: "gpt-4", SystemPromptId: &firstPrompt.Id}
 	secondRoute := model.ModelRoute{Id: 2, ModelName: "gpt-4", SystemPromptId: &secondPrompt.Id}
 	firstErr := ProxyToUpstream(c, firstRoute, &model.ProviderToken{Id: 101, SkKey: "key-one"}, &model.Provider{Id: 11, Name: "first", BaseURL: firstUpstream.URL})
@@ -67,6 +67,11 @@ func TestProxyRouteSystemPromptRetryUsesOnlyCurrentRoutePresetAndTracesSentBody(
 		t.Fatalf("find second trace: %v", err)
 	}
 	assertSingleRoutePrompt(t, []byte(trace.RequestBody), "SECOND ROUTE PRESET", "FIRST ROUTE PRESET")
+	for name, body := range map[string][]byte{"first attempt": firstBody, "second attempt": secondBody, "trace": []byte(trace.RequestBody)} {
+		if strings.Contains(string(body), "CLIENT SYSTEM PROMPT") {
+			t.Fatalf("%s still contains the client system message: %s", name, body)
+		}
+	}
 }
 
 func TestProxyRouteSystemPromptInvalidMessagesIsNonRetryable400WithoutUpstream(t *testing.T) {
