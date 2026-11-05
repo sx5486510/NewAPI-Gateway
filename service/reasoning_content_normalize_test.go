@@ -46,10 +46,8 @@ func TestNormalizeReasoningContentNoOpCases(t *testing.T) {
 		{"messages missing", `{"tools":[{"type":"function"}]}`},
 		{"messages not array", `{"tools":[{"type":"function"}],"messages":"oops"}`},
 		{"no assistant", `{"tools":[{"type":"function"}],"messages":[{"role":"user","reasoning":"think"}]}`},
-		{"empty reasoning", `{"tools":[{"type":"function"}],"messages":[{"role":"assistant","reasoning":"   "}]}`},
-		{"null reasoning", `{"tools":[{"type":"function"}],"messages":[{"role":"assistant","reasoning":null}]}`},
-		{"non string reasoning", `{"tools":[{"type":"function"}],"messages":[{"role":"assistant","reasoning":{"text":"x"}}]}`},
 		{"already has field", `{"tools":[{"type":"function"}],"messages":[{"role":"assistant","reasoning":"new","reasoning_content":"old"}]}`},
+		{"all assistants covered", `{"tools":[{"type":"function"}],"messages":[{"role":"assistant","reasoning":"x","reasoning_content":"x"},{"role":"assistant","reasoning_content":""}]}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -90,10 +88,13 @@ func TestNormalizeReasoningContentRewritesAssistantOnly(t *testing.T) {
 	if len(msgs) != 5 {
 		t.Fatalf("message count = %d, want 5", len(msgs))
 	}
-	for _, i := range []int{0, 1, 3, 4} {
+	for _, i := range []int{0, 1, 3} {
 		if _, ok := msgs[i]["reasoning_content"]; ok {
 			t.Fatalf("message[%d] (role=%v) should not be rewritten", i, msgs[i]["role"])
 		}
+	}
+	if got, ok := msgs[4]["reasoning_content"]; !ok || got != "" {
+		t.Fatalf("final assistant with empty reasoning should get an empty string, got %v (present=%v)", got, ok)
 	}
 	assistant := msgs[2]
 	if assistant["reasoning_content"] != "first thought" {
@@ -136,8 +137,8 @@ func TestNormalizeReasoningContentMultipleAssistantMessages(t *testing.T) {
 	if msgs[1]["reasoning_content"] != "kept" {
 		t.Fatalf("existing value overwritten: %v", msgs[1]["reasoning_content"])
 	}
-	if _, ok := msgs[3]["reasoning_content"]; ok {
-		t.Fatalf("assistant without reasoning should be untouched")
+	if got, ok := msgs[3]["reasoning_content"]; !ok || got != "" {
+		t.Fatalf("assistant without reasoning should get an empty string, got %v (present=%v)", got, ok)
 	}
 }
 
@@ -148,5 +149,71 @@ func TestNormalizeReasoningContentPreservesUnicodeAndEscapes(t *testing.T) {
 	want := "line1\n中文 <tag> \"quoted\""
 	if msgs[0]["reasoning_content"] != want || msgs[0]["reasoning"] != want {
 		t.Fatalf("value changed: %v / %v", msgs[0]["reasoning_content"], msgs[0]["reasoning"])
+	}
+}
+
+// Regression for the second production 400: the last assistant of the tool
+// loop had no "reasoning" field at all (trace 2331, message [49]), so copying
+// only non-empty reasoning values still left it without reasoning_content.
+func TestNormalizeReasoningContentBackfillsToolLoopAssistant(t *testing.T) {
+	body := []byte(`{
+		"enable_thinking":true,
+		"model":"deepseek-v4.1-flash",
+		"stream":true,
+		"tools":[{"type":"function","function":{"name":"Bash"}}],
+		"messages":[
+			{"role":"system","content":"preset"},
+			{"role":"assistant","content":null,"reasoning":"first thought",
+			 "tool_calls":[{"id":"c1","type":"function","function":{"name":"Bash","arguments":"{}"}}]},
+			{"role":"tool","content":"first result","tool_call_id":"c1"},
+			{"role":"assistant","content":"\n\n","messageId":"m49","stepSeq":49,"traceId":"t49",
+			 "tool_calls":[{"id":"c2","type":"function","function":{"name":"Bash","arguments":"{}"}}]},
+			{"role":"tool","content":"last result","tool_call_id":"c2"}
+		]
+	}`)
+	got := normalizeReasoningContent(body)
+	request := decodeNormalizedMessages(t, got)
+	if request["stream"] != true || request["enable_thinking"] != true {
+		t.Fatal("top-level flags were changed")
+	}
+	msgs := decodeNormalizedMessageList(t, got)
+	if msgs[1]["reasoning_content"] != "first thought" {
+		t.Fatalf("reasoning value was not reused: %v", msgs[1]["reasoning_content"])
+	}
+	last := msgs[3]
+	if value, ok := last["reasoning_content"]; !ok || value != "" {
+		t.Fatalf("tool-loop assistant must get an empty reasoning_content, got %v (present=%v)", value, ok)
+	}
+	if _, ok := last["reasoning"]; ok {
+		t.Fatal("should not invent a reasoning field")
+	}
+	for _, key := range []string{"content", "messageId", "stepSeq", "traceId", "tool_calls"} {
+		if _, ok := last[key]; !ok {
+			t.Fatalf("client metadata %q was dropped", key)
+		}
+	}
+	if last["content"] != "\n\n" {
+		t.Fatalf("content changed: %v", last["content"])
+	}
+	for _, i := range []int{0, 2, 4} {
+		if _, ok := msgs[i]["reasoning_content"]; ok {
+			t.Fatalf("message[%d] (role=%v) should not be rewritten", i, msgs[i]["role"])
+		}
+	}
+}
+
+func TestNormalizeReasoningContentBackfillsUnusableReasoning(t *testing.T) {
+	body := []byte(`{"tools":[{"type":"function"}],"messages":[
+		{"role":"assistant","reasoning":"   "},
+		{"role":"assistant","reasoning":null},
+		{"role":"assistant","reasoning":{"text":"x"}},
+		{"role":"assistant"}
+	]}`)
+	got := normalizeReasoningContent(body)
+	msgs := decodeNormalizedMessageList(t, got)
+	for i, m := range msgs {
+		if value, ok := m["reasoning_content"]; !ok || value != "" {
+			t.Fatalf("message[%d] should get an empty reasoning_content, got %v (present=%v)", i, value, ok)
+		}
 	}
 }
