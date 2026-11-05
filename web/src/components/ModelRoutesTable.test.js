@@ -638,4 +638,35 @@ describe('ModelRoutesTable', () => {
     expect(window.confirm).toHaveBeenCalled();
     expect(API.post).not.toHaveBeenCalled();
   });
+
+  it('saves the reasoning_content compatibility switch through batch update', async () => {
+    await act(async () => {
+      root.render(<ModelRoutesTable />);
+    });
+
+    const toggle = document.querySelector('.routes-normalize-reasoning-toggle');
+    expect(toggle).not.toBeNull();
+    expect(toggle.checked).toBe(false);
+
+    await act(async () => {
+      toggle.click();
+    });
+    expect(toggle.checked).toBe(true);
+
+    const saveButton = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('保存变更'));
+    expect(saveButton).not.toBeUndefined();
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(API.post).toHaveBeenCalledWith('/api/route/batch-update', {
+      items: [
+        {
+          id: 1,
+          normalize_reasoning_content: true,
+        },
+      ],
+    });
+  });
 });

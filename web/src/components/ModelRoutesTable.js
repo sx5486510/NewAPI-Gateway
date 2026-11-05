@@ -514,6 +514,10 @@ const ModelRoutesTable = () => {
                         && !!draft.convert_messages_to_chat !== !!freshRoute.convert_messages_to_chat) {
                         remaining.convert_messages_to_chat = draft.convert_messages_to_chat;
                     }
+                    if (Object.prototype.hasOwnProperty.call(draft, 'normalize_reasoning_content')
+                        && !!draft.normalize_reasoning_content !== !!freshRoute.normalize_reasoning_content) {
+                        remaining.normalize_reasoning_content = draft.normalize_reasoning_content;
+                    }
                     if (Object.keys(remaining).length > 0) reconciledDrafts[id] = remaining;
                 });
                 return reconciledDrafts;
@@ -714,12 +718,14 @@ const ModelRoutesTable = () => {
                 enabled: original.enabled,
                 system_prompt_id: normalizeSystemPromptId(original.system_prompt_id),
                 convert_messages_to_chat: !!original.convert_messages_to_chat,
+                normalize_reasoning_content: !!original.normalize_reasoning_content,
                 ...(prev[routeId] || {})
             };
             const nextDraft = { ...baseDraft, ...patch };
             const unchanged = nextDraft.enabled === original.enabled
                 && normalizeSystemPromptId(nextDraft.system_prompt_id) === normalizeSystemPromptId(original.system_prompt_id)
-                && !!nextDraft.convert_messages_to_chat === !!original.convert_messages_to_chat;
+                && !!nextDraft.convert_messages_to_chat === !!original.convert_messages_to_chat
+                && !!nextDraft.normalize_reasoning_content === !!original.normalize_reasoning_content;
             if (unchanged) {
                 const next = { ...prev };
                 delete next[routeId];
@@ -741,12 +747,14 @@ const ModelRoutesTable = () => {
                     enabled: original.enabled,
                     system_prompt_id: normalizeSystemPromptId(original.system_prompt_id),
                     convert_messages_to_chat: !!original.convert_messages_to_chat,
+                    normalize_reasoning_content: !!original.normalize_reasoning_content,
                     ...(next[route.id] || {})
                 };
                 current.enabled = enabled;
                 const unchanged = current.enabled === original.enabled
                     && normalizeSystemPromptId(current.system_prompt_id) === normalizeSystemPromptId(original.system_prompt_id)
-                    && !!current.convert_messages_to_chat === !!original.convert_messages_to_chat;
+                    && !!current.convert_messages_to_chat === !!original.convert_messages_to_chat
+                    && !!current.normalize_reasoning_content === !!original.normalize_reasoning_content;
                 if (unchanged) {
                     delete next[route.id];
                 } else {
@@ -773,6 +781,10 @@ const ModelRoutesTable = () => {
             if (Object.prototype.hasOwnProperty.call(value, 'convert_messages_to_chat')
                 && !!value.convert_messages_to_chat !== !!original.convert_messages_to_chat) {
                 item.convert_messages_to_chat = !!value.convert_messages_to_chat;
+            }
+            if (Object.prototype.hasOwnProperty.call(value, 'normalize_reasoning_content')
+                && !!value.normalize_reasoning_content !== !!original.normalize_reasoning_content) {
+                item.normalize_reasoning_content = !!value.normalize_reasoning_content;
             }
             return item;
         });
@@ -1153,7 +1165,7 @@ const ModelRoutesTable = () => {
                                             {renderSortableDetailHeader('status', '状态')}
                                             <Th style={stickyHeaderCellStyle}>系统提示词</Th>
                                             <Th style={stickyHeaderCellStyle}>客户端限制</Th>
-                                            <Th style={stickyHeaderCellStyle}>协议转换</Th>
+                                            <Th style={stickyHeaderCellStyle}>兼容设置</Th>
                                             <Th style={stickyHeaderCellStyle}>操作</Th>
                                         </Tr>
                                     </Thead>
@@ -1197,6 +1209,7 @@ const ModelRoutesTable = () => {
                                                     const tokenAllowCC = route.allow_cc || false;
                                                     const tokenBlockClients = route.block_clients || false;
                                                     const convertMessagesToChat = !!route.convert_messages_to_chat;
+                                                    const normalizeReasoningContent = !!route.normalize_reasoning_content;
                                                     const routePriceLines = buildRoutePriceLines(route);
                                                     const tokenQuota = formatTokenQuota(route);
                                                     const promptOptions = systemPromptsByModel.get(String(route.model_name || '')) || [];
@@ -1398,23 +1411,37 @@ const ModelRoutesTable = () => {
                                                                 </div>
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>
-                                                                <label style={tokenClientToggleStyle} title="开启后，网关会将 Anthropic /v1/messages 请求转换为 OpenAI Chat Completions 请求转发给上游">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        className="routes-convert-messages-toggle"
-                                                                        checked={convertMessagesToChat}
-                                                                        aria-label={`${route.provider_name || '路由'}协议转换`}
-                                                                        onChange={(e) => updateDraft(route.id, { convert_messages_to_chat: e.target.checked })}
-                                                                        disabled={saving}
-                                                                        style={{ margin: 0 }}
-                                                                    />
-                                                                    <span>Messages→Chat</span>
-                                                                </label>
-                                                                {convertMessagesToChat && (tokenBlockClients || !tokenAllowCC) && (
-                                                                    <div style={{ ...helperTextStyle, marginTop: '0.25rem' }}>
-                                                                        提示：CC 客户端当前可能无法使用该路由
-                                                                    </div>
-                                                                )}
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'flex-start' }}>
+                                                                    <label style={tokenClientToggleStyle} title="开启后，网关会将 Anthropic /v1/messages 请求转换为 OpenAI Chat Completions 请求转发给上游">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            className="routes-convert-messages-toggle"
+                                                                            checked={convertMessagesToChat}
+                                                                            aria-label={`${route.provider_name || '路由'}协议转换`}
+                                                                            onChange={(e) => updateDraft(route.id, { convert_messages_to_chat: e.target.checked })}
+                                                                            disabled={saving}
+                                                                            style={{ margin: 0 }}
+                                                                        />
+                                                                        <span>Messages→Chat</span>
+                                                                    </label>
+                                                                    <label style={tokenClientToggleStyle} title="开启后，带 tools 的 thinking 模式请求会为历史 assistant 消息补齐 reasoning_content（DeepSeek 等上游要求）；仅作用于 /v1/chat/completions">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            className="routes-normalize-reasoning-toggle"
+                                                                            checked={normalizeReasoningContent}
+                                                                            aria-label={`${route.provider_name || '路由'}思考链兼容`}
+                                                                            onChange={(e) => updateDraft(route.id, { normalize_reasoning_content: e.target.checked })}
+                                                                            disabled={saving}
+                                                                            style={{ margin: 0 }}
+                                                                        />
+                                                                        <span>思考链兼容</span>
+                                                                    </label>
+                                                                    {convertMessagesToChat && (tokenBlockClients || !tokenAllowCC) && (
+                                                                        <div style={helperTextStyle}>
+                                                                            提示：CC 客户端当前可能无法使用该路由
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                             </Td>
                                                             <Td style={cellMiddleStyle}>
                                                                 <Button
