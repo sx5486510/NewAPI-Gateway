@@ -74,18 +74,19 @@ func chunkStrings(values []string, chunkSize int) [][]string {
 }
 
 type ModelRoute struct {
-	Id                    int    `json:"id"`
-	ModelName             string `json:"model_name" gorm:"type:varchar(255);index;not null"`
-	ProviderTokenId       int    `json:"provider_token_id" gorm:"index;not null"`
-	ProviderId            int    `json:"provider_id" gorm:"index;not null"`
-	Enabled               bool   `json:"enabled" gorm:"default:true"`
-	Priority              int    `json:"priority" gorm:"default:0;index"`
-	Weight                int    `json:"weight" gorm:"default:10"`
-	AllowCodex            bool   `json:"allow_codex" gorm:"default:false"`
-	AllowCC               bool   `json:"allow_cc" gorm:"default:false"`
-	BlockClients          bool   `json:"block_clients" gorm:"default:false"`
-	SystemPromptId        *int   `json:"system_prompt_id" gorm:"index"`
-	ConvertMessagesToChat bool   `json:"convert_messages_to_chat" gorm:"default:false"`
+	Id                        int    `json:"id"`
+	ModelName                 string `json:"model_name" gorm:"type:varchar(255);index;not null"`
+	ProviderTokenId           int    `json:"provider_token_id" gorm:"index;not null"`
+	ProviderId                int    `json:"provider_id" gorm:"index;not null"`
+	Enabled                   bool   `json:"enabled" gorm:"default:true"`
+	Priority                  int    `json:"priority" gorm:"default:0;index"`
+	Weight                    int    `json:"weight" gorm:"default:10"`
+	AllowCodex                bool   `json:"allow_codex" gorm:"default:false"`
+	AllowCC                   bool   `json:"allow_cc" gorm:"default:false"`
+	BlockClients              bool   `json:"block_clients" gorm:"default:false"`
+	SystemPromptId            *int   `json:"system_prompt_id" gorm:"index"`
+	ConvertMessagesToChat     bool   `json:"convert_messages_to_chat" gorm:"default:false"`
+	NormalizeReasoningContent bool   `json:"normalize_reasoning_content" gorm:"default:false"`
 	// HealthResetAt 是健康度统计基线（Unix 秒）。大于 0 时，早于该时间戳的
 	// usage_logs 不再计入该路由的成功/失败次数与健康值。
 	HealthResetAt int64 `json:"health_reset_at" gorm:"default:0"`
@@ -109,15 +110,16 @@ func (mr *ModelRoute) NormalizeClientRestrictions() {
 }
 
 type ModelRoutePatch struct {
-	Id                    int                    `json:"id"`
-	Priority              *int                   `json:"priority,omitempty"`
-	Weight                *int                   `json:"weight,omitempty"`
-	Enabled               *bool                  `json:"enabled,omitempty"`
-	AllowCodex            *bool                  `json:"allow_codex,omitempty"`
-	AllowCC               *bool                  `json:"allow_cc,omitempty"`
-	BlockClients          *bool                  `json:"block_clients,omitempty"`
-	SystemPromptId        NullableSystemPromptID `json:"system_prompt_id"`
-	ConvertMessagesToChat *bool                  `json:"convert_messages_to_chat,omitempty"`
+	Id                        int                    `json:"id"`
+	Priority                  *int                   `json:"priority,omitempty"`
+	Weight                    *int                   `json:"weight,omitempty"`
+	Enabled                   *bool                  `json:"enabled,omitempty"`
+	AllowCodex                *bool                  `json:"allow_codex,omitempty"`
+	AllowCC                   *bool                  `json:"allow_cc,omitempty"`
+	BlockClients              *bool                  `json:"block_clients,omitempty"`
+	SystemPromptId            NullableSystemPromptID `json:"system_prompt_id"`
+	ConvertMessagesToChat     *bool                  `json:"convert_messages_to_chat,omitempty"`
+	NormalizeReasoningContent *bool                  `json:"normalize_reasoning_content,omitempty"`
 }
 
 // NullableSystemPromptID distinguishes an omitted field from an explicit JSON
@@ -163,6 +165,9 @@ func (p *ModelRoutePatch) ToUpdates() map[string]interface{} {
 	}
 	if p.ConvertMessagesToChat != nil {
 		updates["convert_messages_to_chat"] = *p.ConvertMessagesToChat
+	}
+	if p.NormalizeReasoningContent != nil {
+		updates["normalize_reasoning_content"] = *p.NormalizeReasoningContent
 	}
 	if p.SystemPromptId.Set {
 		if p.SystemPromptId.Value == nil {
@@ -222,46 +227,47 @@ func normalizeModelRoutePatch(patch *ModelRoutePatch) {
 }
 
 type ModelRouteOverviewItem struct {
-	Id                      int      `json:"id"`
-	DisplayModelName        string   `json:"display_model_name"`
-	ModelName               string   `json:"model_name"`
-	SystemPromptId          *int     `json:"system_prompt_id"`
-	ProviderId              int      `json:"provider_id"`
-	ProviderName            string   `json:"provider_name"`
-	ProviderBaseURL         string   `json:"provider_base_url"`
-	ProviderBalance         string   `json:"provider_balance"`
-	ProviderStatus          int      `json:"provider_status"`
-	ProviderDeleted         bool     `json:"provider_deleted"` // 供应商是否已删除（孤儿路由标识）
-	ProviderTokenId         int      `json:"provider_token_id"`
-	TokenName               string   `json:"token_name"`
-	TokenGroupName          string   `json:"token_group_name"`
-	TokenStatus             int      `json:"token_status"`
-	TokenUnlimitedQuota     *bool    `json:"token_unlimited_quota"`
-	TokenRemainQuota        *int64   `json:"token_remain_quota"`
-	TokenUsedQuota          *int64   `json:"token_used_quota"`
-	AllowCodex              bool     `json:"allow_codex"`
-	AllowCC                 bool     `json:"allow_cc"`
-	BlockClients            bool     `json:"block_clients"`
-	ConvertMessagesToChat   bool     `json:"convert_messages_to_chat"`
-	Enabled                 bool     `json:"enabled"`
-	Priority                int      `json:"priority"`
-	Weight                  int      `json:"weight"`
-	BillingType             string   `json:"billing_type"`
-	GroupRatio              float64  `json:"group_ratio"`
-	PromptPricePer1M        *float64 `json:"prompt_price_per_1m"`
-	CompletionPricePer1M    *float64 `json:"completion_price_per_1m"`
-	PerCallPrice            *float64 `json:"per_call_price"`
-	RecentUsageCostUSD      float64  `json:"recent_usage_cost_usd"`
-	ValueScore              *float64 `json:"value_score"`
-	UsageWindowHours        int      `json:"usage_window_hours"`
-	BaseWeightFactor        float64  `json:"base_weight_factor"`
-	ValueScoreFactor        float64  `json:"value_score_factor"`
-	HealthAdjustmentEnabled bool     `json:"health_adjustment_enabled"`
-	HealthValue             int64    `json:"health_value"`
-	HealthSuccessCount      int64    `json:"health_success_count"`
-	HealthErrorCount        int64    `json:"health_error_count"`
-	HealthSampleCount       int64    `json:"health_sample_count"`
-	EffectiveSharePercent   *float64 `json:"effective_share_percent"`
+	Id                        int      `json:"id"`
+	DisplayModelName          string   `json:"display_model_name"`
+	ModelName                 string   `json:"model_name"`
+	SystemPromptId            *int     `json:"system_prompt_id"`
+	ProviderId                int      `json:"provider_id"`
+	ProviderName              string   `json:"provider_name"`
+	ProviderBaseURL           string   `json:"provider_base_url"`
+	ProviderBalance           string   `json:"provider_balance"`
+	ProviderStatus            int      `json:"provider_status"`
+	ProviderDeleted           bool     `json:"provider_deleted"` // 供应商是否已删除（孤儿路由标识）
+	ProviderTokenId           int      `json:"provider_token_id"`
+	TokenName                 string   `json:"token_name"`
+	TokenGroupName            string   `json:"token_group_name"`
+	TokenStatus               int      `json:"token_status"`
+	TokenUnlimitedQuota       *bool    `json:"token_unlimited_quota"`
+	TokenRemainQuota          *int64   `json:"token_remain_quota"`
+	TokenUsedQuota            *int64   `json:"token_used_quota"`
+	AllowCodex                bool     `json:"allow_codex"`
+	AllowCC                   bool     `json:"allow_cc"`
+	BlockClients              bool     `json:"block_clients"`
+	ConvertMessagesToChat     bool     `json:"convert_messages_to_chat"`
+	NormalizeReasoningContent bool     `json:"normalize_reasoning_content"`
+	Enabled                   bool     `json:"enabled"`
+	Priority                  int      `json:"priority"`
+	Weight                    int      `json:"weight"`
+	BillingType               string   `json:"billing_type"`
+	GroupRatio                float64  `json:"group_ratio"`
+	PromptPricePer1M          *float64 `json:"prompt_price_per_1m"`
+	CompletionPricePer1M      *float64 `json:"completion_price_per_1m"`
+	PerCallPrice              *float64 `json:"per_call_price"`
+	RecentUsageCostUSD        float64  `json:"recent_usage_cost_usd"`
+	ValueScore                *float64 `json:"value_score"`
+	UsageWindowHours          int      `json:"usage_window_hours"`
+	BaseWeightFactor          float64  `json:"base_weight_factor"`
+	ValueScoreFactor          float64  `json:"value_score_factor"`
+	HealthAdjustmentEnabled   bool     `json:"health_adjustment_enabled"`
+	HealthValue               int64    `json:"health_value"`
+	HealthSuccessCount        int64    `json:"health_success_count"`
+	HealthErrorCount          int64    `json:"health_error_count"`
+	HealthSampleCount         int64    `json:"health_sample_count"`
+	EffectiveSharePercent     *float64 `json:"effective_share_percent"`
 	// Cooldown status fields
 	CooldownInCooldown       bool   `json:"cooldown_in_cooldown"`
 	CooldownReason           string `json:"cooldown_reason"`
@@ -276,34 +282,35 @@ type ModelRouteOverviewItem struct {
 }
 
 type modelRouteOverviewRow struct {
-	Id                    int     `gorm:"column:id"`
-	ModelName             string  `gorm:"column:model_name"`
-	SystemPromptId        *int    `gorm:"column:system_prompt_id"`
-	ProviderId            int     `gorm:"column:provider_id"`
-	ProviderName          string  `gorm:"column:provider_name"`
-	ProviderBaseURL       string  `gorm:"column:provider_base_url"`
-	ProviderBalance       string  `gorm:"column:provider_balance"`
-	ProviderStatus        int     `gorm:"column:provider_status"`
-	ProviderIdExists      *int    `gorm:"column:provider_id_exists"` // p.id IS NOT NULL 判断供应商是否存在
-	ProviderTokenId       int     `gorm:"column:provider_token_id"`
-	TokenName             string  `gorm:"column:token_name"`
-	TokenGroupName        string  `gorm:"column:token_group_name"`
-	TokenStatus           int     `gorm:"column:token_status"`
-	TokenUnlimitedQuota   *bool   `gorm:"column:token_unlimited_quota"`
-	TokenRemainQuota      *int64  `gorm:"column:token_remain_quota"`
-	TokenUsedQuota        *int64  `gorm:"column:token_used_quota"`
-	AllowCodex            bool    `gorm:"column:allow_codex"`
-	AllowCC               bool    `gorm:"column:allow_cc"`
-	BlockClients          bool    `gorm:"column:block_clients"`
-	ConvertMessagesToChat bool    `gorm:"column:convert_messages_to_chat"`
-	Enabled               bool    `gorm:"column:enabled"`
-	Priority              int     `gorm:"column:priority"`
-	Weight                int     `gorm:"column:weight"`
-	PricingGroupRatio     string  `gorm:"column:pricing_group_ratio"`
-	QuotaType             int     `gorm:"column:quota_type"`
-	ModelRatio            float64 `gorm:"column:model_ratio"`
-	CompletionRatio       float64 `gorm:"column:completion_ratio"`
-	ModelPrice            float64 `gorm:"column:model_price"`
+	Id                        int     `gorm:"column:id"`
+	ModelName                 string  `gorm:"column:model_name"`
+	SystemPromptId            *int    `gorm:"column:system_prompt_id"`
+	ProviderId                int     `gorm:"column:provider_id"`
+	ProviderName              string  `gorm:"column:provider_name"`
+	ProviderBaseURL           string  `gorm:"column:provider_base_url"`
+	ProviderBalance           string  `gorm:"column:provider_balance"`
+	ProviderStatus            int     `gorm:"column:provider_status"`
+	ProviderIdExists          *int    `gorm:"column:provider_id_exists"` // p.id IS NOT NULL 判断供应商是否存在
+	ProviderTokenId           int     `gorm:"column:provider_token_id"`
+	TokenName                 string  `gorm:"column:token_name"`
+	TokenGroupName            string  `gorm:"column:token_group_name"`
+	TokenStatus               int     `gorm:"column:token_status"`
+	TokenUnlimitedQuota       *bool   `gorm:"column:token_unlimited_quota"`
+	TokenRemainQuota          *int64  `gorm:"column:token_remain_quota"`
+	TokenUsedQuota            *int64  `gorm:"column:token_used_quota"`
+	AllowCodex                bool    `gorm:"column:allow_codex"`
+	AllowCC                   bool    `gorm:"column:allow_cc"`
+	BlockClients              bool    `gorm:"column:block_clients"`
+	ConvertMessagesToChat     bool    `gorm:"column:convert_messages_to_chat"`
+	NormalizeReasoningContent bool    `gorm:"column:normalize_reasoning_content"`
+	Enabled                   bool    `gorm:"column:enabled"`
+	Priority                  int     `gorm:"column:priority"`
+	Weight                    int     `gorm:"column:weight"`
+	PricingGroupRatio         string  `gorm:"column:pricing_group_ratio"`
+	QuotaType                 int     `gorm:"column:quota_type"`
+	ModelRatio                float64 `gorm:"column:model_ratio"`
+	CompletionRatio           float64 `gorm:"column:completion_ratio"`
+	ModelPrice                float64 `gorm:"column:model_price"`
 }
 
 type RouteAttempt struct {
@@ -1440,6 +1447,7 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 			"mr.allow_cc",
 			"mr.block_clients",
 			"mr.convert_messages_to_chat",
+			"mr.normalize_reasoning_content",
 			"mr.enabled",
 			"mr.priority",
 			"mr.weight",
@@ -1503,35 +1511,36 @@ func GetModelRouteOverview(modelName string, providerId int, enabledOnly bool) (
 		}
 		groupRatio := getGroupRatio(row.TokenGroupName, groupRatioMap)
 		item := &ModelRouteOverviewItem{
-			Id:                      row.Id,
-			DisplayModelName:        "",
-			ModelName:               row.ModelName,
-			SystemPromptId:          row.SystemPromptId,
-			ProviderId:              row.ProviderId,
-			ProviderName:            row.ProviderName,
-			ProviderBaseURL:         row.ProviderBaseURL,
-			ProviderBalance:         row.ProviderBalance,
-			ProviderStatus:          row.ProviderStatus,
-			ProviderDeleted:         row.ProviderIdExists == nil,
-			ProviderTokenId:         row.ProviderTokenId,
-			TokenName:               row.TokenName,
-			TokenGroupName:          row.TokenGroupName,
-			TokenStatus:             row.TokenStatus,
-			TokenUnlimitedQuota:     row.TokenUnlimitedQuota,
-			TokenRemainQuota:        row.TokenRemainQuota,
-			TokenUsedQuota:          row.TokenUsedQuota,
-			AllowCodex:              row.AllowCodex,
-			AllowCC:                 row.AllowCC,
-			BlockClients:            row.BlockClients,
-			ConvertMessagesToChat:   row.ConvertMessagesToChat,
-			Enabled:                 row.Enabled,
-			Priority:                row.Priority,
-			Weight:                  row.Weight,
-			GroupRatio:              groupRatio,
-			UsageWindowHours:        config.UsageWindowHours,
-			BaseWeightFactor:        config.BaseWeightFactor,
-			ValueScoreFactor:        config.ValueScoreFactor,
-			HealthAdjustmentEnabled: config.HealthEnabled,
+			Id:                        row.Id,
+			DisplayModelName:          "",
+			ModelName:                 row.ModelName,
+			SystemPromptId:            row.SystemPromptId,
+			ProviderId:                row.ProviderId,
+			ProviderName:              row.ProviderName,
+			ProviderBaseURL:           row.ProviderBaseURL,
+			ProviderBalance:           row.ProviderBalance,
+			ProviderStatus:            row.ProviderStatus,
+			ProviderDeleted:           row.ProviderIdExists == nil,
+			ProviderTokenId:           row.ProviderTokenId,
+			TokenName:                 row.TokenName,
+			TokenGroupName:            row.TokenGroupName,
+			TokenStatus:               row.TokenStatus,
+			TokenUnlimitedQuota:       row.TokenUnlimitedQuota,
+			TokenRemainQuota:          row.TokenRemainQuota,
+			TokenUsedQuota:            row.TokenUsedQuota,
+			AllowCodex:                row.AllowCodex,
+			AllowCC:                   row.AllowCC,
+			BlockClients:              row.BlockClients,
+			ConvertMessagesToChat:     row.ConvertMessagesToChat,
+			NormalizeReasoningContent: row.NormalizeReasoningContent,
+			Enabled:                   row.Enabled,
+			Priority:                  row.Priority,
+			Weight:                    row.Weight,
+			GroupRatio:                groupRatio,
+			UsageWindowHours:          config.UsageWindowHours,
+			BaseWeightFactor:          config.BaseWeightFactor,
+			ValueScoreFactor:          config.ValueScoreFactor,
+			HealthAdjustmentEnabled:   config.HealthEnabled,
 		}
 		if reverseLookup, ok := aliasDisplayLookupCache[row.ProviderId]; ok {
 			if sourceModelName, matched := reverseLookup.ResolveByTarget(row.ModelName); matched {
@@ -1696,15 +1705,16 @@ func RebuildRoutesForProvider(providerId int, routes []ModelRoute) error {
 	tx := DB.Begin()
 
 	type routeInsert struct {
-		ModelName       string `gorm:"column:model_name"`
-		ProviderTokenId int    `gorm:"column:provider_token_id"`
-		ProviderId      int    `gorm:"column:provider_id"`
-		Enabled         *bool  `gorm:"column:enabled"`
-		Priority        int    `gorm:"column:priority"`
-		Weight          int    `gorm:"column:weight"`
-		AllowCodex      bool   `gorm:"column:allow_codex"`
-		AllowCC         bool   `gorm:"column:allow_cc"`
-		BlockClients    bool   `gorm:"column:block_clients"`
+		ModelName                 string `gorm:"column:model_name"`
+		ProviderTokenId           int    `gorm:"column:provider_token_id"`
+		ProviderId                int    `gorm:"column:provider_id"`
+		Enabled                   *bool  `gorm:"column:enabled"`
+		Priority                  int    `gorm:"column:priority"`
+		Weight                    int    `gorm:"column:weight"`
+		AllowCodex                bool   `gorm:"column:allow_codex"`
+		AllowCC                   bool   `gorm:"column:allow_cc"`
+		BlockClients              bool   `gorm:"column:block_clients"`
+		NormalizeReasoningContent bool   `gorm:"column:normalize_reasoning_content"`
 	}
 
 	var existingRoutes []ModelRoute
@@ -1762,15 +1772,16 @@ func RebuildRoutesForProvider(providerId int, routes []ModelRoute) error {
 		for _, route := range newRoutes[i:end] {
 			enabled := route.Enabled
 			batch = append(batch, routeInsert{
-				ModelName:       route.ModelName,
-				ProviderTokenId: route.ProviderTokenId,
-				ProviderId:      route.ProviderId,
-				Enabled:         &enabled,
-				Priority:        route.Priority,
-				Weight:          route.Weight,
-				AllowCodex:      route.AllowCodex,
-				AllowCC:         route.AllowCC,
-				BlockClients:    route.BlockClients,
+				ModelName:                 route.ModelName,
+				ProviderTokenId:           route.ProviderTokenId,
+				ProviderId:                route.ProviderId,
+				Enabled:                   &enabled,
+				Priority:                  route.Priority,
+				Weight:                    route.Weight,
+				AllowCodex:                route.AllowCodex,
+				AllowCC:                   route.AllowCC,
+				BlockClients:              route.BlockClients,
+				NormalizeReasoningContent: route.NormalizeReasoningContent,
 			})
 		}
 		if err := tx.Table("model_routes").Create(&batch).Error; err != nil {

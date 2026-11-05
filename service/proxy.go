@@ -188,6 +188,10 @@ func ProxyToUpstream(c *gin.Context, route model.ModelRoute, token *model.Provid
 	} else {
 		bodyBytes = stripSystemReminders(bodyBytes)
 	}
+	if route.NormalizeReasoningContent {
+		// Opt-in only: keep the default path byte-for-byte transparent.
+		bodyBytes = normalizeReasoningContent(bodyBytes)
+	}
 	requestedStream := extractRequestedStream(bodyBytes)
 
 	// Create the log/audit rows right away so an in-flight request is visible

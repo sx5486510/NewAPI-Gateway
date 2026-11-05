@@ -939,3 +939,62 @@ func TestBuildRouteAttemptsRequiresBothRouteAndTokenToAllow(t *testing.T) {
 		}
 	}
 }
+
+func TestModelRoutePatchNormalizeReasoningContent(t *testing.T) {
+	enabled := true
+	patch := ModelRoutePatch{Id: 1, NormalizeReasoningContent: &enabled}
+	if got := patch.ToUpdates()["normalize_reasoning_content"]; got != true {
+		t.Fatalf("enabled patch: got %v, want true", got)
+	}
+
+	disabled := false
+	patch.NormalizeReasoningContent = &disabled
+	if got := patch.ToUpdates()["normalize_reasoning_content"]; got != false {
+		t.Fatalf("disabled patch: got %v, want false", got)
+	}
+
+	if _, ok := (&ModelRoutePatch{Id: 1}).ToUpdates()["normalize_reasoning_content"]; ok {
+		t.Fatal("omitted patch must not write the column")
+	}
+}
+
+func TestModelRouteNormalizeReasoningContentSurvivesRebuild(t *testing.T) {
+	setupModelRouteTestDB(t)
+
+	route := ModelRoute{
+		ModelName:                 "deepseek-v4.1-flash",
+		ProviderId:                1,
+		ProviderTokenId:           1,
+		Enabled:                   true,
+		NormalizeReasoningContent: true,
+	}
+	if err := DB.Create(&route).Error; err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	generated := ModelRoute{
+		ModelName:       route.ModelName,
+		ProviderId:      route.ProviderId,
+		ProviderTokenId: route.ProviderTokenId,
+		Enabled:         true,
+		Priority:        7,
+		Weight:          20,
+	}
+	if err := RebuildRoutesForProvider(route.ProviderId, []ModelRoute{generated}); err != nil {
+		t.Fatalf("rebuild routes: %v", err)
+	}
+
+	var rows []ModelRoute
+	if err := DB.Where("model_name = ?", route.ModelName).Find(&rows).Error; err != nil {
+		t.Fatalf("load routes: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("route count = %d, want 1 (existing row must be reused)", len(rows))
+	}
+	if !rows[0].NormalizeReasoningContent {
+		t.Fatal("existing route lost normalize_reasoning_content after rebuild")
+	}
+	if rows[0].Priority != generated.Priority || rows[0].Weight != generated.Weight {
+		t.Fatalf("rebuild should still refresh priority/weight: got %d/%d", rows[0].Priority, rows[0].Weight)
+	}
+}
